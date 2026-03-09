@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv/
+
+# Runtime
+nohup.out
+config.yaml
+/tmp/
+
+# IDE / Editor
+.claude/
+.kiro/
+.vscode/
+.idea/
