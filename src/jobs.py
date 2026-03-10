@@ -89,7 +89,9 @@ class JobManager:
                 if event["type"] == "message.part":
                     parts.append(event["content"])
                 elif event["type"] == "tool.done":
-                    job.tools.append(event.get("title", ""))
+                    title = event.get("title", "")
+                    if title:
+                        job.tools.append(title)
         except (PoolExhaustedError, AcpError) as e:
             job.error = str(e)
             job.status = "failed"
@@ -141,24 +143,30 @@ class JobManager:
         """Format as OpenClaw /tools/invoke payload."""
         target = job.callback_meta.get("discord_target", "")
         if not target:
-            # fallback: return raw JSON payload
             return {**job.to_dict(), **job.callback_meta}
 
-        # Build markdown message
-        lines = [f"**🤖 {job.agent}**", ""]
+        duration = round(job.completed_at - job.created_at, 1)
+        lines = [
+            f"📨 **ACP Bridge** — {job.agent} `{job.job_id}`",
+            ">",
+        ]
+
         if job.status == "failed":
-            lines.append(f"❌ {job.error}")
+            lines.append(f"> ❌ {job.error}")
         else:
             if job.tools:
-                lines.append("🔧 **Tools**")
                 for t in job.tools[:10]:
-                    lines.append(f"✅ `{t}`")
-                lines.append("")
-            text = job.result[:3800]
+                    lines.append(f"> 🔧 `{t}`")
+                lines.append(">")
+            for l in job.result[:3800].split("\n"):
+                lines.append(f"> {l}")
             if len(job.result) > 3800:
-                text += "\n\n_(truncated)_"
-            lines.append(text)
-        lines.extend(["", "---", f"_job: `{job.job_id[:8]}…` | {round(job.completed_at - job.created_at, 1)}s_"])
+                lines.append("> _(truncated)_")
+
+        lines.extend([
+            ">",
+            f"📨 **Done** — {duration}s",
+        ])
 
         return {
             "tool": "message",
