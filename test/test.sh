@@ -82,6 +82,19 @@ run_test "多轮第2轮记住上下文" "pineapple" "$resp2_joined"
 
 # --- 错误处理 ---
 echo ""
+echo "--- Claude 同步调用 ---"
+
+resp=$("$CLIENT" -a claude "回复ok两个字就行" 2>/dev/null)
+run_test "Claude 同步调用有回复" "ok\|OK" "$resp"
+
+echo ""
+echo "--- Claude 流式调用 ---"
+
+resp=$("$CLIENT" --stream -a claude "回复ok两个字就行" 2>/dev/null)
+run_test "Claude 流式调用有输出" "ok\|OK" "$resp"
+
+# --- 错误处理 ---
+echo ""
 echo "--- 错误处理 ---"
 
 expect_fail "不存在的 agent" "$CLIENT" -a nonexistent_agent_xyz "hi"

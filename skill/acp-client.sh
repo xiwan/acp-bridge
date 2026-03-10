@@ -12,6 +12,7 @@
 #   ACP_AGENT       — 默认 agent (默认 kiro)
 #   ACP_TOKEN       — 认证 token
 #   ACP_RETRIES     — 失败重试次数 (默认 2)
+#   ACP_TIMEOUT     — 同步调用超时秒数 (默认 300)
 #
 # 依赖: curl, jq, uuidgen
 
@@ -24,6 +25,9 @@ SESSION=""
 LIST=false
 STREAM=false
 MAX_RETRIES="${ACP_RETRIES:-2}"
+CONNECT_TIMEOUT=10
+SYNC_TIMEOUT="${ACP_TIMEOUT:-300}"
+IDLE_TIMEOUT=120
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -44,7 +48,7 @@ AUTH=()
 
 # --- 列出 agents ---
 if $LIST; then
-    curl -sf "${AUTH[@]}" "$URL/agents" | jq -r '
+    curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time 30 "${AUTH[@]}" "$URL/agents" | jq -r '
         (.agents // .) | .[] |
         "  \(.name // .agent | . + " " * (15 - length))  \(.description // "")"'
     exit 0
@@ -73,12 +77,14 @@ PAYLOAD=$(jq -n \
 # --- 带重试的调用 ---
 call_api() {
     if $STREAM; then
-        curl -sN -X POST "${AUTH[@]}" "$URL/runs" \
+        curl -sN --connect-timeout "$CONNECT_TIMEOUT" \
+            -X POST "${AUTH[@]}" "$URL/runs" \
             -H "Content-Type: application/json" \
             -H "Accept: text/event-stream" \
             -d "$PAYLOAD"
     else
-        curl -sf -X POST "${AUTH[@]}" "$URL/runs" \
+        curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time "$SYNC_TIMEOUT" \
+            -X POST "${AUTH[@]}" "$URL/runs" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"
     fi
@@ -102,7 +108,7 @@ retry() {
 
 # --- 流式模式 ---
 if $STREAM; then
-    retry | while IFS= read -r line; do
+    retry | while IFS= read -t "$IDLE_TIMEOUT" -r line; do
         [[ "$line" != data:* ]] && continue
         data="${line#data: }"
         type=$(echo "$data" | jq -r '.type // empty' 2>/dev/null) || continue
@@ -127,6 +133,8 @@ if $STREAM; then
                 ;;
         esac
     done
+    rc=$?
+    [[ $rc -gt 128 ]] && echo "❌ 流式读取超时 (${IDLE_TIMEOUT}s 无数据)" >&2
     echo
     exit 0
 fi
