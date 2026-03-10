@@ -15,6 +15,7 @@ from acp_sdk.server.app import create_app
 
 from src.acp_client import AcpProcessPool
 from src.agents import make_acp_agent_handler, make_pty_agent_handler
+from src.jobs import JobManager
 from src.security import SecurityMiddleware
 
 log = logging.getLogger("acp-bridge")
@@ -90,8 +91,47 @@ def main():
     app.add_middleware(SecurityMiddleware, allowed_ips=allowed_ips, auth_token=auth_token)
 
     from fastapi import Path as PathParam
+    from pydantic import BaseModel
 
     start_time = time.time()
+
+    # Job manager for async mode
+    webhook_cfg = config.get("webhook", {})
+    job_mgr = JobManager(
+        pool=pool,
+        webhook_url=webhook_cfg.get("url", ""),
+        webhook_token=webhook_cfg.get("token", ""),
+    ) if pool else None
+
+    class JobRequest(BaseModel):
+        agent_name: str
+        session_id: str = ""
+        prompt: str
+        callback_url: str = ""
+        callback_meta: dict = {}
+        discord_target: str = ""
+
+    @app.post("/jobs")
+    async def submit_job(req: JobRequest):
+        if not job_mgr:
+            return {"error": "no pool configured"}, 500
+        import uuid as _uuid
+        sid = req.session_id or str(_uuid.uuid4())
+        meta = req.callback_meta
+        if req.discord_target:
+            meta["discord_target"] = req.discord_target
+        job = job_mgr.submit(req.agent_name, sid, req.prompt,
+                             req.callback_url, meta)
+        return {"job_id": job.job_id, "status": job.status, "agent": job.agent, "session_id": sid}
+
+    @app.get("/jobs/{job_id}")
+    async def get_job(job_id: str = PathParam(...)):
+        if not job_mgr:
+            return {"error": "no pool configured"}, 500
+        job = job_mgr.get(job_id)
+        if not job:
+            return {"error": "job not found"}, 404
+        return job.to_dict()
 
     @app.get("/health")
     async def health():
@@ -120,6 +160,8 @@ def main():
             await asyncio.sleep(3600)
             if pool:
                 await pool.cleanup_idle(ttl_hours * 3600)
+            if job_mgr:
+                job_mgr.cleanup()
 
     @app.on_event("startup")
     async def on_startup():

@@ -95,6 +95,26 @@ run_test "Claude 流式调用有输出" "ok\|OK" "$resp"
 
 # --- 错误处理 ---
 echo ""
+echo "--- 异步任务 ---"
+
+resp=$("$CLIENT" --async -a kiro -s "00000000-0000-0000-0000-000000000087" "回复ok两个字就行" 2>/dev/null)
+run_test "异步提交返回已提交" "已提交" "$resp"
+
+# 从 stderr 拿 job_id
+ASYNC_SESSION="00000000-0000-0000-0000-000000000088"
+job_id=$("$CLIENT" --async -a kiro -s "$ASYNC_SESSION" "回复数字42就行" 2>&1 1>/dev/null | grep job_id | sed 's/job_id: //')
+if [[ -n "$job_id" ]]; then
+    echo "  等待任务完成 (10s)..."
+    sleep 10
+    resp=$("$CLIENT" --job-status "$job_id" 2>/dev/null)
+    run_test "异步任务查询有结果" "42\|completed\|kiro" "$resp"
+else
+    echo "❌ 异步任务未返回 job_id"
+    ((FAIL++))
+fi
+
+# --- 错误处理 ---
+echo ""
 echo "--- 错误处理 ---"
 
 expect_fail "不存在的 agent" "$CLIENT" -a nonexistent_agent_xyz "hi"

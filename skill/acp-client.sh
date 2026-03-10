@@ -26,6 +26,8 @@ SESSION=""
 LIST=false
 STREAM=false
 CARD=false
+ASYNC=false
+JOB_STATUS=""
 MAX_RETRIES="${ACP_RETRIES:-2}"
 CONNECT_TIMEOUT=10
 SYNC_TIMEOUT="${ACP_TIMEOUT:-300}"
@@ -40,6 +42,8 @@ while [[ $# -gt 0 ]]; do
         -l|--list)    LIST=true; shift ;;
         --stream)     STREAM=true; shift ;;
         --card)       CARD=true; shift ;;
+        --async)      ASYNC=true; shift ;;
+        --job-status) JOB_STATUS="$2"; shift 2 ;;
         --retries)    MAX_RETRIES="$2"; shift 2 ;;
         -h|--help)    sed -n '2,17s/^# //p' "$0"; exit 0 ;;
         *) break ;;
@@ -54,6 +58,25 @@ if $LIST; then
     curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time 30 "${AUTH[@]}" "$URL/agents" | jq -r '
         (.agents // .) | .[] |
         "  \(.name // .agent | . + " " * (15 - length))  \(.description // "")"'
+    exit 0
+fi
+
+# --- 查询 job 状态 ---
+if [[ -n "$JOB_STATUS" ]]; then
+    resp=$(curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time 10 \
+        "${AUTH[@]}" "$URL/jobs/$JOB_STATUS") || { echo "❌ 查询失败" >&2; exit 1; }
+    status=$(echo "$resp" | jq -r '.status // "unknown"')
+    case "$status" in
+        completed)
+            echo "$resp" | jq -r '"**🤖 \(.agent)**\n\n\(.result)\n\n---\n_job: `\(.job_id[:8])…` duration: \(.duration)s_"'
+            ;;
+        failed)
+            echo "$resp" | jq -r '"❌ \(.error)"'
+            ;;
+        *)
+            echo "⏳ 状态: $status"
+            ;;
+    esac
     exit 0
 fi
 
@@ -78,6 +101,29 @@ PAYLOAD=$(jq -n \
     '{agent_name: $agent, session_id: $session,
       input: [{parts: [{content: $prompt, content_type: "text/plain"}]}]}
       + (if $mode == "stream" then {mode: "stream"} else {} end)')
+
+# --- Async 模式：提交任务立即返回 ---
+if $ASYNC; then
+    ASYNC_PAYLOAD=$(jq -n \
+        --arg agent "$AGENT" \
+        --arg session "$SESSION" \
+        --arg prompt "$PROMPT" \
+        '{agent_name: $agent, session_id: $session, prompt: $prompt}')
+    resp=$(curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time 30 \
+        -X POST "${AUTH[@]}" "$URL/jobs" \
+        -H "Content-Type: application/json" \
+        -d "$ASYNC_PAYLOAD") || { echo "❌ 提交失败" >&2; exit 1; }
+    job_id=$(echo "$resp" | jq -r '.job_id // empty')
+    if [[ -n "$job_id" ]]; then
+        echo "✅ 已提交 (job: ${job_id:0:8}…)"
+        echo "查询状态: $0 --job-status $job_id"
+        echo "job_id: $job_id" >&2
+    else
+        echo "❌ $(echo "$resp" | jq -r '.error // "未知错误"')" >&2
+        exit 1
+    fi
+    exit 0
+fi
 
 # --- 带重试的调用 ---
 call_api() {
