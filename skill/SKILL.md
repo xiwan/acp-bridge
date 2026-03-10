@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.2.0 — 通过 ACP Bridge HTTP API 调用远程 CLI agent。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude)"
+description: "v0.3.0 — 通过 ACP Bridge HTTP API 调用远程 CLI agent。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude)"
 ---
 
 # ACP Bridge Caller — 调用远程 CLI Agent
