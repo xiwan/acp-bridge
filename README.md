@@ -51,9 +51,10 @@ acp-bridge/
 
 ## 环境要求
 
-- Python >= 3.12
+- Python >= 3.12（服务端）
 - [uv](https://docs.astral.sh/uv/) 包管理器
 - 已安装的 CLI agent（如 `kiro-cli`、`claude-agent-acp`）
+- 客户端依赖：`curl`、`jq`、`uuidgen`（大多数 Linux 发行版已预装）
 
 ## 快速开始
 

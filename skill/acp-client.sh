@@ -12,6 +12,8 @@
 #   ACP_AGENT       — 默认 agent (默认 kiro)
 #   ACP_TOKEN       — 认证 token
 #   ACP_RETRIES     — 失败重试次数 (默认 2)
+#
+# 依赖: curl, jq, uuidgen
 
 set -euo pipefail
 
@@ -32,62 +34,53 @@ while [[ $# -gt 0 ]]; do
         -l|--list)    LIST=true; shift ;;
         --stream)     STREAM=true; shift ;;
         --retries)    MAX_RETRIES="$2"; shift 2 ;;
-        -h|--help)
-            sed -n '2,14s/^# //p' "$0"; exit 0 ;;
+        -h|--help)    sed -n '2,16s/^# //p' "$0"; exit 0 ;;
         *) break ;;
     esac
 done
 
-AUTH_HEADER=()
-[[ -n "$TOKEN" ]] && AUTH_HEADER=(-H "Authorization: Bearer $TOKEN")
+AUTH=()
+[[ -n "$TOKEN" ]] && AUTH=(-H "Authorization: Bearer $TOKEN")
 
+# --- 列出 agents ---
 if $LIST; then
-    curl -sf "${AUTH_HEADER[@]}" "$URL/agents" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-agents = data.get('agents', data) if isinstance(data, dict) else data
-for a in agents:
-    name = a.get('name', a.get('agent', ''))
-    desc = a.get('description', a.get('metadata', {}).get('description', ''))
-    print(f'  {name:15s} {desc}')
-"
+    curl -sf "${AUTH[@]}" "$URL/agents" | jq -r '
+        (.agents // .) | .[] |
+        "  \(.name // .agent | . + " " * (15 - length))  \(.description // "")"'
     exit 0
 fi
 
-if [[ $# -eq 0 ]]; then
-    echo "用法: acp-client.sh [选项] <prompt>" >&2
-    exit 1
-fi
+[[ $# -eq 0 ]] && { echo "用法: acp-client.sh [选项] <prompt>" >&2; exit 1; }
 
 PROMPT="$*"
 
-if [[ -z "$SESSION" ]]; then
-    SESSION=$(python3 -c "import uuid; print(uuid.uuid5(uuid.NAMESPACE_DNS, '$AGENT'))")
-fi
+# --- session_id: 确定性 UUID v5 ---
+[[ -z "$SESSION" ]] && SESSION=$(uuidgen -s -n @dns -N "$AGENT")
 
-# acp-sdk 标准 payload: input 是 Message 数组，每个 Message 有 parts
-PAYLOAD=$(python3 -c "
-import json, sys
-d = {
-    'agent_name': sys.argv[1],
-    'session_id': sys.argv[3],
-    'input': [{'parts': [{'content': sys.argv[2], 'content_type': 'text/plain'}]}],
-}
-if sys.argv[4] == 'stream':
-    d['mode'] = 'stream'
-print(json.dumps(d))
-" "$AGENT" "$PROMPT" "$SESSION" "$($STREAM && echo stream || echo sync)")
+# --- 构建 JSON payload ---
+MODE="sync"
+$STREAM && MODE="stream"
 
+PAYLOAD=$(jq -n \
+    --arg agent "$AGENT" \
+    --arg session "$SESSION" \
+    --arg prompt "$PROMPT" \
+    --arg mode "$MODE" \
+    '{agent_name: $agent, session_id: $session,
+      input: [{parts: [{content: $prompt, content_type: "text/plain"}]}]}
+      + (if $mode == "stream" then {mode: "stream"} else {} end)')
+
+# --- 带重试的调用 ---
 call_api() {
     if $STREAM; then
-        curl -sN -X POST "${AUTH_HEADER[@]}" "$URL/runs" \
+        curl -sN -X POST "${AUTH[@]}" "$URL/runs" \
             -H "Content-Type: application/json" \
             -H "Accept: text/event-stream" \
-            -d "$PAYLOAD" 2>&1
+            -d "$PAYLOAD"
     else
-        curl -sf -X POST "${AUTH_HEADER[@]}" "$URL/runs" \
+        curl -sf -X POST "${AUTH[@]}" "$URL/runs" \
             -H "Content-Type: application/json" \
-            -d "$PAYLOAD" 2>&1
+            -d "$PAYLOAD"
     fi
 }
 
@@ -103,88 +96,61 @@ retry() {
             echo "❌ 连接失败 (已重试 $MAX_RETRIES 次): $URL" >&2
             return 1
         fi
-        local wait=$((attempt * 2))
-        echo "⚠️  重试 $attempt/$MAX_RETRIES (${wait}s 后)..." >&2
-        sleep "$wait"
+        sleep $((attempt * 2))
     done
 }
 
+# --- 流式模式 ---
 if $STREAM; then
-    # 流式模式：解析 acp-sdk SSE 事件
-    retry | python3 -c "
-import sys, json
-
-for line in sys.stdin:
-    line = line.rstrip('\n')
-    if not line.startswith('data: '):
-        continue
-    try:
-        evt = json.loads(line[6:])
-    except json.JSONDecodeError:
-        continue
-    etype = evt.get('type', '')
-
-    if etype == 'message.part':
-        # acp-sdk format: part.content / part.name
-        part = evt.get('part', {})
-        content = part.get('content', '')
-        name = part.get('name', '')
-        if name == 'thought':
-            if content:
-                print(f'💭 {content}', end='', flush=True)
-        elif content:
-            print(content, end='', flush=True)
-
-    elif etype in ('run.completed', 'message.completed'):
-        run = evt.get('run', {})
-        sid = run.get('session_id')
-        if sid:
-            print(f'session_id: {sid}', file=sys.stderr)
-
-    elif etype == 'run.failed':
-        run = evt.get('run', {})
-        err = run.get('error', {})
-        print(f\"❌ {err.get('code','error')}: {err.get('message','未知错误')}\", file=sys.stderr)
-        sys.exit(1)
-
-print()
-" || exit 1
-else
-    # 同步模式：解析 acp-sdk Run 响应
-    RESP=$(retry) || exit 1
-
-    python3 -c "
-import sys, json
-
-raw = sys.argv[1]
-try:
-    r = json.loads(raw)
-except json.JSONDecodeError:
-    print('❌ 无效响应:', raw, file=sys.stderr)
-    sys.exit(1)
-
-status = r.get('status', 'unknown')
-if status == 'completed':
-    # acp-sdk: output 是 Message 数组
-    parts = []
-    for msg in r.get('output', []):
-        for p in msg.get('parts', []):
-            content = p.get('content', '')
-            name = p.get('name', '')
-            if name == 'thought':
-                continue  # skip thoughts in sync mode
-            if content:
-                parts.append(content)
-    print('\n'.join(parts) if parts else '(empty response)')
-    sid = r.get('session_id')
-    if sid:
-        print(f'session_id: {sid}', file=sys.stderr)
-elif status == 'failed':
-    err = r.get('error', {})
-    print(f\"❌ {err.get('code','error')}: {err.get('message','未知错误')}\", file=sys.stderr)
-    sys.exit(1)
-else:
-    print(f'⚠️  未知状态: {status}', file=sys.stderr)
-    print(raw)
-" "$RESP"
+    retry | while IFS= read -r line; do
+        [[ "$line" != data:* ]] && continue
+        data="${line#data: }"
+        type=$(echo "$data" | jq -r '.type // empty' 2>/dev/null) || continue
+        case "$type" in
+            message.part)
+                content=$(echo "$data" | jq -r '.part.content // empty')
+                name=$(echo "$data" | jq -r '.part.name // empty')
+                if [[ "$name" == "thought" ]]; then
+                    [[ -n "$content" ]] && printf '💭 %s' "$content"
+                elif [[ -n "$content" ]]; then
+                    printf '%s' "$content"
+                fi
+                ;;
+            run.completed|message.completed)
+                sid=$(echo "$data" | jq -r '.run.session_id // empty')
+                [[ -n "$sid" ]] && echo "session_id: $sid" >&2
+                ;;
+            run.failed)
+                msg=$(echo "$data" | jq -r '(.run.error.code // "error") + ": " + (.run.error.message // "未知错误")')
+                echo "❌ $msg" >&2
+                exit 1
+                ;;
+        esac
+    done
+    echo
+    exit 0
 fi
+
+# --- 同步模式 ---
+RESP=$(retry) || exit 1
+
+status=$(echo "$RESP" | jq -r '.status // "unknown"')
+case "$status" in
+    completed)
+        echo "$RESP" | jq -r '
+            [.output[]? | .parts[]? |
+             select(.name != "thought" and .content != null and .content != "") |
+             .content] | join("\n") // "(empty response)"'
+        sid=$(echo "$RESP" | jq -r '.session_id // empty')
+        [[ -n "$sid" ]] && echo "session_id: $sid" >&2
+        ;;
+    failed)
+        msg=$(echo "$RESP" | jq -r '(.error.code // "error") + ": " + (.error.message // "未知错误")')
+        echo "❌ $msg" >&2
+        exit 1
+        ;;
+    *)
+        echo "⚠️  未知状态: $status" >&2
+        echo "$RESP"
+        ;;
+esac
