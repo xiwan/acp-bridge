@@ -177,6 +177,13 @@ class AcpConnection:
                 if n is not None:
                     yield n
 
+            # Give reader task a moment to flush remaining notifications
+            await asyncio.sleep(0.05)
+            while not q.empty():
+                n = q.get_nowait()
+                if n is not None:
+                    yield n
+
             result = fut.result() if fut.done() else {"error": {"code": -1, "message": "no response"}}
             yield {"_prompt_result": result}
         finally:
