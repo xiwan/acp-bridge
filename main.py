@@ -180,14 +180,17 @@ def main():
             if job_mgr:
                 job_mgr.cleanup()
 
+    _original_lifespan = app.router.lifespan_context
+
     @asynccontextmanager
     async def lifespan(application):
-        task = asyncio.create_task(cleanup_loop())
-        yield
-        task.cancel()
-        if pool:
-            log.info("shutting down, killing all subprocesses...")
-            await pool.shutdown()
+        async with _original_lifespan(application):
+            task = asyncio.create_task(cleanup_loop())
+            yield
+            task.cancel()
+            if pool:
+                log.info("shutting down, killing all subprocesses...")
+                await pool.shutdown()
 
     app.router.lifespan_context = lifespan
 

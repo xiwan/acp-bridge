@@ -157,43 +157,48 @@ retry() {
     done
 }
 
-# --- Card 模式：收集所有事件，最后输出 Markdown 卡片 ---
+# --- SSE 数据行提取：过滤 + 去前缀，单进程 ---
+_sse_data_lines() {
+    grep --line-buffered '^data: ' | sed -u 's/^data: //'
+}
+
+# --- Card 模式：单进程 jq 解析所有事件，bash 分拣写文件 ---
 if $CARD; then
     TMPDIR_CARD=$(mktemp -d)
     trap 'rm -rf "$TMPDIR_CARD"' EXIT
     : > "$TMPDIR_CARD/thoughts"
     : > "$TMPDIR_CARD/tools"
     : > "$TMPDIR_CARD/content"
-    ERROR=""
+    : > "$TMPDIR_CARD/error"
 
-    retry | while IFS= read -t "$IDLE_TIMEOUT" -r line; do
-        [[ "$line" != data:* ]] && continue
-        data="${line#data: }"
-        type=$(echo "$data" | jq -r '.type // empty' 2>/dev/null) || continue
-        case "$type" in
-            message.part)
-                content=$(echo "$data" | jq -r '.part.content // empty')
-                name=$(echo "$data" | jq -r '.part.name // empty')
+    # 单进程 jq 输出 tab 分隔的 type\tname\tcontent，避免每行 fork
+    retry | _sse_data_lines | \
+        jq --unbuffered -r '
+            if .type == "message.part" then
+                ["part", (.part.name // ""), (.part.content // "")] | @tsv
+            elif .type == "run.failed" then
+                ["error", "", ((.run.error.code // "error") + ": " + (.run.error.message // "未知错误"))] | @tsv
+            else empty end' | \
+    while IFS=$'\t' read -t "$IDLE_TIMEOUT" -r etype name content; do
+        case "$etype" in
+            part)
                 if [[ "$name" == "thought" && -n "$content" ]]; then
                     printf '%s' "$content" >> "$TMPDIR_CARD/thoughts"
                 elif [[ -n "$content" ]]; then
-                    # 过滤 tool 事件文本，单独收集
-                    if [[ "$content" == "[tool.start]"* ]]; then
-                        :  # skip inline tool start
-                    elif [[ "$content" == "[tool.done]"* ]]; then
-                        # 提取 tool 名称
-                        title=$(echo "$content" | sed 's/\[tool\.done\] \(.*\) (.*/\1/')
-                        echo "✅ \`$title\`" >> "$TMPDIR_CARD/tools"
-                    elif [[ "$content" == "[status]"* ]]; then
-                        :  # skip status lines
-                    else
-                        printf '%s' "$content" >> "$TMPDIR_CARD/content"
-                    fi
+                    case "$content" in
+                        "[tool.start]"*|"[status]"*) ;;
+                        "[tool.done]"*)
+                            # bash 内置提取 tool 名称，无需 fork sed
+                            title="${content#\[tool.done\] }"
+                            title="${title%% (*}"
+                            echo "✅ \`$title\`" >> "$TMPDIR_CARD/tools"
+                            ;;
+                        *) printf '%s' "$content" >> "$TMPDIR_CARD/content" ;;
+                    esac
                 fi
                 ;;
-            run.failed)
-                msg=$(echo "$data" | jq -r '(.run.error.code // "error") + ": " + (.run.error.message // "未知错误")')
-                echo "$msg" > "$TMPDIR_CARD/error"
+            error)
+                echo "$content" > "$TMPDIR_CARD/error"
                 ;;
         esac
     done
@@ -202,13 +207,11 @@ if $CARD; then
     echo "**🤖 ${AGENT}**"
     echo ""
 
-    # 错误
     if [[ -s "$TMPDIR_CARD/error" ]]; then
         echo "❌ $(cat "$TMPDIR_CARD/error")"
         exit 1
     fi
 
-    # Thinking（折叠）
     if [[ -s "$TMPDIR_CARD/thoughts" ]]; then
         echo "<details>"
         echo "<summary>💭 Thinking</summary>"
@@ -219,14 +222,12 @@ if $CARD; then
         echo ""
     fi
 
-    # Tools（已完成的工具调用）
     if [[ -s "$TMPDIR_CARD/tools" ]]; then
         echo "🔧 **Tools**"
         cat "$TMPDIR_CARD/tools"
         echo ""
     fi
 
-    # 正文
     if [[ -s "$TMPDIR_CARD/content" ]]; then
         cat "$TMPDIR_CARD/content"
     else
@@ -239,35 +240,22 @@ if $CARD; then
     exit 0
 fi
 
-# --- 流式模式 ---
+# --- 流式模式：单进程 jq 处理所有 SSE 事件 ---
 if $STREAM; then
-    retry | while IFS= read -t "$IDLE_TIMEOUT" -r line; do
-        [[ "$line" != data:* ]] && continue
-        data="${line#data: }"
-        type=$(echo "$data" | jq -r '.type // empty' 2>/dev/null) || continue
-        case "$type" in
-            message.part)
-                content=$(echo "$data" | jq -r '.part.content // empty')
-                name=$(echo "$data" | jq -r '.part.name // empty')
-                if [[ "$name" == "thought" ]]; then
-                    [[ -n "$content" ]] && printf '💭 %s' "$content"
-                elif [[ -n "$content" ]]; then
-                    printf '%s' "$content"
-                fi
-                ;;
-            run.completed|message.completed)
-                sid=$(echo "$data" | jq -r '.run.session_id // empty')
-                [[ -n "$sid" ]] && echo "session_id: $sid" >&2
-                ;;
-            run.failed)
-                msg=$(echo "$data" | jq -r '(.run.error.code // "error") + ": " + (.run.error.message // "未知错误")')
-                echo "❌ $msg" >&2
-                exit 1
-                ;;
-        esac
-    done
+    retry | _sse_data_lines | \
+        jq --unbuffered -r '
+            if .type == "message.part" then
+                if .part.name == "thought" then "💭 " + (.part.content // "")
+                elif .part.content then .part.content
+                else empty end
+            elif .type == "run.completed" or .type == "message.completed" then
+                if .run.session_id then "session_id: " + .run.session_id | halt_error(0)
+                else empty end
+            elif .type == "run.failed" then
+                "❌ " + (.run.error.code // "error") + ": " + (.run.error.message // "未知错误") | halt_error(1)
+            else empty end'
     rc=$?
-    [[ $rc -gt 128 ]] && echo "❌ 流式读取超时 (${IDLE_TIMEOUT}s 无数据)" >&2
+    (( rc == 1 )) && exit 1
     echo
     exit 0
 fi
