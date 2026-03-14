@@ -90,7 +90,9 @@ def main():
     app = create_app(*server.agents)
     app.add_middleware(SecurityMiddleware, allowed_ips=allowed_ips, auth_token=auth_token)
 
+    from contextlib import asynccontextmanager
     from fastapi import Path as PathParam
+    from fastapi.responses import JSONResponse
     from pydantic import BaseModel
 
     start_time = time.time()
@@ -114,7 +116,7 @@ def main():
     @app.post("/jobs")
     async def submit_job(req: JobRequest):
         if not job_mgr:
-            return {"error": "no pool configured"}, 500
+            return JSONResponse({"error": "no pool configured"}, status_code=500)
         import uuid as _uuid
         sid = req.session_id or str(_uuid.uuid4())
         meta = req.callback_meta
@@ -127,10 +129,10 @@ def main():
     @app.get("/jobs/{job_id}")
     async def get_job(job_id: str = PathParam(...)):
         if not job_mgr:
-            return {"error": "no pool configured"}, 500
+            return JSONResponse({"error": "no pool configured"}, status_code=500)
         job = job_mgr.get(job_id)
         if not job:
-            return {"error": "job not found"}, 404
+            return JSONResponse({"error": "job not found"}, status_code=404)
         return job.to_dict()
 
     @app.get("/jobs")
@@ -178,15 +180,16 @@ def main():
             if job_mgr:
                 job_mgr.cleanup()
 
-    @app.on_event("startup")
-    async def on_startup():
-        asyncio.create_task(cleanup_loop())
-
-    @app.on_event("shutdown")
-    async def on_shutdown():
+    @asynccontextmanager
+    async def lifespan(application):
+        task = asyncio.create_task(cleanup_loop())
+        yield
+        task.cancel()
         if pool:
             log.info("shutting down, killing all subprocesses...")
             await pool.shutdown()
+
+    app.router.lifespan_context = lifespan
 
     log.info("allowed_ips=%s", allowed_ips)
     if pool:
