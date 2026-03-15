@@ -1,11 +1,11 @@
 ---
 name: acp-bridge-caller
-description: "v0.5.0 — Call remote CLI agents via ACP Bridge (https://github.com/xiwan/acp-bridge/) HTTP API. Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude)"
+description: "v0.6.0 — 通过 ACP Bridge HTTP API 调用远程 CLI agent。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /cli cx <prompt> (codex)"
 ---
 
 # ACP Bridge Caller — Invoke Remote CLI Agents
 
-Call remote CLI agents (Kiro CLI, Claude Code, etc.) via the [ACP Bridge](https://github.com/xiwan/acp-bridge/) HTTP API and retrieve results.
+Call remote CLI agents (Kiro CLI, Claude Code, OpenAI Codex, etc.) via the [ACP Bridge](https://github.com/xiwan/acp-bridge/) HTTP API and retrieve results.
 
 ## Trigger Commands
 
@@ -14,10 +14,12 @@ Call remote CLI agents (Kiro CLI, Claude Code, etc.) via the [ACP Bridge](https:
 | `/cli <prompt>` | Call default agent (kiro) |
 | `/cli ko <prompt>` | Call kiro agent |
 | `/cli cc <prompt>` | Call claude agent |
+| `/cli cx <prompt>` | Call codex agent |
 
 Command mapping:
 - `/cli ko ...` → `$ACP_CLIENT -a kiro "..."`
 - `/cli cc ...` → `$ACP_CLIENT -a claude "..."`
+- `/cli cx ...` → `$ACP_CLIENT -a codex "..."`
 - `/cli ...` → `$ACP_CLIENT "..."` (uses default agent)
 
 ## Prerequisites
