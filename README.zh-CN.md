@@ -9,8 +9,8 @@
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
 ║    🤖 Kiro ───┐                                              ║
-║                ├──► acp 🌉 ──► 🦞 OpenClaw ──► 🌍 world     ║
-║    🤖 Claude ──┘                                             ║
+║    🤖 Claude ──┼──► acp 🌉 ──► 🦞 OpenClaw ──► 🌍 world     ║
+║    🤖 Codex ──┘                                              ║
 ║                                                              ║
 ║          https://github.com/xiwan/acp-bridge                 ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -22,7 +22,7 @@
 
 [English](README.md)
 
-将本地 CLI agent（如 Kiro CLI、Claude Code）通过 [ACP 协议](https://agentclientprotocol.com/) HTTP API 对外暴露的桥接服务，支持异步任务和 Discord 推送。
+将本地 CLI agent（如 Kiro CLI、Claude Code、[OpenAI Codex](https://github.com/openai/codex)）通过 [ACP 协议](https://agentclientprotocol.com/) HTTP API 对外暴露的桥接服务，支持异步任务和 Discord 推送。
 
 ## 架构概览
 
@@ -69,8 +69,13 @@ acp-bridge/
 │   ├── SKILL.md         # Kiro/OpenClaw skill 定义
 │   └── acp-client.sh    # 客户端调用脚本（bash + jq）
 ├── test/
-│   ├── test.sh          # 集成测试
-│   └── 2026-03-10.md    # 测试结果
+│   ├── lib.sh           # 测试公共库（断言函数、环境初始化）
+│   ├── test.sh          # 全量测试入口
+│   ├── test_common.sh   # 公共测试（agent 列表、错误处理）
+│   ├── test_kiro.sh     # Kiro agent 测试
+│   ├── test_claude.sh   # Claude agent 测试
+│   ├── test_codex.sh    # Codex agent 测试
+│   └── reports/         # 测试报告
 ├── config.yaml          # 服务配置
 ├── pyproject.toml
 └── uv.lock
@@ -80,8 +85,9 @@ acp-bridge/
 
 - Python >= 3.12（服务端）
 - [uv](https://docs.astral.sh/uv/) 包管理器
-- 已安装的 CLI agent（如 `kiro-cli`、`claude-agent-acp`）
+- 已安装的 CLI agent（如 `kiro-cli`、`claude-agent-acp`、`codex`）
 - 客户端依赖：`curl`、`jq`、`uuidgen`
+- Codex 需要：[Node.js](https://nodejs.org/)（npm）、[LiteLLM](https://github.com/BerriAI/litellm)（非 OpenAI 模型需代理）
 
 ## 快速开始
 
@@ -91,6 +97,66 @@ cp config.yaml.example config.yaml
 # 编辑 config.yaml
 uv sync
 uv run main.py
+```
+
+## Codex + LiteLLM 配置
+
+[OpenAI Codex CLI](https://github.com/openai/codex) 不原生支持 ACP 协议，因此使用 PTY 模式（子进程）接入。要使用非 OpenAI 模型（如 Bedrock 上的 Kimi K2.5），需要 [LiteLLM](https://github.com/BerriAI/litellm) 作为 OpenAI 兼容代理。
+
+### 安装
+
+```bash
+# Codex CLI
+npm i -g @openai/codex
+
+# LiteLLM 代理
+pip install 'litellm[proxy]'
+```
+
+### 配置 Codex
+
+```toml
+# ~/.codex/config.toml
+model = "bedrock/moonshotai.kimi-k2.5"
+model_provider = "bedrock"
+
+[model_providers.bedrock]
+name = "AWS Bedrock via LiteLLM"
+base_url = "http://localhost:4000/v1"
+env_key = "LITELLM_API_KEY"
+```
+
+### 配置 LiteLLM
+
+```yaml
+# ~/.codex/litellm-config.yaml
+model_list:
+  - model_name: "bedrock/moonshotai.kimi-k2.5"
+    litellm_params:
+      model: "bedrock/moonshotai.kimi-k2.5"
+      aws_region_name: "us-east-1"
+
+general_settings:
+  master_key: "sk-litellm-bedrock"
+
+litellm_settings:
+  drop_params: true
+```
+
+`drop_params: true` 是必须的 — Codex 会发送 Bedrock 不支持的参数（如 `web_search_options`）。
+
+LiteLLM 使用 EC2 实例的 AWS 凭证（IAM Role 或 `~/.aws/credentials`）访问 Bedrock。`master_key` 只是代理自身的认证 token。
+
+### 启动 LiteLLM
+
+```bash
+LITELLM_API_KEY="sk-litellm-bedrock" litellm --config ~/.codex/litellm-config.yaml --port 4000
+```
+
+### 数据流
+
+```
+acp-bridge ──(PTY)──► codex exec ──(HTTP)──► LiteLLM :4000 ──(Bedrock API)──► Kimi K2.5
 ```
 
 ## 配置
@@ -130,6 +196,15 @@ agents:
     acp_args: []
     working_dir: "/tmp"
     description: "Claude Code agent (via ACP adapter)"
+  codex:
+    enabled: true
+    mode: "pty"
+    command: "codex"
+    args: ["exec", "--full-auto", "--skip-git-repo-check"]
+    working_dir: "/tmp"
+    description: "OpenAI Codex CLI agent"
+    env:
+      LITELLM_API_KEY: "sk-litellm-bedrock"
 ```
 
 ## 客户端调用
@@ -228,7 +303,21 @@ POST /jobs → Bridge 后台执行 → 完成后 POST OpenClaw /tools/invoke
 ACP_TOKEN=<token> bash test/test.sh http://127.0.0.1:8001
 ```
 
-覆盖：agents 列表、同步/流式调用、多轮对话、Claude、异步任务、错误处理。
+按 agent 单独测试：
+
+```bash
+ACP_TOKEN=<token> bash test/test_codex.sh
+ACP_TOKEN=<token> bash test/test_kiro.sh
+ACP_TOKEN=<token> bash test/test_claude.sh
+```
+
+从主入口过滤：
+
+```bash
+ACP_TOKEN=<token> bash test/test.sh http://127.0.0.1:8001 --only codex
+```
+
+覆盖：agents 列表、同步/流式调用、多轮对话、Claude、Codex、异步任务、错误处理。
 
 ## 进程池管理
 
@@ -256,3 +345,6 @@ ACP_TOKEN=<token> bash test/test.sh http://127.0.0.1:8001
 | Discord 推送失败 | `account_id` 错误或缺失 | 确认用 `default`，不是 agent name |
 | Discord 500 | target 格式错误 | DM 用 `user:<id>`，频道用 `channel:<id>` |
 | job 卡住 | agent 进程异常 | 10min 后自动标记 failed |
+| Codex: 不信任目录 | `/tmp` 不是 git repo | 添加 `--skip-git-repo-check` 到 args |
+| Codex: 缺少 LITELLM_API_KEY | 环境变量未传递 | 在 config 中添加 `env.LITELLM_API_KEY` |
+| Codex: 不支持的参数 | Bedrock 拒绝 Codex 参数 | LiteLLM 配置 `drop_params: true` |

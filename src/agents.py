@@ -104,6 +104,7 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
 
         env = os.environ.copy()
         env.update({"TERM": "dumb", "NO_COLOR": "1", "LANG": "en_US.UTF-8"})
+        env.update(agent_cfg.get("env", {}))
 
         cmd = [command] + list(args) + [prompt]
         proc = await asyncio.create_subprocess_exec(

@@ -9,8 +9,8 @@
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
 ║    🤖 Kiro ───┐                                              ║
-║                ├──► acp 🌉 ──► 🦞 OpenClaw ──► 🌍 world     ║
-║    🤖 Claude ──┘                                             ║
+║    🤖 Claude ──┼──► acp 🌉 ──► 🦞 OpenClaw ──► 🌍 world     ║
+║    🤖 Codex ──┘                                              ║
 ║                                                              ║
 ║          https://github.com/xiwan/acp-bridge                 ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -22,7 +22,7 @@
 
 [中文文档](README.zh-CN.md)
 
-A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, etc.) via [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) over HTTP, with async job support and Discord push notifications.
+A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI Codex](https://github.com/openai/codex), etc.) via [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) over HTTP, with async job support and Discord push notifications.
 
 ## Architecture
 
@@ -33,14 +33,6 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, etc.) via
 └──────────┘            └──────────┘◀── /tools/invoke ──└──────────────┘               └──────────────┘
                                       (async job push)
 ```
-
-Two invocation modes:
-- **Sync / Streaming**: Call via `acp-client.sh`, wait for result
-- **Async Job**: Submit a task, get an immediate response, receive results via Discord webhook on completion
-
-Two agent modes:
-- **ACP mode** (recommended): stdio JSON-RPC bidirectional communication, structured event stream, process reuse
-- **PTY mode** (fallback): subprocess with line-by-line stdout reading, for legacy CLIs
 
 ## Features
 
@@ -69,7 +61,13 @@ acp-bridge/
 │   ├── SKILL.md         # Kiro/OpenClaw skill definition
 │   └── acp-client.sh    # Client script (bash + jq)
 ├── test/
-│   └── test.sh          # Integration tests
+│   ├── lib.sh           # Test helpers (assertions, env init)
+│   ├── test.sh          # Full test suite runner
+│   ├── test_common.sh   # Common tests (agent listing, error handling)
+│   ├── test_kiro.sh     # Kiro agent tests
+│   ├── test_claude.sh   # Claude agent tests
+│   ├── test_codex.sh    # Codex agent tests
+│   └── reports/         # Test reports
 ├── config.yaml          # Service configuration
 ├── pyproject.toml
 └── uv.lock
@@ -79,8 +77,9 @@ acp-bridge/
 
 - Python >= 3.12
 - [uv](https://docs.astral.sh/uv/) package manager
-- A CLI agent installed (e.g. `kiro-cli`, `claude-agent-acp`)
+- A CLI agent installed (e.g. `kiro-cli`, `claude-agent-acp`, `codex`)
 - Client dependencies: `curl`, `jq`, `uuidgen`
+- For Codex: [Node.js](https://nodejs.org/) (npm), [LiteLLM](https://github.com/BerriAI/litellm) (if using non-OpenAI models via proxy)
 
 ## Quick Start
 
@@ -90,6 +89,66 @@ cp config.yaml.example config.yaml
 # Edit config.yaml with your settings
 uv sync
 uv run main.py
+```
+
+## Codex + LiteLLM Setup
+
+[OpenAI Codex CLI](https://github.com/openai/codex) doesn't support ACP protocol natively, so it runs in PTY mode (subprocess). To use non-OpenAI models (e.g. Kimi K2.5 on Bedrock), Codex needs [LiteLLM](https://github.com/BerriAI/litellm) as an OpenAI-compatible proxy.
+
+### Install
+
+```bash
+# Codex CLI
+npm i -g @openai/codex
+
+# LiteLLM proxy
+pip install 'litellm[proxy]'
+```
+
+### Configure Codex
+
+```toml
+# ~/.codex/config.toml
+model = "bedrock/moonshotai.kimi-k2.5"
+model_provider = "bedrock"
+
+[model_providers.bedrock]
+name = "AWS Bedrock via LiteLLM"
+base_url = "http://localhost:4000/v1"
+env_key = "LITELLM_API_KEY"
+```
+
+### Configure LiteLLM
+
+```yaml
+# ~/.codex/litellm-config.yaml
+model_list:
+  - model_name: "bedrock/moonshotai.kimi-k2.5"
+    litellm_params:
+      model: "bedrock/moonshotai.kimi-k2.5"
+      aws_region_name: "us-east-1"
+
+general_settings:
+  master_key: "sk-litellm-bedrock"
+
+litellm_settings:
+  drop_params: true
+```
+
+`drop_params: true` is required — Codex sends parameters (e.g. `web_search_options`) that Bedrock doesn't support.
+
+LiteLLM uses the EC2 instance's AWS credentials (IAM Role or `~/.aws/credentials`) to access Bedrock. The `master_key` is just the proxy's own auth token.
+
+### Start LiteLLM
+
+```bash
+LITELLM_API_KEY="sk-litellm-bedrock" litellm --config ~/.codex/litellm-config.yaml --port 4000
+```
+
+### Data Flow
+
+```
+acp-bridge ──(PTY)──► codex exec ──(HTTP)──► LiteLLM :4000 ──(Bedrock API)──► Kimi K2.5
 ```
 
 ## Configuration
@@ -129,6 +188,15 @@ agents:
     acp_args: []
     working_dir: "/tmp"
     description: "Claude Code agent (via ACP adapter)"
+  codex:
+    enabled: true
+    mode: "pty"
+    command: "codex"
+    args: ["exec", "--full-auto", "--skip-git-repo-check"]
+    working_dir: "/tmp"
+    description: "OpenAI Codex CLI agent"
+    env:
+      LITELLM_API_KEY: "sk-litellm-bedrock"
 ```
 
 ## Client Usage
@@ -227,7 +295,21 @@ POST /jobs → Bridge executes in background → On completion POST to OpenClaw 
 ACP_TOKEN=<token> bash test/test.sh http://127.0.0.1:8001
 ```
 
-Covers: agent listing, sync/streaming calls, multi-turn conversation, Claude, async jobs, error handling.
+Run individual agent tests:
+
+```bash
+ACP_TOKEN=<token> bash test/test_codex.sh
+ACP_TOKEN=<token> bash test/test_kiro.sh
+ACP_TOKEN=<token> bash test/test_claude.sh
+```
+
+Or filter from the main runner:
+
+```bash
+ACP_TOKEN=<token> bash test/test.sh http://127.0.0.1:8001 --only codex
+```
+
+Covers: agent listing, sync/streaming calls, multi-turn conversation, Claude, Codex, async jobs, error handling.
 
 ## Process Pool
 
@@ -255,6 +337,9 @@ Covers: agent listing, sync/streaming calls, multi-turn conversation, Claude, as
 | Discord push fails | Wrong or missing `account_id` | Use `default`, not agent name |
 | Discord 500 | Bad target format | DM: `user:<id>`, channel: `channel:<id>` |
 | Job stuck | Agent process anomaly | Auto-marked failed after 10min |
+| Codex: not trusted dir | `/tmp` not a git repo | Add `--skip-git-repo-check` to args |
+| Codex: missing LITELLM_API_KEY | Env var not passed | Add `env.LITELLM_API_KEY` in config |
+| Codex: unsupported params | Bedrock rejects Codex params | Set `drop_params: true` in LiteLLM config |
 
 ## Security
 
