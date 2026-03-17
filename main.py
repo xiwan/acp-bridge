@@ -72,10 +72,11 @@ def main():
                     agents_cfg[name].setdefault("env", {}).update(litellm_env)
         except Exception as e:
             log.warning("litellm: unreachable at %s (%s)", litellm_url, e)
-            for name in required_by:
-                if name in agents_cfg:
-                    del agents_cfg[name]
-                    log.warning("litellm: disabled agent '%s' (depends on litellm)", name)
+            disabled = [n for n in required_by if n in agents_cfg]
+            for name in disabled:
+                del agents_cfg[name]
+            if disabled:
+                print(f"\n⚠️  LiteLLM ({litellm_url}) is not reachable — disabled agents: {', '.join(disabled)}\n")
             if not agents_cfg:
                 log.error("All agents disabled due to litellm dependency")
                 sys.exit(1)
