@@ -189,18 +189,21 @@ def main():
         agent_list = []
         for name, cfg in agents_cfg.items():
             alive = stats["by_agent"].get(name, 0)
-            # Check if agent processes are actually responsive
-            healthy = True
+            sessions = []
             if pool:
                 for (a, sid), conn in pool._connections.items():
-                    if a == name and not conn.alive:
-                        healthy = False
-                        break
+                    if a == name:
+                        sessions.append({
+                            "session_id": sid,
+                            "alive": conn.alive,
+                            "idle": round(time.time() - conn.last_active, 1),
+                        })
             agent_list.append({
                 "name": name,
                 "mode": cfg.get("mode", "pty"),
                 "alive_sessions": alive,
-                "healthy": healthy,
+                "healthy": alive > 0 or cfg.get("mode") == "pty",
+                "sessions": sessions,
             })
         return {"version": _VERSION, "agents": agent_list}
 
@@ -214,6 +217,7 @@ def main():
         while True:
             await asyncio.sleep(60)
             if pool:
+                await pool.health_check()
                 await pool.cleanup_idle(ttl_hours * 3600)
             if job_mgr:
                 job_mgr.cleanup()

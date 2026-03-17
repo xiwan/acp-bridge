@@ -228,6 +228,21 @@ class AcpConnection:
                 except asyncio.CancelledError:
                     pass
 
+    async def ping(self, timeout: float = 5) -> bool:
+        """Lightweight health probe — send a no-op JSON-RPC request."""
+        if not self.alive:
+            return False
+        try:
+            await asyncio.wait_for(
+                self._send_request("ping", {}), timeout=timeout
+            )
+            return True
+        except AcpError:
+            # Agent replied with an error (method not found) — still alive
+            return True
+        except Exception:
+            return False
+
 
 class AcpProcessPool:
     def __init__(self, agents_config: dict, max_processes: int = 20, max_per_agent: int = 10, verbose: bool = False):
@@ -304,6 +319,22 @@ class AcpProcessPool:
             conn = self._connections.pop(key)
             log.info("cleanup idle: agent=%s session=%s", key[0], key[1])
             await conn.kill()
+
+    async def health_check(self) -> None:
+        """Ping all idle connections; kill and remove unresponsive ones."""
+        dead: list[tuple[str, str]] = []
+        for key, conn in list(self._connections.items()):
+            if not conn.alive:
+                dead.append(key)
+                continue
+            ok = await conn.ping()
+            if not ok:
+                dead.append(key)
+        for key in dead:
+            conn = self._connections.pop(key, None)
+            if conn:
+                log.warning("health_check: agent=%s session=%s unresponsive, killing", key[0], key[1])
+                await conn.kill()
 
     async def shutdown(self) -> None:
         for key, conn in list(self._connections.items()):
