@@ -56,6 +56,26 @@ def main():
         log.error("No enabled agents in config")
         sys.exit(1)
 
+    # LiteLLM dependency check
+    litellm_cfg = config.get("litellm", {})
+    litellm_url = litellm_cfg.get("url", "")
+    required_by = litellm_cfg.get("required_by", [])
+    if litellm_url and required_by:
+        import httpx
+        try:
+            resp = httpx.get(f"{litellm_url}/health", timeout=5)
+            resp.raise_for_status()
+            log.info("litellm: reachable at %s", litellm_url)
+        except Exception as e:
+            log.warning("litellm: unreachable at %s (%s)", litellm_url, e)
+            for name in required_by:
+                if name in agents_cfg:
+                    del agents_cfg[name]
+                    log.warning("litellm: disabled agent '%s' (depends on litellm)", name)
+            if not agents_cfg:
+                log.error("All agents disabled due to litellm dependency")
+                sys.exit(1)
+
     # Pool for ACP mode agents
     pool_cfg = config.get("pool", {})
     acp_agents = {k: v for k, v in agents_cfg.items() if v.get("mode") == "acp"}

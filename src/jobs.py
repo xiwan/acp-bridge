@@ -122,6 +122,7 @@ class JobManager:
         cfg = self._pty_configs[job.agent]
         command = cfg["command"]
         args = cfg.get("args", [])
+        idle_timeout = cfg.get("idle_timeout", 300)
         env = os.environ.copy()
         env.update({"TERM": "dumb", "NO_COLOR": "1", "LANG": "en_US.UTF-8"})
         env.update(cfg.get("env", {}))
@@ -136,7 +137,15 @@ class JobManager:
                 env=env,
             )
             while True:
-                line = await proc.stdout.readline()
+                try:
+                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=idle_timeout)
+                except asyncio.TimeoutError:
+                    log.warning("pty_timeout: job=%s cmd=%s idle=%ds", job.job_id, command, idle_timeout)
+                    proc.kill()
+                    await proc.wait()
+                    job.error = f"agent timeout (idle {idle_timeout}s)"
+                    job.status = "failed"
+                    return
                 if not line:
                     break
                 text = ANSI_RE.sub("", line.decode()).rstrip("\n")

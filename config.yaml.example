@@ -14,6 +14,13 @@ security:
     - "127.0.0.1"
     # - "<client-ip>"
 
+# litellm (optional): shared LLM proxy dependency check
+# If url is set, bridge checks reachability on startup;
+# agents listed in required_by are disabled if unreachable.
+litellm:
+  url: "http://localhost:4000"
+  required_by: ["codex"]
+
 agents:
   kiro:
     enabled: true

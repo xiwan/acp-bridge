@@ -32,6 +32,7 @@ class AcpConnection:
     _req_id: int = field(default=0, init=False)
     _pending: dict[int, asyncio.Future] = field(default_factory=dict, init=False)
     _reader_task: asyncio.Task | None = field(default=None, init=False)
+    _stderr_task: asyncio.Task | None = field(default=None, init=False)
     _notification_queues: dict[int, asyncio.Queue] = field(default_factory=dict, init=False)
     acp_session_id: str | None = field(default=None, init=False)
     last_active: float = field(default_factory=time.time, init=False)
@@ -69,6 +70,18 @@ class AcpConnection:
 
     def _start_reader(self) -> None:
         self._reader_task = asyncio.create_task(self._read_loop())
+        self._stderr_task = asyncio.create_task(self._drain_stderr())
+
+    async def _drain_stderr(self) -> None:
+        try:
+            while True:
+                line = await self.proc.stderr.readline()
+                if not line:
+                    break
+                if self.verbose:
+                    log.debug("acp_stderr: %s", line.decode().rstrip()[:300])
+        except Exception:
+            pass
 
     async def _read_loop(self) -> None:
         try:
@@ -207,12 +220,13 @@ class AcpConnection:
             except (ProcessLookupError, PermissionError):
                 self.proc.kill()
             await self.proc.wait()
-        if self._reader_task and not self._reader_task.done():
-            self._reader_task.cancel()
-            try:
-                await self._reader_task
-            except asyncio.CancelledError:
-                pass
+        for task in (self._reader_task, self._stderr_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
 
 class AcpProcessPool:

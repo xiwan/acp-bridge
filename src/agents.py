@@ -93,6 +93,7 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
     """Legacy PTY handler — subprocess stdout line-by-line."""
     command = agent_cfg["command"]
     args = agent_cfg.get("args", [])
+    idle_timeout = agent_cfg.get("idle_timeout", 300)
 
     async def handler(
         input: list[Message], context: Context
@@ -116,15 +117,27 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
             env=env,
         )
 
-        while True:
-            line = await proc.stdout.readline()
-            if not line:
-                break
-            text = strip_ansi(line.decode()).rstrip("\n")
-            if text:
-                yield MessagePart(content=text + "\n", content_type="text/plain")
+        try:
+            while True:
+                try:
+                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=idle_timeout)
+                except asyncio.TimeoutError:
+                    log.warning("pty_timeout: cmd=%s session=%s idle=%ds", command, session_id, idle_timeout)
+                    proc.kill()
+                    await proc.wait()
+                    yield MessagePart(content=f"[error] agent timeout (idle {idle_timeout}s)\n", content_type="text/plain")
+                    return
+                if not line:
+                    break
+                text = strip_ansi(line.decode()).rstrip("\n")
+                if text:
+                    yield MessagePart(content=text + "\n", content_type="text/plain")
 
-        await proc.wait()
+            await proc.wait()
+        except Exception:
+            proc.kill()
+            await proc.wait()
+            raise
         log.info("pty_done: cmd=%s session=%s exit=%s", command, session_id, proc.returncode)
 
     return handler
