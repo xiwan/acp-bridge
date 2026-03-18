@@ -72,20 +72,12 @@ class DiscordFormatter(JobFormatter):
         # 2) Body
         if job.status == "completed" and job.result.strip():
             chunks = _split(job.result, self.text_limit - 100)
-            if len(chunks) > self.chunk_threshold and base_url:
-                # Too long — send preview + link
-                preview = "\n".join(f"> {line}" if line else ">" for line in chunks[0].splitlines())
-                link = f"{base_url}/jobs/{job.job_id}/result"
-                payloads.append(self._msg(target,
-                    f"📄 **Result** — {job.agent} `{job.job_id[:8]}`\n"
-                    f"{preview}\n>\n> ...\n>\n> 📎 [Full result ({len(chunks)} parts)]({link})"))
-            else:
-                for i, chunk in enumerate(chunks):
-                    header = f"📄 **Result** — {job.agent} `{job.job_id[:8]}`"
-                    if len(chunks) > 1:
-                        header += f" [{i+1}/{len(chunks)}]"
-                    body = "\n".join(f"> {line}" if line else ">" for line in chunk.splitlines())
-                    payloads.append(self._msg(target, f"{header}\n{body}"))
+            for i, chunk in enumerate(chunks):
+                header = f"📄 **Result** — {job.agent} `{job.job_id[:8]}`"
+                if len(chunks) > 1:
+                    header += f" [{i+1}/{len(chunks)}]"
+                body = "\n".join(f"> {line}" if line else ">" for line in chunk.splitlines())
+                payloads.append(self._msg(target, f"{header}\n{body}"))
 
         return payloads
 
