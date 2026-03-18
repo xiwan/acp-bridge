@@ -278,6 +278,7 @@ class AcpProcessPool:
 
         conn = await self._spawn(agent, session_id, agent_cfg, is_rebuild=is_rebuild, cwd_override=cwd)
         self._connections[key] = conn
+        self._save_pids()
         return conn
 
     async def _spawn(self, agent: str, session_id: str, cfg: dict, is_rebuild: bool = False, cwd_override: str = "") -> AcpConnection:
@@ -308,6 +309,7 @@ class AcpProcessPool:
         if conn:
             log.info("closing: agent=%s session=%s", agent, session_id)
             await conn.kill()
+            self._save_pids()
 
     def remove(self, agent: str, session_id: str) -> None:
         self._connections.pop((agent, session_id), None)
@@ -341,6 +343,40 @@ class AcpProcessPool:
             log.info("shutdown: killing agent=%s session=%s", key[0], key[1])
             await conn.kill()
         self._connections.clear()
+
+    _pidfile = Path("/tmp/acp-bridge-pids")
+
+    def _save_pids(self) -> None:
+        """Persist managed subprocess PIDs to disk for ghost cleanup across restarts."""
+        pids = {str(c.proc.pid) for c in self._connections.values()}
+        self._pidfile.write_text("\n".join(pids) + "\n" if pids else "")
+
+    def cleanup_ghosts(self) -> int:
+        """Kill orphaned agent processes recorded by a previous Bridge run."""
+        if not self._pidfile.exists():
+            return 0
+        own_pids = {c.proc.pid for c in self._connections.values()}
+        killed = 0
+        for line in self._pidfile.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            pid = int(line)
+            if pid in own_pids:
+                continue
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    continue
+            log.warning("ghost_cleanup: killed pid=%d", pid)
+            killed += 1
+        if killed:
+            log.info("ghost_cleanup: killed %d orphaned processes", killed)
+        self._pidfile.unlink(missing_ok=True)
+        return killed
 
     @property
     def stats(self) -> dict:

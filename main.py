@@ -307,6 +307,8 @@ def main():
     @asynccontextmanager
     async def lifespan(application):
         async with _original_lifespan(application):
+            if pool:
+                pool.cleanup_ghosts()
             task = asyncio.create_task(cleanup_loop())
             yield
             task.cancel()
