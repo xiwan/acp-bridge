@@ -63,15 +63,19 @@ acp-bridge/
 │   └── acp-client.sh    # Agent client script (bash + jq)
 ├── tools/
 │   └── tools-client.sh  # OpenClaw tools client (debug + integration)
+├── examples/
+│   └── echo-agent.py    # Minimal ACP-compliant reference agent
 ├── test/
-│   ├── lib.sh           # Test helpers (assertions, env init)
-│   ├── test.sh          # Full test suite runner
-│   ├── test_common.sh   # Common tests (agent listing, error handling)
-│   ├── test_tools.sh    # OpenClaw tools proxy tests
-│   ├── test_kiro.sh     # Kiro agent tests
-│   ├── test_claude.sh   # Claude agent tests
-│   ├── test_codex.sh    # Codex agent tests
-│   └── reports/         # Test reports
+│   ├── lib.sh                     # Test helpers (assertions, env init)
+│   ├── test.sh                    # Full test suite runner
+│   ├── test_agent_compliance.sh   # Agent compliance test (direct stdio, no Bridge needed)
+│   ├── test_common.sh             # Common tests (agent listing, error handling)
+│   ├── test_tools.sh              # OpenClaw tools proxy tests
+│   ├── test_kiro.sh               # Kiro agent tests
+│   ├── test_claude.sh             # Claude agent tests
+│   ├── test_codex.sh              # Codex agent tests
+│   └── reports/                   # Test reports
+├── AGENT_SPEC.md        # ACP agent integration specification
 ├── config.yaml          # Service configuration
 ├── pyproject.toml
 └── uv.lock
@@ -364,6 +368,20 @@ curl -X POST http://<bridge>:8001/tools/invoke \
 Requires `webhook.url` to be configured pointing to an OpenClaw Gateway.
 
 ## Testing
+
+### Agent Compliance Test
+
+Verify a CLI agent implements the ACP protocol correctly — **no Bridge required**:
+
+```bash
+bash test/test_agent_compliance.sh kiro-cli acp --trust-all-tools
+bash test/test_agent_compliance.sh claude-agent-acp
+bash test/test_agent_compliance.sh python3 examples/echo-agent.py
+```
+
+Covers: initialize, session/new, session/prompt (notifications + result), ping. See [AGENT_SPEC.md](AGENT_SPEC.md) for the full specification.
+
+### Integration Tests
 
 ```bash
 ACP_TOKEN=<token> bash test/test.sh http://127.0.0.1:8001
