@@ -197,6 +197,8 @@ class JobManager:
                              resp.status_code, payloads.index(payload) + 1, len(payloads))
                     if resp.status_code != 200:
                         break
+                    if len(payloads) > 1:
+                        await asyncio.sleep(0.5)
                 else:
                     job.webhook_sent = True
         except Exception as e:
