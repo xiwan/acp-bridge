@@ -75,7 +75,7 @@ class DiscordFormatter(JobFormatter):
                 header = f"📄 **Result** — {job.agent} `{job.job_id[:8]}`"
                 if len(chunks) > 1:
                     header += f" [{i+1}/{len(chunks)}]"
-                body = "\n".join(f"> {line}" for line in chunk.splitlines())
+                body = "\n".join(f"> {line}" if line else ">" for line in chunk.splitlines())
                 payloads.append(self._msg(target, f"{header}\n{body}"))
 
         return payloads
