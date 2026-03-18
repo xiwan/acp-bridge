@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.7.3 — 通过 ACP Bridge HTTP API 调用远程 CLI agent。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /cli cx <prompt> (codex)"
+description: "v0.7.3 — 通过 ACP Bridge HTTP API 调用远程 CLI agent。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /chat ko (进入对话模式)"
 ---
 
 # ACP Bridge Caller — Invoke Remote CLI Agents
@@ -15,12 +15,97 @@ Call remote CLI agents (Kiro CLI, Claude Code, OpenAI Codex, etc.) via the [ACP 
 | `/cli ko <prompt>` | Call kiro agent |
 | `/cli cc <prompt>` | Call claude agent |
 | `/cli cx <prompt>` | Call codex agent |
+| `/chat ko [--cwd <path>]` | 激活 kiro 进入对话模式 |
+| `/chat cc [--cwd <path>]` | 激活 claude 进入对话模式 |
+| `/chat end` | 退出对话模式，清空状态 |
+| `/chat status` | 查看当前对话状态 |
 
 Command mapping:
 - `/cli ko ...` → `$ACP_CLIENT -a kiro "..."`
 - `/cli cc ...` → `$ACP_CLIENT -a claude "..."`
 - `/cli cx ...` → `$ACP_CLIENT -a codex "..."`
 - `/cli ...` → `$ACP_CLIENT "..."` (uses default agent)
+
+## Message Routing Priority
+
+收到用户消息时，按以下优先级依次匹配，命中即停止：
+
+1. **第一优先：`/chat` 命令** — 消息以 `/chat` 开头 → 走 Chat 命令处理（`/chat ko`、`/chat cc`、`/chat end`、`/chat status`）
+2. **第二优先：`/cli` 命令** — 消息以 `/cli` 开头 → 走 CLI 单次调用
+3. **第三优先：Chat 对话透传** — `chat-state.json` 存在且 `active_agent` 非空 → 将整条消息作为 prompt 自动透传给当前 active agent（复用 state 中的 session_id 和 cwd）
+4. **兜底** — 以上均不匹配 → 正常处理（不调用 ACP Bridge）
+
+## Chat Mode
+
+Chat 模式允许激活一个 agent 后，后续消息自动透传给该 agent，无需每次输入 `/cli` 前缀。
+
+### 状态文件
+
+状态文件 `chat-state.json` 存放在本 skill 目录（与 SKILL.md 同级），JSON 格式：
+
+```json
+{
+  "active_agent": "kiro",
+  "session_id": "00000000-0000-0000-0000-000000000001",
+  "cwd": "/home/ec2-user/projects/acp-bridge",
+  "started_at": "2025-01-15T10:30:00Z"
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `active_agent` | 当前激活的 agent 名称（`kiro`、`claude` 等） |
+| `session_id` | 该 agent 使用的 session UUID，用于多轮对话 |
+| `cwd` | 工作目录，传递给 acp-client.sh 的 `--cwd` 参数 |
+| `started_at` | 激活时间（ISO 8601） |
+
+### `/chat ko` / `/chat cc` — 激活对话模式
+
+```bash
+# 激活 kiro，使用默认工作目录
+/chat ko
+
+# 激活 kiro，指定工作目录
+/chat ko --cwd /home/ec2-user/projects/acp-bridge
+
+# 激活 claude
+/chat cc
+```
+
+处理流程：
+1. 为该 agent 生成或复用一个固定的 session_id（与 `/cli` 模式相同的 UUID 生成规则）
+2. 将 `active_agent`、`session_id`、`cwd`、`started_at` 写入 `chat-state.json`
+3. 回复用户确认激活，例如：`🟢 已进入 kiro 对话模式 (session: xxx)`
+
+**切换 agent**：如果当前已有 active agent，直接替换 `chat-state.json` 中的状态。旧 session 不销毁（session_id 保留在服务端），后续可通过 `/cli -s <old-session-id>` 恢复。
+
+### `/chat end` — 退出对话模式
+
+删除 `chat-state.json`（或清空 `active_agent`），回复：`🔴 已退出对话模式`
+
+### `/chat status` — 查看状态
+
+读取 `chat-state.json`，输出：
+
+```
+📊 Chat 状态
+- Agent: kiro
+- Session: 00000000-0000-0000-0000-000000000001
+- 工作目录: /home/ec2-user/projects/acp-bridge
+- 已激活: 15 分钟
+```
+
+如果没有激活的对话，输出：`ℹ️ 当前无活跃对话`
+
+### 对话透传
+
+当 `chat-state.json` 存在且 `active_agent` 非空时，用户发送的非 `/chat`、非 `/cli` 消息自动透传：
+
+```bash
+$ACP_CLIENT -a <active_agent> -s <session_id> "<用户消息>"
+```
+
+如果 state 中有 `cwd`，则附加 `--cwd` 参数。
 
 ## Prerequisites
 
