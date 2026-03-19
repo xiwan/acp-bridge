@@ -1,0 +1,44 @@
+server:
+  host: "0.0.0.0"
+  port: 8001
+  session_ttl_hours: 24
+  shutdown_timeout: 30
+
+pool:
+  max_processes: 20
+  max_per_agent: 10
+
+security:
+  auth_token: "${ACP_BRIDGE_TOKEN}"
+  allowed_ips:
+    - "127.0.0.1"
+    - "172.16.0.0/12"
+
+litellm:
+  url: "http://host.docker.internal:4000"
+  required_by: ["codex"]
+  env:
+    LITELLM_API_KEY: "${LITELLM_API_KEY}"
+
+agents:
+  kiro:
+    enabled: true
+    mode: "acp"
+    command: "kiro-cli"
+    acp_args: ["acp", "--trust-all-tools"]
+    working_dir: "/workspace"
+    description: "Kiro CLI agent"
+  claude:
+    enabled: true
+    mode: "acp"
+    command: "claude-agent-acp"
+    acp_args: []
+    working_dir: "/workspace"
+    description: "Claude Code agent (via ACP adapter)"
+  codex:
+    enabled: true
+    mode: "pty"
+    command: "codex"
+    args: ["exec", "--full-auto", "--skip-git-repo-check"]
+    working_dir: "/workspace"
+    description: "OpenAI Codex CLI agent"

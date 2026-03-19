@@ -105,6 +105,30 @@ uv sync
 uv run main.py
 ```
 
+## Docker Quick Start
+
+```bash
+# 1. Copy the Docker-friendly config
+cp config.yaml.docker-example config.yaml
+# Edit config.yaml as needed
+
+# 2. Create a workspace directory for agents
+mkdir -p workspace
+
+# 3. Set environment variables
+export ANTHROPIC_API_KEY=<your-key>
+export ACP_BRIDGE_TOKEN=<your-token>
+export LITELLM_API_KEY=<your-key>       # optional, for Codex
+
+# 4. Build and run
+docker compose up -d
+
+# Check logs
+docker compose logs -f
+```
+
+The container bundles Kiro CLI, Claude Code, and OpenAI Codex. Agent working directories point to `/workspace` (mounted from `./workspace`).
+
 ## Codex + LiteLLM Setup
 
 [OpenAI Codex CLI](https://github.com/openai/codex) doesn't support ACP protocol natively, so it runs in PTY mode (subprocess). To use non-OpenAI models (e.g. Kimi K2.5 on Bedrock), Codex needs [LiteLLM](https://github.com/BerriAI/litellm) as an OpenAI-compatible proxy.
