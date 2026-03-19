@@ -63,7 +63,10 @@ def main():
     if litellm_url and required_by:
         import httpx
         try:
-            resp = httpx.get(f"{litellm_url}/health", timeout=5)
+            litellm_env = litellm_cfg.get("env", {})
+            api_key = litellm_env.get("LITELLM_API_KEY", "")
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+            resp = httpx.get(f"{litellm_url}/health/liveliness", timeout=15, headers=headers)
             resp.raise_for_status()
             log.info("litellm: reachable at %s", litellm_url)
             litellm_env = litellm_cfg.get("env", {})

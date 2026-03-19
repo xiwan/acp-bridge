@@ -1,0 +1,41 @@
+# ACP Bridge — Light Mode
+#
+# Mount your host agent CLIs into the container.
+# Uncomment the agents you have installed.
+#
+# Usage:
+#   cp config.yaml.example config.yaml  # edit config
+#   export ACP_BRIDGE_TOKEN=<your-token>
+#   docker compose -f docker/light/docker-compose.yml up -d
+
+services:
+  acp-bridge:
+    build:
+      context: ../..
+      dockerfile: docker/light/Dockerfile
+    network_mode: host
+    environment:
+      - ACP_BRIDGE_TOKEN
+      - CLAUDE_CODE_USE_BEDROCK        # set to 1 for Bedrock
+      - ANTHROPIC_MODEL                # e.g. global.anthropic.claude-sonnet-4-6
+      - ANTHROPIC_API_KEY              # or use API key directly
+      - LITELLM_API_KEY                # for Codex via LiteLLM
+    volumes:
+      - ../../config.yaml:/app/config.yaml
+
+      ## --- Kiro CLI (native binary) ---
+      # - ~/.local/bin/kiro-cli:/usr/local/bin/kiro-cli:ro
+      # - ~/.local/bin/kiro-cli-chat:/usr/local/bin/kiro-cli-chat:ro
+      # - ~/.local/bin/kiro-cli-term:/usr/local/bin/kiro-cli-term:ro
+      # - ~/.kiro:/home/app/.kiro                              # config + settings
+      # - ~/.local/share/kiro-cli:/home/app/.local/share/kiro-cli  # auth data
+
+      ## --- Claude Code (npm, needs node in container ✅) ---
+      # - /usr/lib/node_modules/@zed-industries:/usr/lib/node_modules/@zed-industries:ro
+      # - /usr/lib/node_modules/@anthropic-ai:/usr/lib/node_modules/@anthropic-ai:ro
+
+      ## --- Codex (npm, needs node in container ✅) ---
+      # - /usr/lib/node_modules/@openai:/usr/lib/node_modules/@openai:ro
+      # - ~/.codex:/home/app/.codex:ro                         # codex config
+
+    restart: unless-stopped

@@ -107,27 +107,27 @@ uv run main.py
 
 ## Docker Quick Start
 
+A lightweight Docker image containing only the ACP Bridge gateway. Agent CLIs (Kiro, Claude Code, Codex) stay on your host — mount them into the container as needed.
+
 ```bash
-# 1. Copy the Docker-friendly config
-cp config.yaml.docker-example config.yaml
-# Edit config.yaml as needed
+# 1. Prepare config
+cp config.yaml.example config.yaml
+# Edit config.yaml with your settings
 
-# 2. Create a workspace directory for agents
-mkdir -p workspace
-
-# 3. Set environment variables
-export ANTHROPIC_API_KEY=<your-key>
+# 2. Set environment variables
 export ACP_BRIDGE_TOKEN=<your-token>
-export LITELLM_API_KEY=<your-key>       # optional, for Codex
+
+# 3. Edit docker/light/docker-compose.yml
+#    Uncomment volume mounts for the agents you have installed
 
 # 4. Build and run
-docker compose up -d
+docker compose -f docker/light/docker-compose.yml up -d
 
 # Check logs
-docker compose logs -f
+docker compose -f docker/light/docker-compose.yml logs -f
 ```
 
-The container bundles Kiro CLI, Claude Code, and OpenAI Codex. Agent working directories point to `/workspace` (mounted from `./workspace`).
+See `docker/light/docker-compose.yml` for mount examples for each agent.
 
 ## Codex + LiteLLM Setup
 
