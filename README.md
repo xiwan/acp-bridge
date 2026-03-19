@@ -57,6 +57,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.8.1 | 2026-03-19 | Docker image 618→439MB, agent-optimized README, test coverage 25→31 |
 | v0.8.0 | 2026-03-19 | Docker light mode: gateway-only image with host agent mounting |
 | v0.7.3 | 2026-03-18 | Request-level cwd, tools proxy fix, test improvements |
 | v0.7.2 | 2026-03-18 | Multi-IM formatter (Discord/Feishu), unified target field, systemd |
