@@ -285,6 +285,7 @@ class AcpProcessPool:
         command = cfg["command"]
         acp_args = cfg.get("acp_args", ["acp"])
         cwd = cwd_override or cfg.get("working_dir", "/tmp")
+        os.makedirs(cwd, exist_ok=True)
 
         log.info("spawning: agent=%s session=%s cmd=%s %s rebuild=%s", agent, session_id, command, acp_args, is_rebuild)
         proc = await asyncio.create_subprocess_exec(

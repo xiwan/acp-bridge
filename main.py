@@ -377,7 +377,7 @@ def main():
     atexit.register(_kill_all)
 
     uvicorn.run(app, host=host, port=port, log_level="debug" if args.verbose else "info",
-                timeout_graceful_shutdown=shutdown_timeout)
+                timeout_graceful_shutdown=shutdown_timeout, loop="asyncio")
 
 
 if __name__ == "__main__":
