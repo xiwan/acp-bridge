@@ -55,6 +55,17 @@
 - OpenClaw tools 代理：统一入口调用 message/tts/nodes/cron/web_search 等
 - 客户端纯 bash + jq，零 python 依赖
 
+## 版本记录
+
+| 版本 | 日期 | 说明 |
+|------|------|------|
+| v0.8.0 | 2026-03-19 | Docker light 模式：仅网关镜像，agent 从宿主机挂载 |
+| v0.7.3 | 2026-03-18 | 请求级 cwd、tools 代理修复、测试改进 |
+| v0.7.2 | 2026-03-18 | 多 IM 格式化（Discord/飞书）、统一 target 字段、systemd |
+| v0.7.1 | 2026-03-18 | ACP agent 合规测试、AGENT_SPEC.md、echo-agent 参考实现 |
+| v0.7.0 | 2026-03-17 | OpenClaw tools 代理、agent 健康探测、自动恢复 |
+| v0.6.0 | 2026-03-15 | Codex PTY 支持、LiteLLM 集成、acp-client.sh |
+
 ## 项目结构
 
 ```

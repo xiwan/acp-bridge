@@ -53,6 +53,17 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 - OpenClaw tools proxy: unified entry point for message/tts/nodes/cron/web_search and more
 - Client is pure bash + jq, zero Python dependency
 
+## Changelog
+
+| Version | Date | Description |
+|---------|------|-------------|
+| v0.8.0 | 2026-03-19 | Docker light mode: gateway-only image with host agent mounting |
+| v0.7.3 | 2026-03-18 | Request-level cwd, tools proxy fix, test improvements |
+| v0.7.2 | 2026-03-18 | Multi-IM formatter (Discord/Feishu), unified target field, systemd |
+| v0.7.1 | 2026-03-18 | ACP agent compliance test, AGENT_SPEC.md, echo-agent reference impl |
+| v0.7.0 | 2026-03-17 | OpenClaw tools proxy, agent health probe, auto-recovery |
+| v0.6.0 | 2026-03-15 | Codex PTY support, LiteLLM integration, acp-client.sh |
+
 ## Project Structure
 
 ```
