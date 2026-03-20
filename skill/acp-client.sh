@@ -9,7 +9,7 @@
 #   acp-client.sh -l                          # 列出可用 agents
 #
 # 环境变量:
-#   ACP_BRIDGE_URL  — Bridge 地址 (默认 http://127.0.0.1:8001)
+#   ACP_BRIDGE_URL  — Bridge 地址 (默认 http://127.0.0.1:8002)
 #   ACP_AGENT       — 默认 agent (默认 kiro)
 #   ACP_TOKEN       — 认证 token
 #   ACP_RETRIES     — 失败重试次数 (默认 2)
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-URL="${ACP_BRIDGE_URL:-http://127.0.0.1:8001}"
+URL="${ACP_BRIDGE_URL:-http://127.0.0.1:8002}"
 AGENT="${ACP_AGENT:-kiro}"
 TOKEN="${ACP_TOKEN:-}"
 SESSION=""

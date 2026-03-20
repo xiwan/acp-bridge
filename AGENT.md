@@ -5,7 +5,7 @@
 ACP Bridge exposes local CLI agents (Kiro/Claude/Codex) via HTTP with async job support.
 
 ```
-CLI Agents (kiro/claude/codex) ↕ stdio JSON-RPC → ACP Bridge :8001 ↕ HTTP → OpenClaw → Discord/Feishu
+CLI Agents (kiro/claude/codex) ↕ stdio JSON-RPC → ACP Bridge :8002 ↕ HTTP → OpenClaw → Discord/Feishu
 ```
 
 ---
@@ -21,7 +21,7 @@ uv --version 2>&1 || echo "UV_NOT_FOUND"
 node --version 2>&1 || echo "NODE_NOT_FOUND"
 
 echo "=== Service ==="
-curl -s http://127.0.0.1:8001/health 2>/dev/null || echo "BRIDGE_NOT_RUNNING"
+curl -s http://127.0.0.1:8002/health 2>/dev/null || echo "BRIDGE_NOT_RUNNING"
 
 echo "=== Config ==="
 [ -f config.yaml ] && echo "CONFIG_EXISTS" || echo "CONFIG_NOT_FOUND"
@@ -99,7 +99,7 @@ sudo docker compose -f docker/light/docker-compose.yml up -d --build
 
 # 4. Check
 sudo docker compose -f docker/light/docker-compose.yml logs --tail 20
-curl -s http://127.0.0.1:8001/health
+curl -s http://127.0.0.1:8002/health
 ```
 
 > ⚠️ `sudo` does NOT pass shell env vars. Tokens must go in `docker/light/.env` file.
@@ -124,7 +124,7 @@ sudo systemctl enable --now acp-bridge
 # 4. Check
 sudo systemctl status acp-bridge
 sudo journalctl -u acp-bridge -f --no-pager -n 20
-curl -s http://127.0.0.1:8001/health
+curl -s http://127.0.0.1:8002/health
 ```
 
 ### Option C: nohup (quick & dirty)
@@ -140,7 +140,7 @@ nohup uv run main.py > /tmp/acp-bridge.log 2>&1 &
 echo $! > /tmp/acp-bridge.pid
 
 # 3. Check
-curl -s http://127.0.0.1:8001/health
+curl -s http://127.0.0.1:8002/health
 tail -f /tmp/acp-bridge.log
 ```
 
@@ -150,15 +150,15 @@ tail -f /tmp/acp-bridge.log
 
 ```bash
 # Health
-curl -s http://127.0.0.1:8001/health
+curl -s http://127.0.0.1:8002/health
 # → {"status":"ok"}
 
 # Agents
 export ACP_TOKEN=<token>
-curl -s http://127.0.0.1:8001/agents -H "Authorization: Bearer $ACP_TOKEN"
+curl -s http://127.0.0.1:8002/agents -H "Authorization: Bearer $ACP_TOKEN"
 
 # Full test suite (31 cases)
-ACP_TOKEN=$ACP_TOKEN bash test/test.sh http://127.0.0.1:8001
+ACP_TOKEN=$ACP_TOKEN bash test/test.sh http://127.0.0.1:8002
 ```
 
 ---

@@ -219,7 +219,7 @@ acp-bridge ──(PTY)──► codex exec ──(HTTP)──► LiteLLM :4000 �
 ```yaml
 server:
   host: "0.0.0.0"
-  port: 8001
+  port: 8002
   session_ttl_hours: 24
   shutdown_timeout: 30
 
@@ -273,7 +273,7 @@ agents:
 ### acp-client.sh
 
 ```bash
-export ACP_BRIDGE_URL=http://<bridge-ip>:8001
+export ACP_BRIDGE_URL=http://<bridge-ip>:8002
 export ACP_TOKEN=<your-token>
 
 # List available agents
@@ -304,7 +304,7 @@ Submit long-running tasks and get results pushed to Discord automatically.
 ### Submit
 
 ```bash
-curl -X POST http://<bridge>:8001/jobs \
+curl -X POST http://<bridge>:8002/jobs \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -320,7 +320,7 @@ curl -X POST http://<bridge>:8001/jobs \
 #### Feishu Example
 
 ```bash
-curl -X POST http://<bridge>:8001/jobs \
+curl -X POST http://<bridge>:8002/jobs \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -335,7 +335,7 @@ curl -X POST http://<bridge>:8001/jobs \
 ### Query
 
 ```bash
-curl http://<bridge>:8001/jobs/<job_id> \
+curl http://<bridge>:8002/jobs/<job_id> \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -424,7 +424,7 @@ ACP Bridge proxies OpenClaw's tool system, giving you a unified entry point for 
 ### Direct API
 
 ```bash
-curl -X POST http://<bridge>:8001/tools/invoke \
+curl -X POST http://<bridge>:8002/tools/invoke \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -457,7 +457,7 @@ Covers: initialize, session/new, session/prompt (notifications + result), ping. 
 ### Integration Tests
 
 ```bash
-ACP_TOKEN=<token> bash test/test.sh http://127.0.0.1:8001
+ACP_TOKEN=<token> bash test/test.sh http://127.0.0.1:8002
 ```
 
 Run individual agent tests:
@@ -471,7 +471,7 @@ ACP_TOKEN=<token> bash test/test_claude.sh
 Or filter from the main runner:
 
 ```bash
-ACP_TOKEN=<token> bash test/test.sh http://127.0.0.1:8001 --only codex
+ACP_TOKEN=<token> bash test/test.sh http://127.0.0.1:8002 --only codex
 ```
 
 Covers: agent listing, sync/streaming calls, multi-turn conversation, Claude, Codex, async jobs, error handling.
