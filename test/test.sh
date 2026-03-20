@@ -1,13 +1,13 @@
 #!/bin/bash
 # ACP Bridge 全量测试 — 按 agent 类型分别执行
 # 用法: bash test/test.sh [bridge_url]
-#       bash test/test.sh http://127.0.0.1:8002 --only kiro
+#       bash test/test.sh http://127.0.0.1:8010 --only kiro
 # 环境变量: ACP_TOKEN (必填)
 
 set -uo pipefail
 
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
-export ACP_BRIDGE_URL="${1:-http://127.0.0.1:8002}"
+export ACP_BRIDGE_URL="${1:-http://127.0.0.1:8010}"
 
 ONLY="${2:-}"
 [[ "$ONLY" == "--only" ]] && ONLY="${3:-}" || true

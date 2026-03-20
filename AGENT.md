@@ -5,7 +5,7 @@
 ACP Bridge exposes local CLI agents (Kiro/Claude/Codex) via HTTP with async job support.
 
 ```
-CLI Agents (kiro/claude/codex) ↕ stdio JSON-RPC → ACP Bridge :8002 ↕ HTTP → OpenClaw → Discord/Feishu
+CLI Agents (kiro/claude/codex) ↕ stdio JSON-RPC → ACP Bridge :8010 ↕ HTTP → OpenClaw → Discord/Feishu
 ```
 
 ---
@@ -21,7 +21,7 @@ uv --version 2>&1 || echo "UV_NOT_FOUND"
 node --version 2>&1 || echo "NODE_NOT_FOUND"
 
 echo "=== Service ==="
-curl -s --max-time 3 http://127.0.0.1:8002/health 2>/dev/null || echo "BRIDGE_NOT_RUNNING"
+curl -s --max-time 3 http://127.0.0.1:8010/health 2>/dev/null || echo "BRIDGE_NOT_RUNNING"
 
 echo "=== Config ==="
 [ -f config.yaml ] && echo "CONFIG_EXISTS" || echo "CONFIG_NOT_FOUND"
@@ -37,10 +37,10 @@ which claude-agent-acp 2>/dev/null && echo "CLAUDE_OK" || echo "CLAUDE_NOT_FOUND
 which codex 2>/dev/null && echo "CODEX_OK" || echo "CODEX_NOT_FOUND"
 
 echo "=== Docker ==="
-sudo docker ps --filter "name=acp-bridge" --format "{{.Names}} {{.Status}}" 2>/dev/null || echo "DOCKER_N/A"
+timeout 3 docker ps --filter "name=acp-bridge" --format "{{.Names}} {{.Status}}" 2>/dev/null || echo "DOCKER_N/A"
 
 echo "=== Systemd ==="
-systemctl is-active acp-bridge 2>/dev/null || echo "SYSTEMD_N/A"
+timeout 3 systemctl is-active acp-bridge 2>/dev/null || echo "SYSTEMD_N/A"
 ```
 
 ---
@@ -99,7 +99,7 @@ sudo docker compose -f docker/light/docker-compose.yml up -d --build
 
 # 4. Check
 sudo docker compose -f docker/light/docker-compose.yml logs --tail 20
-curl -s --max-time 3 http://127.0.0.1:8002/health
+curl -s --max-time 3 http://127.0.0.1:8010/health
 ```
 
 > ⚠️ `sudo` does NOT pass shell env vars. Tokens must go in `docker/light/.env` file.
@@ -124,7 +124,7 @@ sudo systemctl enable --now acp-bridge
 # 4. Check
 sudo systemctl status acp-bridge
 sudo journalctl -u acp-bridge -f --no-pager -n 20
-curl -s --max-time 3 http://127.0.0.1:8002/health
+curl -s --max-time 3 http://127.0.0.1:8010/health
 ```
 
 ### Option C: nohup (quick & dirty)
@@ -140,7 +140,7 @@ nohup uv run main.py > /tmp/acp-bridge.log 2>&1 &
 echo $! > /tmp/acp-bridge.pid
 
 # 3. Check
-curl -s --max-time 3 http://127.0.0.1:8002/health
+curl -s --max-time 3 http://127.0.0.1:8010/health
 tail -f /tmp/acp-bridge.log
 ```
 
@@ -150,15 +150,15 @@ tail -f /tmp/acp-bridge.log
 
 ```bash
 # Health
-curl -s --max-time 3 http://127.0.0.1:8002/health
+curl -s --max-time 3 http://127.0.0.1:8010/health
 # → {"status":"ok"}
 
 # Agents
 export ACP_TOKEN=<token>
-curl -s http://127.0.0.1:8002/agents -H "Authorization: Bearer $ACP_TOKEN"
+curl -s http://127.0.0.1:8010/agents -H "Authorization: Bearer $ACP_TOKEN"
 
 # Full test suite (31 cases)
-ACP_TOKEN=$ACP_TOKEN bash test/test.sh http://127.0.0.1:8002
+ACP_TOKEN=$ACP_TOKEN bash test/test.sh http://127.0.0.1:8010
 ```
 
 ---

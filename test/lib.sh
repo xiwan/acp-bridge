@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLIENT="$SCRIPT_DIR/skill/acp-client.sh"
 TOOLS_CLIENT="$SCRIPT_DIR/tools/tools-client.sh"
 
-export ACP_BRIDGE_URL="${ACP_BRIDGE_URL:-http://127.0.0.1:8002}"
+export ACP_BRIDGE_URL="${ACP_BRIDGE_URL:-http://127.0.0.1:8010}"
 export ACP_RETRIES=1
 
 PASS=0 FAIL=0 SKIP=0
