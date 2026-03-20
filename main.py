@@ -109,6 +109,9 @@ def main():
     sec_cfg = config.get("security", {})
     allowed_ips = sec_cfg.get("allowed_ips", [])
     auth_token = sec_cfg.get("auth_token", "")
+    rate_limit = sec_cfg.get("rate_limit", 60)
+    rate_window = sec_cfg.get("rate_window", 60)
+    max_body = sec_cfg.get("max_body_bytes", 1 * 1024 * 1024)
 
     # Server config
     srv_cfg = config.get("server", {})
@@ -118,7 +121,8 @@ def main():
     shutdown_timeout = srv_cfg.get("shutdown_timeout", 30)
 
     app = create_app(*server.agents)
-    app.add_middleware(SecurityMiddleware, allowed_ips=allowed_ips, auth_token=auth_token)
+    app.add_middleware(SecurityMiddleware, allowed_ips=allowed_ips, auth_token=auth_token,
+                       rate_limit=rate_limit, rate_window=rate_window, max_body=max_body)
 
     from contextlib import asynccontextmanager
     from fastapi import Path as PathParam
