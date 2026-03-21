@@ -192,6 +192,60 @@ ACP_TOKEN=$ACP_TOKEN bash test/test.sh http://127.0.0.1:18010
 
 Auth: `Authorization: Bearer <token>` + IP in `security.allowed_ips`.
 
+## Optional: SSH Reverse Tunnel to Remote Host
+
+If the bridge runs locally (e.g. laptop) and you need to expose it to a remote server, use an SSH reverse tunnel.
+
+### Prerequisites
+
+- SSH key pair (e.g. `~/.ssh/id_ed25519_ec2` + `.pub`)
+- Remote host reachable via SSH
+- If using EC2 Instance Connect, push the public key first:
+
+```bash
+aws ec2-instance-connect send-ssh-public-key \
+    --instance-id <INSTANCE_ID> \
+    --instance-os-user <USER> \
+    --ssh-public-key file://~/.ssh/<KEY>.pub \
+    --region <REGION>
+```
+
+### Start Tunnel
+
+```bash
+ssh -i ~/.ssh/<KEY> \
+    -o StrictHostKeyChecking=no \
+    -o ServerAliveInterval=30 \
+    -R 18010:127.0.0.1:18010 \
+    <USER>@<REMOTE_IP> -N
+```
+
+This makes `127.0.0.1:18010` on the remote host forward to your local bridge.
+
+### Lifecycle Management
+
+For a unified start/stop workflow, create a local `start.sh` (gitignored) that:
+
+1. Starts `uv run main.py` and waits for `/health` to return OK
+2. Pushes SSH key (if using EC2 Instance Connect) and opens the reverse tunnel
+3. On `Ctrl+C` / exit (via `trap EXIT`):
+   - Kills the SSH tunnel process
+   - Reconnects briefly to the remote host to run `fuser -k 18010/tcp` to clean up any lingering sshd listener
+   - Lets the bridge process exit
+
+> ⚠️ `start.sh` contains host-specific values — it is already in `.gitignore`.
+
+### Cleanup Stale Remote Listeners
+
+If a tunnel was interrupted without clean shutdown:
+
+```bash
+# On the remote host
+fuser -k 18010/tcp
+```
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |

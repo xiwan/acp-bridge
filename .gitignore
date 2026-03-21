@@ -12,6 +12,9 @@ nohup.out
 config.yaml
 /tmp/
 
+# Local scripts
+start.sh
+
 # IDE / Editor
 .claude/
 .kiro/
