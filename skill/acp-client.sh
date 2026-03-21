@@ -103,8 +103,8 @@ PAYLOAD=$(jq -n \
     --arg mode "$MODE" \
     --arg cwd "$CWD" \
     '{agent_name: $agent, session_id: $session,
-      input: [{parts: [{content: $prompt, content_type: "text/plain"}
-              + (if $cwd != "" then {metadata: {cwd: $cwd}} else {} end)]}]}
+      input: [{parts: [{content: $prompt, content_type: "text/plain"}]}]}
+      + (if $cwd != "" then {cwd: $cwd} else {} end)
       + (if $mode == "stream" then {mode: "stream"} else {} end)')
 
 # --- Async 模式：提交任务立即返回 ---
