@@ -13,6 +13,7 @@ services:
     build:
       context: ../..
       dockerfile: docker/light/Dockerfile
+    command: ["uv", "run", "main.py", "--ui"]
     network_mode: host
     environment:
       - ACP_BRIDGE_TOKEN
