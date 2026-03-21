@@ -36,6 +36,7 @@ class Job:
     callback_url: str = ""
     callback_meta: dict = field(default_factory=dict)
     webhook_sent: bool = False
+    retries: int = 0
 
     def to_dict(self) -> dict:
         d = {"job_id": self.job_id, "agent": self.agent, "session_id": self.session_id,
@@ -66,23 +67,44 @@ class JobManager:
         self._recover_jobs()
 
     def _recover_jobs(self):
-        """On startup: fail orphaned running jobs, retry unsent webhooks."""
-        now = time.time()
-        # Mark interrupted jobs as failed
-        for d in self._store.load_incomplete():
-            job = self._dict_to_job(d)
-            job.status = "failed"
-            job.error = "interrupted: bridge restarted"
-            job.completed_at = now
-            self._jobs[job.job_id] = job
-            self._store.save(job)
-            log.warning("recovered_job: job=%s agent=%s was=%s → failed",
-                        job.job_id, job.agent, d["status"])
+        """On startup: queue incomplete jobs for background retry, reload unsent webhooks."""
         # Load unsent webhooks for retry
         for d in self._store.load_unsent_webhooks():
             job = self._dict_to_job(d)
             self._jobs[job.job_id] = job
             log.info("recovered_webhook: job=%s agent=%s", job.job_id, job.agent)
+        # Queue incomplete jobs — will be retried in background task
+        self._pending_recovery = [self._dict_to_job(d) for d in self._store.load_incomplete()]
+        if self._pending_recovery:
+            log.info("recovery_queued: %d incomplete jobs for background retry", len(self._pending_recovery))
+
+    async def run_recovery(self, max_retries: int = 3):
+        """Background task: retry incomplete jobs up to max_retries, then fail."""
+        jobs = self._pending_recovery
+        self._pending_recovery = []
+        for job in jobs:
+            job.retries += 1
+            if job.retries > max_retries:
+                job.status = "failed"
+                job.error = f"interrupted: failed after {max_retries} retries across restarts"
+                job.completed_at = time.time()
+                self._jobs[job.job_id] = job
+                self._store.save(job)
+                log.warning("recovery_failed: job=%s agent=%s retries=%d", job.job_id, job.agent, job.retries)
+                if job.callback_url:
+                    await self._webhook(job)
+                continue
+            # Reset for re-execution
+            log.info("recovery_retry: job=%s agent=%s attempt=%d/%d",
+                     job.job_id, job.agent, job.retries, max_retries)
+            job.status = "pending"
+            job.result = ""
+            job.error = ""
+            job.tools = []
+            job.completed_at = 0
+            self._jobs[job.job_id] = job
+            self._store.save(job)
+            await self._run(job)
 
     @staticmethod
     def _dict_to_job(d: dict) -> Job:
@@ -95,6 +117,7 @@ class JobManager:
             callback_url=d.get("callback_url", ""),
             callback_meta=d.get("callback_meta", {}),
             webhook_sent=d.get("webhook_sent", False),
+            retries=d.get("retries", 0),
         )
 
     def submit(self, agent: str, session_id: str, prompt: str,

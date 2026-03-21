@@ -330,6 +330,8 @@ def main():
             if pool:
                 pool.cleanup_ghosts()
             task = asyncio.create_task(cleanup_loop())
+            if job_mgr:
+                asyncio.create_task(job_mgr.run_recovery())
             yield
             task.cancel()
             if pool:

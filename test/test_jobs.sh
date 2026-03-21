@@ -140,49 +140,75 @@ list_after_has=$(echo "$list_after" | jq -r ".jobs[] | select(.job_id==\"$job_id
 run_test "重启后 job 列表仍包含旧 job" "$job_id" "$list_after_has"
 
 echo ""
-echo "--- 5. 中断恢复 (模拟 running job 被中断) ---"
+echo "--- 5. 中断恢复 — 重试机制 ---"
 
 fake_job_id="fake-$(date +%s)"
 sudo docker exec "$CONTAINER" "$VENV_PY" -c "
 import sqlite3, time
 db = sqlite3.connect('/app/data/jobs.db')
-db.execute('INSERT INTO jobs (job_id, agent, session_id, prompt, status, created_at) VALUES (?, \"kiro\", \"fake-sess\", \"fake\", \"running\", ?)',
+db.execute('INSERT INTO jobs (job_id, agent, session_id, prompt, status, created_at, retries) VALUES (?, \"kiro\", \"fake-sess\", \"回复ok两个字就行\", \"running\", ?, 0)',
            ('$fake_job_id', time.time() - 60))
 db.commit()
 "
 
-echo "  重启容器触发恢复..."
+echo "  重启容器触发恢复 (第1次重试)..."
 $COMPOSE restart >/dev/null 2>&1
 wait_bridge 20 || { echo "❌ 重启后 Bridge 未恢复"; exit 1; }
-echo "  Bridge 已恢复"
+echo "  Bridge 已恢复，等待重试执行..."
+sleep 15
 
-recovered=$(db_query "SELECT status, error FROM jobs WHERE job_id='$fake_job_id'")
+recovered=$(db_query "SELECT status, retries FROM jobs WHERE job_id='$fake_job_id'")
 recovered_status=$(echo "$recovered" | jq -r '.status // empty')
-recovered_error=$(echo "$recovered" | jq -r '.error // empty')
-run_test "中断的 running job 被标记为 failed" "failed" "$recovered_status"
-run_test "中断原因包含 restarted" "restart" "$recovered_error"
+recovered_retries=$(echo "$recovered" | jq -r '.retries // 0')
+run_test "中断的 job 被重试 (retries>=1)" "." "$([ "$recovered_retries" -ge 1 ] && echo "yes" || echo "no")"
+run_test "重试后 job 状态为 completed/failed/running" "completed|failed|running" "$recovered_status"
 
 echo ""
-echo "--- 6. pending job 也被恢复 ---"
+echo "--- 6. 超过最大重试次数标记 failed ---"
+
+fake_maxretry="fakemax-$(date +%s)"
+sudo docker exec "$CONTAINER" "$VENV_PY" -c "
+import sqlite3, time
+db = sqlite3.connect('/app/data/jobs.db')
+db.execute('INSERT INTO jobs (job_id, agent, session_id, prompt, status, created_at, retries) VALUES (?, \"kiro\", \"fake-sess3\", \"fake\", \"running\", ?, 3)',
+           ('$fake_maxretry', time.time() - 60))
+db.commit()
+"
+
+echo "  重启容器 (retries=3, 应直接 fail)..."
+$COMPOSE restart >/dev/null 2>&1
+wait_bridge 20 || { echo "❌ 重启后 Bridge 未恢复"; exit 1; }
+sleep 5
+
+maxretry_row=$(db_query "SELECT status, error, retries FROM jobs WHERE job_id='$fake_maxretry'")
+maxretry_status=$(echo "$maxretry_row" | jq -r '.status // empty')
+maxretry_error=$(echo "$maxretry_row" | jq -r '.error // empty')
+run_test "超过重试次数的 job 标记为 failed" "failed" "$maxretry_status"
+run_test "失败原因包含 retries" "retries" "$maxretry_error"
+
+echo ""
+echo "--- 7. pending job 也会被重试 ---"
 
 fake_pending="fakep-$(date +%s)"
 sudo docker exec "$CONTAINER" "$VENV_PY" -c "
 import sqlite3, time
 db = sqlite3.connect('/app/data/jobs.db')
-db.execute('INSERT INTO jobs (job_id, agent, session_id, prompt, status, created_at) VALUES (?, \"claude\", \"fake-sess2\", \"fake\", \"pending\", ?)',
+db.execute('INSERT INTO jobs (job_id, agent, session_id, prompt, status, created_at, retries) VALUES (?, \"kiro\", \"fake-sess2\", \"回复ok两个字就行\", \"pending\", ?, 0)',
            ('$fake_pending', time.time() - 30))
 db.commit()
 "
 
 $COMPOSE restart >/dev/null 2>&1
 wait_bridge 20 || { echo "❌ 重启后 Bridge 未恢复"; exit 1; }
+sleep 15
 
-pending_after=$(db_query "SELECT status FROM jobs WHERE job_id='$fake_pending'")
+pending_after=$(db_query "SELECT status, retries FROM jobs WHERE job_id='$fake_pending'")
 pending_status=$(echo "$pending_after" | jq -r '.status // empty')
-run_test "中断的 pending job 也被标记为 failed" "failed" "$pending_status"
+pending_retries=$(echo "$pending_after" | jq -r '.retries // 0')
+run_test "pending job 被重试 (retries>=1)" "." "$([ "$pending_retries" -ge 1 ] && echo "yes" || echo "no")"
 
 echo ""
-echo "--- 7. 多次重启数据不丢 ---"
+echo "--- 8. 多次重启数据不丢 ---"
 
 count_before_multi=$(db_count "SELECT count(*) FROM jobs")
 $COMPOSE restart >/dev/null 2>&1

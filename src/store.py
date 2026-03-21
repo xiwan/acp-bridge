@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     completed_at REAL DEFAULT 0,
     callback_url TEXT DEFAULT '',
     callback_meta TEXT DEFAULT '{}',
-    webhook_sent INTEGER DEFAULT 0
+    webhook_sent INTEGER DEFAULT 0,
+    retries      INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
@@ -33,17 +34,25 @@ class JobStore:
         self._db = sqlite3.connect(db_path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
+        self._migrate()
+
+    def _migrate(self):
+        cols = {r[1] for r in self._db.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "retries" not in cols:
+            self._db.execute("ALTER TABLE jobs ADD COLUMN retries INTEGER DEFAULT 0")
+            self._db.commit()
 
     def save(self, job) -> None:
         self._db.execute(
             """INSERT OR REPLACE INTO jobs
                (job_id, agent, session_id, prompt, cwd, status, result, error,
-                tools, created_at, completed_at, callback_url, callback_meta, webhook_sent)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                tools, created_at, completed_at, callback_url, callback_meta, webhook_sent, retries)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (job.job_id, job.agent, job.session_id, job.prompt, job.cwd,
              job.status, job.result, job.error,
              json.dumps(job.tools), job.created_at, job.completed_at,
-             job.callback_url, json.dumps(job.callback_meta), int(job.webhook_sent)),
+             job.callback_url, json.dumps(job.callback_meta), int(job.webhook_sent),
+             job.retries),
         )
         self._db.commit()
 
@@ -84,4 +93,5 @@ class JobStore:
         d["tools"] = json.loads(d["tools"])
         d["callback_meta"] = json.loads(d["callback_meta"])
         d["webhook_sent"] = bool(d["webhook_sent"])
+        d.setdefault("retries", 0)
         return d
