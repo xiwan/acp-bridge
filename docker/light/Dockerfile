@@ -79,6 +79,6 @@ COPY --from=py-builder --chown=app:app /app/.venv /app/.venv
 
 USER app
 
-EXPOSE 8010
+EXPOSE 18010
 
 CMD ["uv", "run", "main.py"]

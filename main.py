@@ -116,7 +116,7 @@ def main():
     # Server config
     srv_cfg = config.get("server", {})
     host = args.host or srv_cfg.get("host", "0.0.0.0")
-    port = args.port or srv_cfg.get("port", 8010)
+    port = args.port or srv_cfg.get("port", 18010)
     ttl_hours = srv_cfg.get("session_ttl_hours", 24)
     shutdown_timeout = srv_cfg.get("shutdown_timeout", 30)
 

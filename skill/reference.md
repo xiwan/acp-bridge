@@ -4,7 +4,7 @@
 
 | Parameter | Default | Required | Description |
 |-----------|---------|----------|-------------|
-| bridge_url | — | Yes (first call) | Bridge address, e.g. `http://172.31.15.10:8010` |
+| bridge_url | — | Yes (first call) | Bridge address, e.g. `http://172.31.15.10:18010` |
 | token | — | Yes (first call) | Auth token for Bearer authentication |
 | agent | — | No | Agent name (`-l` to list) |
 | session_id | Auto-generated | No | UUID-format session ID |

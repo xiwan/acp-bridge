@@ -8,14 +8,14 @@
 #   tools-client.sh web_search "Python 3.13 new features"
 #
 # 环境变量:
-#   ACP_BRIDGE_URL  — Bridge 地址 (默认 http://127.0.0.1:8010)
+#   ACP_BRIDGE_URL  — Bridge 地址 (默认 http://127.0.0.1:18010)
 #   ACP_TOKEN       — 认证 token
 #
 # 依赖: curl, jq
 
 set -euo pipefail
 
-URL="${ACP_BRIDGE_URL:-http://127.0.0.1:8010}"
+URL="${ACP_BRIDGE_URL:-http://127.0.0.1:18010}"
 TOKEN="${ACP_TOKEN:-}"
 TOOL_NAME=""
 TOOL_ACTION=""
