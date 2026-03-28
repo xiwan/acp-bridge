@@ -54,7 +54,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Pre-create symlinks for npm-based agents (actual modules mounted at runtime)
 RUN ln -s ../lib/node_modules/@zed-industries/claude-agent-acp/dist/index.js /usr/bin/claude-agent-acp && \
-    ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/bin/codex
+    ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/bin/codex && \
+    ln -s ../lib/node_modules/@qwen-code/qwen-code/cli.js /usr/bin/qwen
 
 # Pre-create placeholder files for kiro-cli binaries (prevents Docker mounting as directories)
 RUN touch /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat /usr/local/bin/kiro-cli-term && \

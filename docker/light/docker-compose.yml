@@ -22,6 +22,7 @@ services:
       - ANTHROPIC_API_KEY              # or use API key directly
       - LITELLM_API_KEY                # for Codex via LiteLLM
       - OPENCLAW_TOKEN                  # for webhook callback to OpenClaw
+      - AWS_REGION=us-west-2             # for OpenCode Bedrock
     volumes:
       - ../../config.yaml:/app/config.yaml
       - ../../data:/app/data
@@ -40,5 +41,14 @@ services:
       ## --- Codex (npm, needs node in container ✅) ---
       - /usr/lib/node_modules/@openai:/usr/lib/node_modules/@openai:ro
       - /home/ec2-user/.codex:/home/app/.codex:ro                         # codex config
+
+      ## --- Qwen Code (npm, needs node in container ✅) ---
+      - /usr/lib/node_modules/@qwen-code:/usr/lib/node_modules/@qwen-code:ro
+      - /home/ec2-user/.qwen:/home/app/.qwen                              # qwen config
+
+      ## --- OpenCode (native binary) ---
+      - /home/ec2-user/.opencode/bin/opencode:/usr/local/bin/opencode:ro
+      - /home/ec2-user/.local/share/opencode:/home/app/.local/share/opencode
+      - /home/ec2-user/.local/state:/home/app/.local/state
 
     restart: unless-stopped

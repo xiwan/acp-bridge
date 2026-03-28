@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.8.1 — Call remote CLI agents via ACP Bridge HTTP API. Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /chat ko (enter chat mode)"
+description: "v0.8.4 — 通过 ACP Bridge HTTP API 调用远程 CLI agent。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /cli qw <prompt> (qwen) | /cli oc <prompt> (opencode) | /chat ko (进入对话模式)"
 disable-model-invocation: true
 ---
 
@@ -45,8 +45,12 @@ export ACP_TOKEN=<token>
 | `/cli ko <prompt>` | `$ACP_CLIENT -a kiro "<prompt>"` |
 | `/cli cc <prompt>` | `$ACP_CLIENT -a claude "<prompt>"` |
 | `/cli cx <prompt>` | `$ACP_CLIENT -a codex "<prompt>"` |
+| `/cli qw <prompt>` | `$ACP_CLIENT -a qwen "<prompt>"` |
+| `/cli oc <prompt>` | `$ACP_CLIENT -a opencode "<prompt>"` |
 | `/chat ko [--cwd <path>]` | Enter kiro chat mode |
 | `/chat cc [--cwd <path>]` | Enter claude chat mode |
+| `/chat qw [--cwd <path>]` | Enter qwen chat mode |
+| `/chat oc [--cwd <path>]` | Enter opencode chat mode |
 | `/chat end` | Exit chat mode |
 | `/chat status` | Show chat status |
 

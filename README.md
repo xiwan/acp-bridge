@@ -54,10 +54,32 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 - Web UI (opt-in): chat interface at `/ui` with persistence (SQLite), message folding, and settings panel
 - Client is pure bash + jq, zero Python dependency
 
+## Agent Compatibility Matrix
+
+> Which CLI agents work with ACP Bridge today?
+
+| Agent | Vendor | ACP | Mode | Status | Tests |
+|-------|--------|-----|------|--------|-------|
+| [Kiro CLI](https://github.com/aws/kiro-cli) | AWS | ✅ Native | `acp` | ✅ Integrated | 7/7 |
+| [Claude Code](https://github.com/anthropics/claude-code) | Anthropic | ✅ Native | `acp` | ✅ Integrated | 5/5 |
+| [Qwen Code](https://www.npmjs.com/package/@anthropic-ai/qwen-code) | Alibaba | ✅ `--acp` | `acp` | ✅ Integrated | 6/6 |
+| [OpenAI Codex](https://github.com/openai/codex) | OpenAI | ❌ | `pty` | ✅ Integrated | 6/6 |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google | 🧪 `--experimental-acp` | — | 🟡 Planned | — |
+| [Copilot CLI](https://docs.github.com/en/copilot/reference/acp-server) | GitHub | ✅ `--acp` | — | 🟡 Planned | — |
+| [OpenCode](https://github.com/opencode-ai/opencode) | Open Source | ✅ `opencode acp` | `acp` | ✅ Integrated | 6/6 |
+| [CoStrict](https://github.com/zgsm-ai/costrict) | Open Source 🇨🇳 | ✅ Native | — | 🟡 Planned | — |
+| [Trae Agent](https://github.com/bytedance/trae-agent) | ByteDance 🇨🇳 | ❌ | — | ⚪ No ACP | — |
+| [Aider](https://github.com/Aider-AI/aider) | Open Source | ❌ | — | ⚪ No ACP | — |
+
+**Legend:** ✅ Integrated — 🟡 Planned (ACP-ready) — ⚪ No ACP support yet — 🧪 Experimental
+
+> Agents without ACP can still be integrated via PTY mode (like Codex). PRs welcome!
+
 ## Changelog
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.8.4 | 2026-03-28 | Qwen Code + OpenCode agent support, test_qwen.sh, test_opencode.sh |
 | v0.8.3 | 2026-03-21 | Web UI opt-in (`--ui`), chat persistence (SQLite), message folding, settings panel |
 | v0.8.1 | 2026-03-19 | Docker image 618→439MB, agent-optimized README, test coverage 25→31 |
 | v0.8.0 | 2026-03-19 | Docker light mode: gateway-only image with host agent mounting |
@@ -94,6 +116,8 @@ acp-bridge/
 │   ├── test_kiro.sh               # Kiro agent tests
 │   ├── test_claude.sh             # Claude agent tests
 │   ├── test_codex.sh              # Codex agent tests
+│   ├── test_qwen.sh               # Qwen agent tests
+│   ├── test_opencode.sh           # OpenCode agent tests
 │   └── reports/                   # Test reports
 ├── AGENT_SPEC.md        # ACP agent integration specification
 ├── config.yaml          # Service configuration
@@ -232,7 +256,7 @@ pool:
 
 webhook:
   url: "http://<openclaw-ip>:18789/tools/invoke"
-  token: "<OPENCLAW_GATEWAY_TOKEN>"
+  token: "${OPENCLAW_TOKEN}"
   account_id: "default"
   target: "channel:<default-channel-id>"        # also accepts feishu targets
 
@@ -243,7 +267,7 @@ security:
 
 litellm:
   url: "http://localhost:4000"
-  required_by: ["codex"]
+  required_by: ["codex", "qwen"]
   env:
     LITELLM_API_KEY: "${LITELLM_API_KEY}"
 
@@ -269,6 +293,20 @@ agents:
     args: ["exec", "--full-auto", "--skip-git-repo-check"]
     working_dir: "/tmp"
     description: "OpenAI Codex CLI agent"
+  qwen:
+    enabled: true
+    mode: "acp"
+    command: "qwen"
+    acp_args: ["--acp"]
+    working_dir: "/tmp"
+    description: "Qwen Code agent"
+  opencode:
+    enabled: true
+    mode: "acp"
+    command: "opencode"
+    acp_args: ["acp"]
+    working_dir: "/tmp"
+    description: "OpenCode agent (open source, multi-provider)"
 ```
 
 ## Client Usage
@@ -474,6 +512,7 @@ Run individual agent tests:
 ACP_TOKEN=<token> bash test/test_codex.sh
 ACP_TOKEN=<token> bash test/test_kiro.sh
 ACP_TOKEN=<token> bash test/test_claude.sh
+ACP_TOKEN=<token> bash test/test_qwen.sh
 ```
 
 Or filter from the main runner:
