@@ -1,0 +1,54 @@
+# ACP Bridge — Light Mode
+#
+# Mount your host agent CLIs into the container.
+# Uncomment the agents you have installed.
+#
+# Usage:
+#   cp .env.example .env              # edit with your tokens
+#   cp config.yaml.example config.yaml  # edit config
+#   docker compose -f docker/light/docker-compose.yml up -d
+
+services:
+  acp-bridge:
+    build:
+      context: ../..
+      dockerfile: docker/light/Dockerfile
+    command: ["uv", "run", "main.py", "--ui"]
+    network_mode: host
+    environment:
+      - ACP_BRIDGE_TOKEN
+      - CLAUDE_CODE_USE_BEDROCK        # set to 1 for Bedrock
+      - ANTHROPIC_MODEL                # e.g. global.anthropic.claude-sonnet-4-6
+      - ANTHROPIC_API_KEY              # or use API key directly
+      - LITELLM_API_KEY                # for Codex via LiteLLM
+      - OPENCLAW_TOKEN                  # for webhook callback to OpenClaw
+      - AWS_REGION=us-west-2             # for OpenCode Bedrock
+    volumes:
+      - ../../config.yaml:/app/config.yaml
+      - ../../data:/app/data
+
+      ## --- Kiro CLI (native binary) ---
+      - /home/ec2-user/.local/bin/kiro-cli:/usr/local/bin/kiro-cli:ro
+      - /home/ec2-user/.local/bin/kiro-cli-chat:/usr/local/bin/kiro-cli-chat:ro
+      - /home/ec2-user/.local/bin/kiro-cli-term:/usr/local/bin/kiro-cli-term:ro
+      - /home/ec2-user/.kiro:/home/app/.kiro                              # config + settings
+      - /home/ec2-user/.local/share/kiro-cli:/home/app/.local/share/kiro-cli  # auth data
+
+      ## --- Claude Code (npm, needs node in container ✅) ---
+      - /usr/lib/node_modules/@zed-industries:/usr/lib/node_modules/@zed-industries:ro
+      - /usr/lib/node_modules/@anthropic-ai:/usr/lib/node_modules/@anthropic-ai:ro
+
+      ## --- Codex (npm, needs node in container ✅) ---
+      - /usr/lib/node_modules/@openai:/usr/lib/node_modules/@openai:ro
+      - /home/ec2-user/.codex:/home/app/.codex:ro                         # codex config
+
+      ## --- Qwen Code (npm, needs node in container ✅) ---
+      - /usr/lib/node_modules/@qwen-code:/usr/lib/node_modules/@qwen-code:ro
+      - /home/ec2-user/.qwen:/home/app/.qwen                              # qwen config
+
+      ## --- OpenCode (native binary) ---
+      - /home/ec2-user/.opencode/bin/opencode:/usr/local/bin/opencode:ro
+      - /home/ec2-user/.local/share/opencode:/home/app/.local/share/opencode
+      - /home/ec2-user/.local/state:/home/app/.local/state
+
+    restart: unless-stopped

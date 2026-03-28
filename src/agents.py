@@ -29,12 +29,21 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool):
         input: list[Message], context: Context
     ) -> AsyncGenerator[RunYield, RunYieldResume]:
         prompt = "".join(part.content for msg in input for part in msg.parts if part.content)
-        session_id = str(context.session.id) if context.session else str(uuid.uuid4())
+        session_id = str(context.session.id) if context.session else str(uuid.uuid5(uuid.NAMESPACE_DNS, agent_name))
+        # Extract cwd from first message part metadata
+        cwd = ""
+        for msg in input:
+            for part in msg.parts:
+                if part.metadata and part.metadata.get("cwd"):
+                    cwd = part.metadata["cwd"]
+                    break
+            if cwd:
+                break
 
-        log.info("acp_start: agent=%s session=%s len=%d", agent_name, session_id, len(prompt))
+        log.info("acp_start: agent=%s session=%s len=%d cwd=%s", agent_name, session_id, len(prompt), cwd or "(default)")
 
         try:
-            conn = await pool.get_or_create(agent_name, session_id)
+            conn = await pool.get_or_create(agent_name, session_id, cwd=cwd)
         except PoolExhaustedError as e:
             log.error("pool_exhausted: agent=%s: %s", agent_name, e)
             yield Message(parts=[MessagePart(content=f"[error] pool_exhausted: {e}", content_type="text/plain")])
@@ -93,6 +102,7 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
     """Legacy PTY handler — subprocess stdout line-by-line."""
     command = agent_cfg["command"]
     args = agent_cfg.get("args", [])
+    idle_timeout = agent_cfg.get("idle_timeout", 300)
 
     async def handler(
         input: list[Message], context: Context
@@ -104,26 +114,42 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
 
         env = os.environ.copy()
         env.update({"TERM": "dumb", "NO_COLOR": "1", "LANG": "en_US.UTF-8"})
+        env.update(agent_cfg.get("env", {}))
 
         cmd = [command] + list(args) + [prompt]
+        pty_cwd = agent_cfg.get("working_dir", "/tmp")
+        os.makedirs(pty_cwd, exist_ok=True)
+
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             stdin=asyncio.subprocess.DEVNULL,
-            cwd=agent_cfg.get("working_dir", "/tmp"),
+            cwd=pty_cwd,
             env=env,
         )
 
-        while True:
-            line = await proc.stdout.readline()
-            if not line:
-                break
-            text = strip_ansi(line.decode()).rstrip("\n")
-            if text:
-                yield MessagePart(content=text + "\n", content_type="text/plain")
+        try:
+            while True:
+                try:
+                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=idle_timeout)
+                except asyncio.TimeoutError:
+                    log.warning("pty_timeout: cmd=%s session=%s idle=%ds", command, session_id, idle_timeout)
+                    proc.kill()
+                    await proc.wait()
+                    yield MessagePart(content=f"[error] agent timeout (idle {idle_timeout}s)\n", content_type="text/plain")
+                    return
+                if not line:
+                    break
+                text = strip_ansi(line.decode()).rstrip("\n")
+                if text:
+                    yield MessagePart(content=text + "\n", content_type="text/plain")
 
-        await proc.wait()
+            await proc.wait()
+        except Exception:
+            proc.kill()
+            await proc.wait()
+            raise
         log.info("pty_done: cmd=%s session=%s exit=%s", command, session_id, proc.returncode)
 
     return handler

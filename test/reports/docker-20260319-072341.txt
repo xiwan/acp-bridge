@@ -1,0 +1,25 @@
+=== Docker Light Mode Tests ===
+
+--- Image ---
+✅ image exists
+   image size: 618MB
+
+--- Container ---
+✅ container running
+
+--- Health ---
+✅ health endpoint
+   version: 0.8.0
+
+--- Auth ---
+✅ no token → 401 (HTTP 401)
+✅ agents endpoint
+   registered agents: 3
+
+--- Runtime ---
+✅ python available
+✅ node available
+✅ debian base
+✅ non-root user
+
+=== Results: 9 passed, 0 failed ===

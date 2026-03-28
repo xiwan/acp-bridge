@@ -3,11 +3,16 @@
 import asyncio
 import json
 import logging
+import os
+import signal
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 log = logging.getLogger("acp-bridge.acp_client")
+
+_VERSION = (Path(__file__).resolve().parent.parent / "VERSION").read_text().strip()
 
 
 class AcpError(Exception):
@@ -27,6 +32,7 @@ class AcpConnection:
     _req_id: int = field(default=0, init=False)
     _pending: dict[int, asyncio.Future] = field(default_factory=dict, init=False)
     _reader_task: asyncio.Task | None = field(default=None, init=False)
+    _stderr_task: asyncio.Task | None = field(default=None, init=False)
     _notification_queues: dict[int, asyncio.Queue] = field(default_factory=dict, init=False)
     acp_session_id: str | None = field(default=None, init=False)
     last_active: float = field(default_factory=time.time, init=False)
@@ -64,6 +70,18 @@ class AcpConnection:
 
     def _start_reader(self) -> None:
         self._reader_task = asyncio.create_task(self._read_loop())
+        self._stderr_task = asyncio.create_task(self._drain_stderr())
+
+    async def _drain_stderr(self) -> None:
+        try:
+            while True:
+                line = await self.proc.stderr.readline()
+                if not line:
+                    break
+                if self.verbose:
+                    log.debug("acp_stderr: %s", line.decode().rstrip()[:300])
+        except Exception:
+            pass
 
     async def _read_loop(self) -> None:
         try:
@@ -120,7 +138,7 @@ class AcpConnection:
         result = await self._send_request("initialize", {
             "protocolVersion": 1,
             "clientCapabilities": {},
-            "clientInfo": {"name": "acp-bridge", "version": "0.2.0"},
+            "clientInfo": {"name": "acp-bridge", "version": _VERSION},
         })
         log.info("initialized: agent=%s version=%s",
                  result.get("agentInfo", {}).get("name"),
@@ -177,6 +195,13 @@ class AcpConnection:
                 if n is not None:
                     yield n
 
+            # Give reader task a moment to flush remaining notifications
+            await asyncio.sleep(0.05)
+            while not q.empty():
+                n = q.get_nowait()
+                if n is not None:
+                    yield n
+
             result = fut.result() if fut.done() else {"error": {"code": -1, "message": "no response"}}
             yield {"_prompt_result": result}
         finally:
@@ -190,14 +215,33 @@ class AcpConnection:
 
     async def kill(self) -> None:
         if self.alive:
-            self.proc.kill()
-            await self.proc.wait()
-        if self._reader_task and not self._reader_task.done():
-            self._reader_task.cancel()
             try:
-                await self._reader_task
-            except asyncio.CancelledError:
-                pass
+                os.killpg(self.proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                self.proc.kill()
+            await self.proc.wait()
+        for task in (self._reader_task, self._stderr_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+    async def ping(self, timeout: float = 5) -> bool:
+        """Lightweight health probe — send a no-op JSON-RPC request."""
+        if not self.alive:
+            return False
+        try:
+            await asyncio.wait_for(
+                self._send_request("ping", {}), timeout=timeout
+            )
+            return True
+        except AcpError:
+            # Agent replied with an error (method not found) — still alive
+            return True
+        except Exception:
+            return False
 
 
 class AcpProcessPool:
@@ -211,7 +255,7 @@ class AcpProcessPool:
     def _count_agent(self, agent: str) -> int:
         return sum(1 for (a, _) in self._connections if a == agent)
 
-    async def get_or_create(self, agent: str, session_id: str) -> AcpConnection:
+    async def get_or_create(self, agent: str, session_id: str, cwd: str = "") -> AcpConnection:
         key = (agent, session_id)
         conn = self._connections.get(key)
 
@@ -232,14 +276,16 @@ class AcpProcessPool:
         if not agent_cfg:
             raise AcpError(f"agent not found: {agent}")
 
-        conn = await self._spawn(agent, session_id, agent_cfg, is_rebuild=is_rebuild)
+        conn = await self._spawn(agent, session_id, agent_cfg, is_rebuild=is_rebuild, cwd_override=cwd)
         self._connections[key] = conn
+        self._save_pids()
         return conn
 
-    async def _spawn(self, agent: str, session_id: str, cfg: dict, is_rebuild: bool = False) -> AcpConnection:
+    async def _spawn(self, agent: str, session_id: str, cfg: dict, is_rebuild: bool = False, cwd_override: str = "") -> AcpConnection:
         command = cfg["command"]
         acp_args = cfg.get("acp_args", ["acp"])
-        cwd = cfg.get("working_dir", "/tmp")
+        cwd = cwd_override or cfg.get("working_dir", "/tmp")
+        os.makedirs(cwd, exist_ok=True)
 
         log.info("spawning: agent=%s session=%s cmd=%s %s rebuild=%s", agent, session_id, command, acp_args, is_rebuild)
         proc = await asyncio.create_subprocess_exec(
@@ -248,6 +294,7 @@ class AcpProcessPool:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            start_new_session=True,  # create process group so we can kill the whole tree
         )
 
         conn = AcpConnection(agent=agent, session_id=session_id, proc=proc, verbose=self._verbose)
@@ -263,6 +310,7 @@ class AcpProcessPool:
         if conn:
             log.info("closing: agent=%s session=%s", agent, session_id)
             await conn.kill()
+            self._save_pids()
 
     def remove(self, agent: str, session_id: str) -> None:
         self._connections.pop((agent, session_id), None)
@@ -275,11 +323,61 @@ class AcpProcessPool:
             log.info("cleanup idle: agent=%s session=%s", key[0], key[1])
             await conn.kill()
 
+    async def health_check(self) -> None:
+        """Ping all idle connections; kill and remove unresponsive ones."""
+        dead: list[tuple[str, str]] = []
+        for key, conn in list(self._connections.items()):
+            if not conn.alive:
+                dead.append(key)
+                continue
+            ok = await conn.ping()
+            if not ok:
+                dead.append(key)
+        for key in dead:
+            conn = self._connections.pop(key, None)
+            if conn:
+                log.warning("health_check: agent=%s session=%s unresponsive, killing", key[0], key[1])
+                await conn.kill()
+
     async def shutdown(self) -> None:
         for key, conn in list(self._connections.items()):
             log.info("shutdown: killing agent=%s session=%s", key[0], key[1])
             await conn.kill()
         self._connections.clear()
+
+    _pidfile = Path("/tmp/acp-bridge-pids")
+
+    def _save_pids(self) -> None:
+        """Persist managed subprocess PIDs to disk for ghost cleanup across restarts."""
+        pids = {str(c.proc.pid) for c in self._connections.values()}
+        self._pidfile.write_text("\n".join(pids) + "\n" if pids else "")
+
+    def cleanup_ghosts(self) -> int:
+        """Kill orphaned agent processes recorded by a previous Bridge run."""
+        if not self._pidfile.exists():
+            return 0
+        own_pids = {c.proc.pid for c in self._connections.values()}
+        killed = 0
+        for line in self._pidfile.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            pid = int(line)
+            if pid in own_pids:
+                continue
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    continue
+            log.warning("ghost_cleanup: killed pid=%d", pid)
+            killed += 1
+        if killed:
+            log.info("ghost_cleanup: killed %d orphaned processes", killed)
+        self._pidfile.unlink(missing_ok=True)
+        return killed
 
     @property
     def stats(self) -> dict:

@@ -1,10 +1,13 @@
 [project]
 name = "acp-bridge"
-version = "0.1.0"
-description = "Add your description here"
+dynamic = ["version"]
+description = "Bridge service exposing local CLI agents via ACP over HTTP"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "acp-sdk>=1.0.3",
     "pyyaml>=6.0.3",
 ]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}

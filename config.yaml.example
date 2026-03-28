@@ -1,18 +1,28 @@
 server:
   host: "0.0.0.0"
-  port: 8001
+  port: 18010
   session_ttl_hours: 24
   shutdown_timeout: 30
+  ui: false                                     # enable Web UI at /ui (or use --ui flag)
 
 pool:
   max_processes: 20
   max_per_agent: 10
 
 security:
-  auth_token: "${ACP_BRIDGE_TOKEN}"   # 或直接填 token 字符串
+  auth_token: "${ACP_BRIDGE_TOKEN}"             # or paste token string directly
   allowed_ips:
     - "127.0.0.1"
     # - "<client-ip>"
+
+# litellm (optional): shared LLM proxy for agents without native Bedrock support
+# If url is set, bridge checks reachability on startup;
+# agents listed in required_by are disabled if unreachable.
+litellm:
+  url: "http://localhost:4000"
+  required_by: ["codex", "qwen"]
+  env:
+    LITELLM_API_KEY: "${LITELLM_API_KEY}"
 
 agents:
   kiro:
@@ -29,10 +39,31 @@ agents:
     acp_args: []
     working_dir: "/tmp"
     description: "Claude Code agent (via ACP adapter)"
-  # legacy-cli:
-  #   enabled: false
-  #   mode: "pty"
-  #   command: "some-old-cli"
-  #   args: ["--non-interactive"]
-  #   working_dir: "/tmp"
-  #   description: "Legacy CLI (no ACP)"
+  codex:
+    enabled: true
+    mode: "pty"
+    command: "codex"
+    args: ["exec", "--full-auto", "--skip-git-repo-check"]
+    working_dir: "/tmp"
+    description: "OpenAI Codex CLI agent"
+  qwen:
+    enabled: true
+    mode: "acp"
+    command: "qwen"
+    acp_args: ["--acp"]
+    working_dir: "/tmp"
+    description: "Qwen Code agent"
+  opencode:
+    enabled: true
+    mode: "acp"
+    command: "opencode"
+    acp_args: ["acp"]
+    working_dir: "/tmp"
+    description: "OpenCode agent (open source, multi-provider)"
+
+# webhook (optional): async job completion callback via OpenClaw Gateway
+# webhook:
+#   url: "http://<openclaw-ip>:18789/tools/invoke"
+#   token: "${OPENCLAW_TOKEN}"
+#   account_id: "default"
+#   target: "channel:<discord-channel-id>"

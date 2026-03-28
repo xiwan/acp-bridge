@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+nohup.out
+config.yaml
+workspace/
+.claude/
+.kiro/
+test/
+reports/
+statics/
+docs/
+docker/

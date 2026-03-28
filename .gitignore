@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv/
+
+# Runtime
+nohup.out
+config.yaml
+/tmp/
+data/*.db
+
+# Local scripts
+start.sh
+OPERATIONS.md
+versions/
+
+# IDE / Editor
+.claude/
+.kiro/
+.vscode/
+.idea/
+acp-bridge.service
+.env
+docker/light/.env
+todo.md
+test/scratch/
