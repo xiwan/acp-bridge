@@ -25,3 +25,4 @@ acp-bridge.service
 .env
 docker/light/.env
 todo.md
+test/scratch/
