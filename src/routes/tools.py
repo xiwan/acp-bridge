@@ -53,7 +53,7 @@ def register(app, openclaw_url: str, openclaw_token: str, default_account_id: st
             return JSONResponse(resp.json(), status_code=resp.status_code)
         except Exception as e:
             log.error("tools_invoke_failed: tool=%s error=%s", req.tool, e)
-            return JSONResponse({"error": str(e)}, status_code=502)
+            return JSONResponse({"error": "tools invoke failed"}, status_code=502)
 
     @app.get("/tools")
     async def list_tools():
