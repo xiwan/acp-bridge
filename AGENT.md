@@ -2,7 +2,7 @@
 
 > For you, the executing agent. Human docs: [README.md](README.md)
 
-ACP Bridge exposes local CLI agents (Kiro/Claude/Codex) via HTTP with async job support.
+ACP Bridge exposes local CLI agents (Kiro/Claude/Codex/Qwen/OpenCode) via HTTP with async job support.
 
 ```
 CLI Agents (kiro/claude/codex/qwen/...) ↕ stdio JSON-RPC → ACP Bridge :18010 ↕ HTTP → OpenClaw / Web UI / HTTP API
@@ -35,6 +35,8 @@ echo "=== Agents ==="
 which kiro-cli 2>/dev/null && echo "KIRO_OK" || echo "KIRO_NOT_FOUND"
 which claude-agent-acp 2>/dev/null && echo "CLAUDE_OK" || echo "CLAUDE_NOT_FOUND"
 which codex 2>/dev/null && echo "CODEX_OK" || echo "CODEX_NOT_FOUND"
+which qwen 2>/dev/null && echo "QWEN_OK" || echo "QWEN_NOT_FOUND"
+which opencode 2>/dev/null && echo "OPENCODE_OK" || echo "OPENCODE_NOT_FOUND"
 
 echo "=== Docker ==="
 timeout 3 docker ps --filter "name=acp-bridge" --format "{{.Names}} {{.Status}}" 2>/dev/null || echo "DOCKER_N/A"
@@ -63,6 +65,8 @@ Report ✅/❌ after each phase. **Skip phases whose skip condition is met.**
 | Kiro CLI | ACP | `curl -fsSL https://cli.kiro.dev/install \| bash` → `kiro-cli login` |
 | Claude Code | ACP | `npm i -g @zed-industries/claude-agent-acp` |
 | Codex | PTY | `npm i -g @openai/codex` (needs LiteLLM for non-OpenAI models, see [README.md](README.md#codex--litellm-setup)) |
+| Qwen Code | ACP | `npm i -g @anthropic-ai/qwen-code` |
+| OpenCode | ACP | See [opencode-ai/opencode](https://github.com/opencode-ai/opencode) |
 
 ### Environment Variables
 
@@ -175,6 +179,10 @@ ACP_TOKEN=$ACP_TOKEN bash test/test.sh http://127.0.0.1:18010
 | `src/agents.py` | Agent handler logic (ACP + PTY modes) |
 | `src/acp_client.py` | Process pool + JSON-RPC management |
 | `src/jobs.py` | Async job lifecycle |
+| `src/sse.py` | Notification → SSE event transform |
+| `src/formatters.py` | IM channel formatters (Discord/Feishu) |
+| `src/store.py` | SQLite job persistence |
+| `src/routes/*.py` | Route registration (jobs, tools, health, chat) |
 | `examples/echo-agent.py` | Minimal ACP agent (~100 lines) |
 | `skill/acp-client.sh` | Client usage examples |
 | `test/test.sh` | Full test suite (31 cases, 5 suites) |
@@ -184,16 +192,20 @@ ACP_TOKEN=$ACP_TOKEN bash test/test.sh http://127.0.0.1:18010
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/health` | No | Health check |
+| GET | `/health/agents` | Yes | Agent status |
 | GET | `/agents` | Yes | List agents |
 | POST | `/runs` | Yes | Sync/streaming call |
 | POST | `/jobs` | Yes | Async job submit |
+| GET | `/jobs` | Yes | List all jobs + stats |
 | GET | `/jobs/{id}` | Yes | Job status |
+| GET | `/tools` | Yes | List available OpenClaw tools |
 | POST | `/tools/invoke` | Yes | OpenClaw tool proxy |
 | POST | `/chat/messages` | Yes | Save chat message (Web UI) |
 | GET | `/chat/messages` | Yes | Load recent messages (Web UI) |
 | DELETE | `/chat/messages` | Yes | Clear chat history (Web UI) |
 | POST | `/chat/fold` | Yes | Fold session messages (Web UI) |
 | GET | `/ui` | No | Web UI (if `--ui` enabled) |
+| DELETE | `/sessions/{agent}/{session_id}` | Yes | Close session |
 
 Auth: `Authorization: Bearer <token>` + IP in `security.allowed_ips`.
 
@@ -260,6 +272,8 @@ fuser -k 18010/tcp
 | `pool_exhausted` | Increase `pool.max_processes` |
 | Claude hangs | Already handled (auto-allow) |
 | Codex: not trusted dir | Add `--skip-git-repo-check` to args |
+| Codex: missing LITELLM_API_KEY | Set `litellm.env.LITELLM_API_KEY` in config |
+| Codex: unsupported params | Set `drop_params: true` in LiteLLM config |
 | Job stuck >10min | Auto-marked failed by patrol |
 | Docker: env vars not passed | Use `.env` file, not shell export with `sudo` |
 | systemd: env vars missing | Add `Environment=` lines to `.service` file |
