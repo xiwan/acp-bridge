@@ -29,6 +29,7 @@ CARD=false
 ASYNC=false
 JOB_STATUS=""
 CWD=""
+UPLOAD=""
 MAX_RETRIES="${ACP_RETRIES:-2}"
 CONNECT_TIMEOUT=10
 SYNC_TIMEOUT="${ACP_TIMEOUT:-300}"
@@ -45,6 +46,7 @@ while [[ $# -gt 0 ]]; do
         --card)       CARD=true; shift ;;
         --async)      ASYNC=true; shift ;;
         --cwd)        CWD="$2"; shift 2 ;;
+        --upload)     UPLOAD="$2"; shift 2 ;;
         --job-status) JOB_STATUS="$2"; shift 2 ;;
         --retries)    MAX_RETRIES="$2"; shift 2 ;;
         -h|--help)    sed -n '2,17s/^# //p' "$0"; exit 0 ;;
@@ -61,6 +63,16 @@ if $LIST; then
     curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time 30 "${AUTH[@]}" "$URL/agents" | jq -r '
         (.agents // .) | .[] |
         "  \(.name // .agent | . + " " * (15 - length))  \(.description // "")"'
+    exit 0
+fi
+
+# --- Upload file ---
+if [[ -n "$UPLOAD" ]]; then
+    [[ ! -f "$UPLOAD" ]] && { echo "❌ File not found: $UPLOAD" >&2; exit 1; }
+    resp=$(curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time 120 \
+        "${AUTH[@]}" "$URL/files" \
+        -F "file=@$UPLOAD" -F "agent=$AGENT") || { echo "❌ Upload failed" >&2; exit 1; }
+    echo "$resp" | jq -r '"✅ Uploaded: \(.filename) (\(.size) bytes)\nPath: \(.path)"'
     exit 0
 fi
 

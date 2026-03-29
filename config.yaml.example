@@ -4,6 +4,7 @@ server:
   session_ttl_hours: 24
   shutdown_timeout: 30
   ui: false                                     # enable Web UI at /ui (or use --ui flag)
+  upload_dir: "/tmp/acp-uploads"                # file upload storage directory
 
 pool:
   max_processes: 20

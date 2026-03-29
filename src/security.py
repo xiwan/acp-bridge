@@ -8,6 +8,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 NO_AUTH_PATHS = {"/health", "/ui"}
+NO_AUTH_PREFIXES = ("/static/",)
 MAX_BODY_BYTES = 1 * 1024 * 1024  # 1 MB
 
 
@@ -62,7 +63,9 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             return JSONResponse({"error": "forbidden"}, status_code=403)
 
         if self.auth_token and request.url.path not in NO_AUTH_PATHS:
-            if not request.url.path.startswith("/static"):
+            skip = request.url.path.startswith(NO_AUTH_PREFIXES) or \
+                   (request.method == "GET" and "/download" in request.url.path)
+            if not skip:
                 auth = request.headers.get("authorization", "")
                 if auth != f"Bearer {self.auth_token}":
                     return JSONResponse({"error": "unauthorized"}, status_code=401)

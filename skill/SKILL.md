@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.9.2 — 通过 ACP Bridge HTTP API 调用远程 CLI agent。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /cli qw <prompt> (qwen) | /cli oc <prompt> (opencode) | /chat ko (进入对话模式)"
+description: "v0.9.5 — 通过 ACP Bridge HTTP API 调用远程 CLI agent。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /cli qw <prompt> (qwen) | /cli oc <prompt> (opencode) | /chat ko (进入对话模式)"
 disable-model-invocation: true
 ---
 
@@ -53,6 +53,7 @@ export ACP_TOKEN=<token>
 | `/chat oc [--cwd <path>]` | Enter opencode chat mode |
 | `/chat end` | Exit chat mode |
 | `/chat status` | Show chat status |
+| `/upload <file>` | `$ACP_CLIENT --upload "<file>"` |
 
 ## Message Routing
 

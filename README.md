@@ -79,6 +79,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.9.5 | 2026-03-29 | File upload API: `POST /files` with configurable `upload_dir`, skill `--upload`, Web UI attach button |
 | v0.9.2 | 2026-03-29 | AGENT.md rewrite: agent-first flow with clear 🤖/👤 boundaries |
 | v0.9.1 | 2026-03-29 | README refresh: fix ASCII art arrow direction, add Web UI + direct HTTP path, remove screenshot |
 | v0.9.0 | 2026-03-28 | Adaptive Web UI: native CSS variables, dark mode, responsive layout, drop jQuery + Tailwind |
@@ -252,6 +253,7 @@ server:
   session_ttl_hours: 24
   shutdown_timeout: 30
   ui: false                                     # enable Web UI at /ui (or use --ui flag)
+  upload_dir: "/tmp/acp-uploads"                # file upload storage directory
 
 pool:
   max_processes: 20
@@ -334,6 +336,9 @@ export ACP_TOKEN=<your-token>
 
 # Specify agent
 ./skill/acp-client.sh -a claude "hello"
+
+# Upload a file
+./skill/acp-client.sh --upload data.csv
 
 # Multi-turn conversation
 ./skill/acp-client.sh -s 00000000-0000-0000-0000-000000000001 "continue"
@@ -422,6 +427,9 @@ POST /jobs → Bridge executes in background → On completion POST to OpenClaw 
 | GET | `/chat/messages` | Load recent chat messages (Web UI) | Yes |
 | DELETE | `/chat/messages` | Clear all chat messages (Web UI) | Yes |
 | POST | `/chat/fold` | Fold a session's messages (Web UI) | Yes |
+| POST | `/files` | Upload a file to Bridge | Yes |
+| GET | `/files` | List uploaded files | Yes |
+| DELETE | `/files/{filename}` | Delete an uploaded file | Yes |
 | GET | `/health` | Health check | No |
 | GET | `/health/agents` | Agent status | Yes |
 | GET | `/ui` | Web UI chat interface (if enabled) | No |

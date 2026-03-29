@@ -81,11 +81,11 @@ AWS_SECRET_ACCESS_KEY=
 > When no task is active, it shows "No active version."
 
 ```yaml
-version: ""
-description: ""
-status: "idle"
-current_phase: ""
-log_file: ""
+version: "0.9.5"
+description: "File upload API — upload files to configurable directory, support skill/UI/HTTP"
+status: "in-progress"
+current_phase: "Phase 3: Implement"
+log_file: "versions/v0.9.5.md"
 ```
 
 ---

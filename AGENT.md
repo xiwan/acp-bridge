@@ -249,6 +249,9 @@ Cleanup stale listeners on remote: `fuser -k 18010/tcp`
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
+| POST | `/files` | Yes | Upload a file |
+| GET | `/files` | Yes | List uploaded files |
+| DELETE | `/files/{filename}` | Yes | Delete an uploaded file |
 | GET | `/health` | No | Health check |
 | GET | `/health/agents` | Yes | Agent status |
 | GET | `/agents` | Yes | List agents |

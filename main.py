@@ -17,7 +17,7 @@ from src.acp_client import AcpProcessPool
 from src.agents import make_acp_agent_handler, make_pty_agent_handler
 from src.jobs import JobManager
 from src.security import SecurityMiddleware
-from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes
+from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes
 
 _VERSION = open(os.path.join(os.path.dirname(__file__), "VERSION")).read().strip()
 
@@ -125,7 +125,7 @@ def main():
                        auth_token=sec_cfg.get("auth_token", ""),
                        rate_limit=sec_cfg.get("rate_limit", 60),
                        rate_window=sec_cfg.get("rate_window", 60),
-                       max_body=sec_cfg.get("max_body_bytes", 1 * 1024 * 1024))
+                       max_body=sec_cfg.get("max_body_bytes", 3 * 1024 * 1024))
 
     # --- Job manager ---
     pty_agents = {k: v for k, v in agents_cfg.items() if v.get("mode") != "acp"}
@@ -146,6 +146,8 @@ def main():
     health_routes.register(app, _VERSION, start_time, agents_cfg, pool, ttl_hours)
     jobs_routes.register(app, job_mgr, webhook_account_id, webhook_default_target)
     tools_routes.register(app, openclaw_url, webhook_cfg.get("token", ""), webhook_account_id)
+    upload_dir = srv_cfg.get("upload_dir", "/tmp/acp-uploads")
+    files_routes.register(app, upload_dir)
     if ui_enabled:
         chat_routes.register(app, config)
 

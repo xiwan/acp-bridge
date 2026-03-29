@@ -153,6 +153,12 @@ select{background:var(--bg-input);color:var(--text);border:1px solid var(--borde
 @media(min-width:900px){
   .messages{padding:16px calc(50% - 430px)}
 }
+.file-card{display:flex;align-items:center;gap:10px;background:var(--bg-hover);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;max-width:320px}
+.file-card img{max-width:200px;max-height:150px;border-radius:6px;object-fit:cover}
+.file-card .file-icon{font-size:28px;flex-shrink:0}
+.file-card .file-info{font-size:13px;line-height:1.4;overflow:hidden}
+.file-card .file-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-card .file-meta{color:var(--text-muted);font-size:12px}
 </style>
 </head>
 <body>
@@ -189,9 +195,11 @@ select{background:var(--bg-input);color:var(--text);border:1px solid var(--borde
 <!-- Input -->
 <div class="input-bar">
   <div class="input-row">
+    <label class="btn" style="cursor:pointer;padding:8px 10px;flex-shrink:0" title="Upload file">📎<input type="file" id="file-upload" style="display:none"></label>
     <input id="input" type="text" placeholder="Send a message..." autocomplete="off">
     <button id="btn-send">Send</button>
   </div>
+  <div id="file-preview" style="display:none;padding:4px 0 0;max-width:900px;margin:0 auto;font-size:13px;color:var(--text-muted)"></div>
 </div>
 
 <!-- Jobs Modal -->
@@ -309,11 +317,11 @@ function renderMsg(id,content,thinking,tools){
 }
 
 /* ===== Send (streaming) ===== */
-function sendMessage(prompt){
+function sendMessage(prompt,skipUserMsg){
   if(streaming||!prompt.trim())return;
   streaming=true;userScrolled=false;
   $('btn-send').disabled=true;$('btn-send').textContent='...';
-  addMsg('user',esc(prompt),true);
+  if(!skipUserMsg)addMsg('user',esc(prompt),true);
 
   var agent=$('agent').value;
   var payload={agent_name:agent,session_id:SESSION,mode:'stream',
@@ -430,8 +438,55 @@ function foldCurrentMessages(agent){
 }
 
 /* ===== Input ===== */
-$('input').onkeydown=function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(this.value);this.value=''}};
-$('btn-send').onclick=function(){var v=$('input').value;$('input').value='';sendMessage(v)};
+var pendingFile=null;var pendingPreviewUrl=null;
+$('file-upload').onchange=function(){
+  var f=this.files[0];if(!f){pendingFile=null;pendingPreviewUrl=null;$('file-preview').style.display='none';return}
+  pendingFile=f;$('file-preview').style.display='block';
+  if(pendingPreviewUrl)URL.revokeObjectURL(pendingPreviewUrl);
+  pendingPreviewUrl=null;
+  var isImg=/\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(f.name);
+  if(isImg){
+    pendingPreviewUrl=URL.createObjectURL(f);
+    $('file-preview').innerHTML='<div class="file-card"><img src="'+pendingPreviewUrl+'"><div class="file-info"><div class="file-name">'+esc(f.name)+'</div><div class="file-meta">'+formatSize(f.size)+'</div></div></div><a href="#" style="color:var(--accent);font-size:13px" onclick="clearPending();return false">✕ Remove</a>';
+  }else{
+    $('file-preview').innerHTML='<div class="file-card"><span class="file-icon">'+fileIcon(f.name)+'</span><div class="file-info"><div class="file-name">'+esc(f.name)+'</div><div class="file-meta">'+formatSize(f.size)+'</div></div></div><a href="#" style="color:var(--accent);font-size:13px" onclick="clearPending();return false">✕ Remove</a>';
+  }
+};
+function clearPending(){pendingFile=null;if(pendingPreviewUrl)URL.revokeObjectURL(pendingPreviewUrl);pendingPreviewUrl=null;$('file-preview').style.display='none';$('file-upload').value=''}
+function formatSize(b){if(b<1024)return b+' B';if(b<1048576)return Math.round(b/1024)+' KB';return (b/1048576).toFixed(1)+' MB'}
+function fileIcon(name){var ext=(name.split('.').pop()||'').toLowerCase();var m={pdf:'📄',csv:'📊',json:'📋',txt:'📝',md:'📝',py:'🐍',js:'📜',sh:'📜',zip:'📦',tar:'📦',gz:'📦'};return m[ext]||'📎'}
+function fileCardHtml(res){
+  var isImg=/\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(res.filename);
+  if(isImg)return '<div class="file-card"><img src="'+BASE+'/files/'+encodeURIComponent(res.filename)+'/download"><div class="file-info"><div class="file-name">'+esc(res.filename)+'</div><div class="file-meta">'+formatSize(res.size)+'</div></div></div>';
+  return '<div class="file-card"><span class="file-icon">'+fileIcon(res.filename)+'</span><div class="file-info"><div class="file-name">'+esc(res.filename)+'</div><div class="file-meta">'+formatSize(res.size)+'</div></div></div>';
+}
+function uploadAndSend(){
+  if(!pendingFile)return Promise.resolve(null);
+  var fd=new FormData();fd.append('file',pendingFile);fd.append('agent',$('agent').value);
+  return fetch(BASE+'/files',{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:fd}).then(function(r){
+    if(!r.ok)return r.json().then(function(e){throw new Error(e.error||'upload failed')});
+    return r.json();
+  }).then(function(res){
+    clearPending();
+    return res;
+  });
+}
+function doSend(){
+  var v=$('input').value;$('input').value='';
+  if(pendingFile){
+    uploadAndSend().then(function(res){
+      if(res&&res.path){
+        var card=fileCardHtml(res);
+        var text=v||'Please analyze this file.';
+        addMsg('user',card+esc(text),true);
+        var prefix='[Uploaded file: '+res.path+']\n\n';
+        sendMessage(prefix+text,true);
+      }else sendMessage(v);
+    }).catch(function(e){addMsg('assistant','<span style="color:#ef4444">❌ Upload failed: '+esc(e.message)+'</span>')});
+  }else{sendMessage(v)}
+}
+$('input').onkeydown=function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend()}};
+$('btn-send').onclick=function(){doSend()};
 
 /* ===== Scroll detection ===== */
 $('messages').onscroll=function(){var el=this;userScrolled=(el.scrollTop+el.clientHeight)<(el.scrollHeight-30)};

@@ -295,6 +295,7 @@ class AcpProcessPool:
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             start_new_session=True,  # create process group so we can kill the whole tree
+            limit=1024 * 1024,  # 1MB line buffer (default 64KB too small for large agent responses)
         )
 
         conn = AcpConnection(agent=agent, session_id=session_id, proc=proc, verbose=self._verbose)
