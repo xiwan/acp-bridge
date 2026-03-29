@@ -13,7 +13,7 @@
 ║   🌐 Web UI ──┘              ├──► 🤖 Codex                   ║
 ║                              └──► ...                        ║
 ║                                                              ║
-║          https://github.com/aws-samples/sample-acp-bridge                 ║
+║          https://github.com/xiwan/acp-bridge                              ║
 ╚══════════════════════════════════════════════════════════════╝
 
         ~ 🌐 The world 🔌 ACP protocol 🤖 Local AI agents ~
@@ -21,9 +21,9 @@
 
 # ACP Bridge
 
-[![GitHub stars](https://img.shields.io/github/stars/aws-samples/sample-acp-bridge?style=social)](https://github.com/aws-samples/sample-acp-bridge/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/aws-samples/sample-acp-bridge?style=social)](https://github.com/aws-samples/sample-acp-bridge/network/members)
-[![GitHub Discussions](https://img.shields.io/github/discussions/aws-samples/sample-acp-bridge?logo=github&label=Discussions)](https://github.com/aws-samples/sample-acp-bridge/discussions)
+[![GitHub stars](https://img.shields.io/github/stars/xiwan/acp-bridge?style=social)](https://github.com/xiwan/acp-bridge/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/xiwan/acp-bridge?style=social)](https://github.com/xiwan/acp-bridge/network/members)
+[![GitHub Discussions](https://img.shields.io/github/discussions/xiwan/acp-bridge?logo=github&label=Discussions)](https://github.com/xiwan/acp-bridge/discussions)
 [![License: MIT-0](https://img.shields.io/badge/License-MIT--0-green.svg)](LICENSE)
 
 [![Agent Guide](https://img.shields.io/badge/Agent_Guide-for_AI_Agents-blue?logo=robot)](AGENT.md)
