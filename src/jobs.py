@@ -250,6 +250,8 @@ class JobManager:
             job.status = "failed"
         job.result = "".join(parts)
 
+    MAX_WEBHOOK_RETRIES = 5
+
     async def _webhook(self, job: Job):
         url = job.callback_url
         is_discord_webhook = "discord.com/api/webhooks" in url
@@ -273,6 +275,9 @@ class JobManager:
                 headers["x-openclaw-account-id"] = account_id
                 headers["x-openclaw-message-channel"] = channel
 
+        job.retries += 1
+        self._store.save(job)
+
         try:
             client = await self._get_http()
             for payload in payloads:
@@ -281,6 +286,9 @@ class JobManager:
                          job.job_id, channel,
                          resp.status_code, payloads.index(payload) + 1, len(payloads))
                 if resp.status_code != 200:
+                    body = resp.text[:500]
+                    log.warning("webhook_rejected: job=%s status=%d retries=%d body=%s",
+                                job.job_id, resp.status_code, job.retries, body)
                     break
                 if len(payloads) > 1:
                     await asyncio.sleep(0.5)
@@ -288,7 +296,7 @@ class JobManager:
                 job.webhook_sent = True
                 self._store.save(job)
         except Exception as e:
-            log.error("webhook_failed: job=%s error=%s", job.job_id, e)
+            log.error("webhook_failed: job=%s retries=%d error=%s", job.job_id, job.retries, e)
 
     @staticmethod
     def _format_discord_embed(job: Job) -> dict:
@@ -330,10 +338,17 @@ class JobManager:
                 self._store.save(j)
                 if j.callback_url:
                     asyncio.create_task(self._webhook(j))
-        # Retry unsent webhooks for completed/failed jobs
+        # Retry unsent webhooks for completed/failed jobs (with retry limit)
         for j in self._jobs.values():
             if j.status in ("completed", "failed") and j.callback_url and not j.webhook_sent:
-                log.info("webhook_retry: job=%s agent=%s", j.job_id, j.agent)
+                if j.retries >= self.MAX_WEBHOOK_RETRIES:
+                    if not getattr(j, '_retry_exhausted_logged', False):
+                        log.warning("webhook_exhausted: job=%s agent=%s retries=%d, giving up",
+                                    j.job_id, j.agent, j.retries)
+                        j._retry_exhausted_logged = True
+                    continue
+                log.info("webhook_retry: job=%s agent=%s retries=%d/%d",
+                         j.job_id, j.agent, j.retries, self.MAX_WEBHOOK_RETRIES)
                 asyncio.create_task(self._webhook(j))
         # Purge old rows from sqlite
         deleted = self._store.delete_old(max_age)
