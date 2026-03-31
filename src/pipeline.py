@@ -180,7 +180,8 @@ class PipelineManager:
     async def _exec_step(self, pl: Pipeline, step: PipelineStep, prompt: str):
         step.status = "running"
         step.started_at = time.time()
-        session_id = f"pipeline-{pl.pipeline_id}-{step.agent}"
+        step_idx = pl.steps.index(step)
+        session_id = f"pipeline-{pl.pipeline_id}-{step.agent}-{step_idx}"
         parts = []
         try:
             conn = await self._pool.get_or_create(step.agent, session_id)
