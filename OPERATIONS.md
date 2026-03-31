@@ -81,11 +81,11 @@ AWS_SECRET_ACCESS_KEY=
 > When no task is active, it shows "No active version."
 
 ```yaml
-version: "0.10.0"
-description: "Multi-agent pipeline (relay)"
-status: "in-progress"
-current_phase: "Phase 3: Implement"
-log_file: "versions/v0.10.0.md"
+version: ""
+description: ""
+status: "idle"
+current_phase: ""
+log_file: ""
 ```
 
 ---
