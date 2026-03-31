@@ -87,6 +87,43 @@ Once activated, subsequent messages are automatically forwarded to the agent wit
 - Different agents use different session_ids to avoid conflicts
 - Manual override: `$ACP_CLIENT -s <uuid> "<prompt>"`
 
+## Pipeline (Multi-Agent Collaboration)
+
+When the user asks multiple agents to work together, construct a pipeline API call.
+
+### Recognition Rules
+
+| User says | Mode | Example |
+|-----------|------|---------|
+| "先让 X 做...再让 Y 做..." / "X analyze, then Y review" | `sequence` | "让 kiro 分析代码，然后让 claude review" |
+| "同时问 X 和 Y" / "ask X and Y together" | `parallel` | "同时让 kiro 和 claude 解释 ACP 协议" |
+| "谁快用谁" / "whoever finishes first" | `race` | "让 kiro 和 claude 都算一下，谁快用谁" |
+| "让所有 agent 讨论..." / "all agents discuss" | `parallel` | "让所有 agent 讨论微服务架构" |
+
+### How to Call
+
+```bash
+curl -s -X POST "$ACP_BRIDGE_URL/pipelines" \
+  -H "Authorization: Bearer $ACP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "<sequence|parallel|race>",
+    "steps": [
+      {"agent": "<name>", "prompt": "<task>", "output_as": "<var>"},
+      {"agent": "<name>", "prompt": "based on: {{<var>}}"}
+    ]
+  }'
+```
+
+- `output_as` + `{{var}}`: pass one step's output to the next (sequence mode)
+- If user doesn't specify agents, use all available from `$ACP_CLIENT -l`
+- Poll `GET /pipelines/<id>` until status is `completed` or `failed`
+
+### Reply Format
+
+After submitting, reply: "🔗 Pipeline submitted (mode: sequence, agents: kiro → claude)"
+After completion, show each step's result with agent name.
+
 ## Additional Resources
 
 - For async jobs, API details, and target formats, see [reference.md](reference.md)
