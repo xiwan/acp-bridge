@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.10.2 | 2026-03-31 | Pipeline SQLite persistence — survives restarts, queryable via API |
 | v0.10.1 | 2026-03-31 | Pipeline session_id fix, skill pipeline recognition rules |
 | v0.10.0 | 2026-03-31 | Multi-agent pipeline: sequence, parallel, race execution (`POST /pipelines`) |
 | v0.9.6 | 2026-03-31 | Webhook retry limit (max 5) + response body logging on failure |

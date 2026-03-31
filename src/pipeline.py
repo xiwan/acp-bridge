@@ -10,6 +10,7 @@ import httpx
 
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
 from .sse import transform_notification
+from .store import PipelineStore
 
 log = logging.getLogger("acp-bridge.pipeline")
 
@@ -66,13 +67,15 @@ class Pipeline:
 
 class PipelineManager:
     def __init__(self, pool: AcpProcessPool, agents_cfg: dict,
-                 webhook_url: str = "", webhook_token: str = ""):
+                 webhook_url: str = "", webhook_token: str = "",
+                 db_path: str = "data/jobs.db"):
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._pipelines: dict[str, Pipeline] = {}
         self._webhook_url = webhook_url
         self._webhook_token = webhook_token
         self._http: httpx.AsyncClient | None = None
+        self._store = PipelineStore(db_path)
 
     def submit(self, mode: str, steps: list[dict], context: dict | None = None,
                webhook_meta: dict | None = None) -> Pipeline:
@@ -89,15 +92,43 @@ class PipelineManager:
             webhook_meta=webhook_meta or {},
         )
         self._pipelines[pl.pipeline_id] = pl
+        self._store.save(pl)
         asyncio.create_task(self._run(pl))
         log.info("pipeline_submitted: id=%s mode=%s steps=%d", pl.pipeline_id, mode, len(pl.steps))
         return pl
 
     def get(self, pipeline_id: str) -> Pipeline | None:
-        return self._pipelines.get(pipeline_id)
+        pl = self._pipelines.get(pipeline_id)
+        if pl:
+            return pl
+        d = self._store.get(pipeline_id)
+        if d:
+            return self._dict_to_pipeline(d)
+        return None
 
     def list_all(self, limit: int = 50) -> list[Pipeline]:
-        return sorted(self._pipelines.values(), key=lambda p: p.created_at, reverse=True)[:limit]
+        seen = set(self._pipelines.keys())
+        pls = list(self._pipelines.values())
+        for d in self._store.load_recent(limit):
+            if d["pipeline_id"] not in seen:
+                pls.append(self._dict_to_pipeline(d))
+        return sorted(pls, key=lambda p: p.created_at, reverse=True)[:limit]
+
+    @staticmethod
+    def _dict_to_pipeline(d: dict) -> Pipeline:
+        pl = Pipeline(
+            pipeline_id=d["pipeline_id"], mode=d["mode"],
+            steps=[PipelineStep(
+                agent=s["agent"], prompt_template=s.get("prompt_template", ""),
+                output_as=s.get("output_as", ""), status=s.get("status", ""),
+                result=s.get("result", ""), error=s.get("error", ""),
+                started_at=s.get("started_at", 0), completed_at=s.get("completed_at", 0),
+            ) for s in d.get("steps", [])],
+            status=d["status"], context=d.get("context", {}),
+            created_at=d["created_at"], completed_at=d.get("completed_at", 0),
+            error=d.get("error", ""), webhook_meta=d.get("webhook_meta", {}),
+        )
+        return pl
 
     async def _run(self, pl: Pipeline):
         pl.status = "running"
@@ -118,6 +149,7 @@ class PipelineManager:
         pl.completed_at = time.time()
         if pl.status == "running":
             pl.status = "completed" if not pl.error else "failed"
+        self._store.save(pl)
         log.info("pipeline_done: id=%s status=%s duration=%.1fs",
                  pl.pipeline_id, pl.status, pl.completed_at - pl.created_at)
         if pl.webhook_meta.get("target"):

@@ -152,3 +152,72 @@ class ChatStore:
         cur = self._db.execute("DELETE FROM chat_messages")
         self._db.commit()
         return cur.rowcount
+
+
+_PIPELINE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS pipelines (
+    pipeline_id  TEXT PRIMARY KEY,
+    mode         TEXT NOT NULL,
+    status       TEXT DEFAULT 'pending',
+    steps        TEXT DEFAULT '[]',
+    context      TEXT DEFAULT '{}',
+    error        TEXT DEFAULT '',
+    webhook_meta TEXT DEFAULT '{}',
+    created_at   REAL NOT NULL,
+    completed_at REAL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pipelines_created ON pipelines(created_at);
+"""
+
+
+class PipelineStore:
+    def __init__(self, db_path: str = "data/jobs.db"):
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._db = sqlite3.connect(db_path, check_same_thread=False)
+        self._db.row_factory = sqlite3.Row
+        self._db.executescript(_PIPELINE_SCHEMA)
+
+    def save(self, pl) -> None:
+        steps = json.dumps([{
+            "agent": s.agent, "prompt_template": s.prompt_template,
+            "output_as": s.output_as, "status": s.status,
+            "result": s.result, "error": s.error,
+            "started_at": s.started_at, "completed_at": s.completed_at,
+        } for s in pl.steps])
+        self._db.execute(
+            """INSERT OR REPLACE INTO pipelines
+               (pipeline_id, mode, status, steps, context, error, webhook_meta, created_at, completed_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (pl.pipeline_id, pl.mode, pl.status, steps,
+             json.dumps(pl.context), pl.error, json.dumps(pl.webhook_meta),
+             pl.created_at, pl.completed_at),
+        )
+        self._db.commit()
+
+    def load_recent(self, limit: int = 50) -> list[dict]:
+        rows = self._db.execute(
+            "SELECT * FROM pipelines ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [self._row_to_dict(r) for r in rows]
+
+    def get(self, pipeline_id: str) -> dict | None:
+        row = self._db.execute(
+            "SELECT * FROM pipelines WHERE pipeline_id = ?", (pipeline_id,)
+        ).fetchone()
+        return self._row_to_dict(row) if row else None
+
+    def delete_old(self, max_age: float = 86400) -> int:
+        cutoff = time.time() - max_age
+        cur = self._db.execute(
+            "DELETE FROM pipelines WHERE completed_at > 0 AND completed_at < ?", (cutoff,)
+        )
+        self._db.commit()
+        return cur.rowcount
+
+    @staticmethod
+    def _row_to_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        d["steps"] = json.loads(d["steps"])
+        d["context"] = json.loads(d["context"])
+        d["webhook_meta"] = json.loads(d["webhook_meta"])
+        return d
