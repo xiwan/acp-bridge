@@ -77,7 +77,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history.
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.10.0
 
 ## Project Structure
 
@@ -88,6 +88,7 @@ acp-bridge/
 │   ├── acp_client.py    # ACP process pool + JSON-RPC connection management
 │   ├── agents.py        # Agent handlers (ACP mode + PTY fallback)
 │   ├── jobs.py          # Async job manager (submit, monitor, webhook callback)
+│   ├── pipeline.py      # Multi-agent pipeline (sequence, parallel, race)
 │   ├── sse.py           # ACP session/update → SSE event conversion
 │   └── security.py      # Security middleware (IP allowlist + Bearer Token)
 ├── skill/
@@ -407,6 +408,9 @@ POST /jobs → Bridge executes in background → On completion POST to OpenClaw 
 | POST | `/jobs` | Submit async job | Yes |
 | GET | `/jobs` | List all jobs + stats | Yes |
 | GET | `/jobs/{job_id}` | Query single job | Yes |
+| POST | `/pipelines` | Submit multi-agent pipeline | Yes |
+| GET | `/pipelines` | List all pipelines | Yes |
+| GET | `/pipelines/{id}` | Query single pipeline | Yes |
 | GET | `/tools` | List available OpenClaw tools | Yes |
 | POST | `/tools/invoke` | Invoke an OpenClaw tool (proxy) | Yes |
 | POST | `/chat/messages` | Save a chat message (Web UI) | Yes |

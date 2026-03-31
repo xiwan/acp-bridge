@@ -17,7 +17,7 @@ from src.acp_client import AcpProcessPool
 from src.agents import make_acp_agent_handler, make_pty_agent_handler
 from src.jobs import JobManager
 from src.security import SecurityMiddleware
-from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes
+from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes
 
 _VERSION = open(os.path.join(os.path.dirname(__file__), "VERSION")).read().strip()
 
@@ -148,6 +148,12 @@ def main():
     tools_routes.register(app, openclaw_url, webhook_cfg.get("token", ""), webhook_account_id)
     upload_dir = srv_cfg.get("upload_dir", "/tmp/acp-uploads")
     files_routes.register(app, upload_dir)
+
+    # --- Pipeline manager ---
+    from src.pipeline import PipelineManager
+    pipeline_mgr = PipelineManager(pool, agents_cfg) if pool else None
+    pipelines_routes.register(app, pipeline_mgr)
+
     if ui_enabled:
         chat_routes.register(app, config)
 

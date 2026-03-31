@@ -98,6 +98,45 @@ Jobs stuck >10 minutes are auto-marked failed.
 
 Missing `target` → job runs but no push. Missing `account_id` → OpenClaw returns 500.
 
+## Pipeline Mode
+
+Multi-agent collaboration: sequence, parallel, or race execution.
+
+### Submit
+
+```bash
+curl -X POST "$ACP_BRIDGE_URL/pipelines" \
+  -H "Authorization: Bearer $ACP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "sequence",
+    "steps": [
+      {"agent": "kiro", "prompt": "Analyze the code", "output_as": "analysis"},
+      {"agent": "claude", "prompt": "Review: {{analysis}}"}
+    ]
+  }'
+```
+
+### Modes
+
+| Mode | Behavior |
+|------|----------|
+| `sequence` | Steps run in order; `{{output_as}}` passes output to next step |
+| `parallel` | All steps run concurrently; results merged |
+| `race` | All steps run concurrently; first to complete wins |
+
+### Query
+
+```bash
+curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/pipelines/<id>"
+```
+
+### List
+
+```bash
+curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/pipelines"
+```
+
 ## Security
 
 - Pass token only via `ACP_TOKEN` env var

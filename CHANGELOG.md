@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.10.0 | 2026-03-31 | Multi-agent pipeline: sequence, parallel, race execution (`POST /pipelines`) |
 | v0.9.6 | 2026-03-31 | Webhook retry limit (max 5) + response body logging on failure |
 | v0.9.5 | 2026-03-29 | File upload API: `POST /files` with configurable `upload_dir`, skill `--upload`, Web UI attach button |
 | v0.9.2 | 2026-03-29 | AGENT.md rewrite: agent-first flow with clear 🤖/👤 boundaries |
