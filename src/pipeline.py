@@ -6,6 +6,8 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
+import httpx
+
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
 from .sse import transform_notification
 
@@ -63,10 +65,14 @@ class Pipeline:
 
 
 class PipelineManager:
-    def __init__(self, pool: AcpProcessPool, agents_cfg: dict):
+    def __init__(self, pool: AcpProcessPool, agents_cfg: dict,
+                 webhook_url: str = "", webhook_token: str = ""):
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._pipelines: dict[str, Pipeline] = {}
+        self._webhook_url = webhook_url
+        self._webhook_token = webhook_token
+        self._http: httpx.AsyncClient | None = None
 
     def submit(self, mode: str, steps: list[dict], context: dict | None = None,
                webhook_meta: dict | None = None) -> Pipeline:
@@ -114,6 +120,54 @@ class PipelineManager:
             pl.status = "completed" if not pl.error else "failed"
         log.info("pipeline_done: id=%s status=%s duration=%.1fs",
                  pl.pipeline_id, pl.status, pl.completed_at - pl.created_at)
+        if pl.webhook_meta.get("target"):
+            await self._webhook(pl)
+
+    async def _webhook(self, pl: Pipeline):
+        url = self._webhook_url
+        if not url:
+            return
+        target = pl.webhook_meta.get("target", "")
+        channel = pl.webhook_meta.get("channel", "discord")
+        account_id = pl.webhook_meta.get("account_id", "")
+
+        # Build summary message
+        dur = round(pl.completed_at - pl.created_at, 1)
+        agents = " → ".join(s.agent for s in pl.steps) if pl.mode == "sequence" else \
+                 " | ".join(s.agent for s in pl.steps)
+        lines = [f"🔗 **Pipeline** ({pl.mode}) — `{pl.pipeline_id[:8]}`",
+                 f"> Agents: {agents}"]
+        if pl.status == "failed":
+            lines.append(f"> ❌ {pl.error}")
+        else:
+            lines.append(f"> ✅ Completed in {dur}s")
+        for s in pl.steps:
+            if s.result:
+                preview = s.result[:300] + "..." if len(s.result) > 300 else s.result
+                lines.append(f">\n> **{s.agent}** ({round(s.completed_at - s.started_at, 1)}s):")
+                for ln in preview.splitlines():
+                    lines.append(f"> {ln}")
+
+        payload = {"tool": "message", "action": "send",
+                   "args": {"channel": channel, "target": target,
+                            "message": "\n".join(lines)}}
+        headers = {"Content-Type": "application/json"}
+        if self._webhook_token:
+            headers["Authorization"] = f"Bearer {self._webhook_token}"
+        if account_id:
+            headers["x-openclaw-account-id"] = account_id
+            headers["x-openclaw-message-channel"] = channel
+
+        try:
+            if not self._http or self._http.is_closed:
+                self._http = httpx.AsyncClient(timeout=10)
+            resp = await self._http.post(url, json=payload, headers=headers)
+            log.info("pipeline_webhook: id=%s status=%d", pl.pipeline_id, resp.status_code)
+            if resp.status_code != 200:
+                log.warning("pipeline_webhook_rejected: id=%s body=%s",
+                            pl.pipeline_id, resp.text[:300])
+        except Exception as e:
+            log.error("pipeline_webhook_failed: id=%s error=%s", pl.pipeline_id, e)
 
     async def _run_sequence(self, pl: Pipeline):
         for step in pl.steps:

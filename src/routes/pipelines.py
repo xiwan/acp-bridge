@@ -18,9 +18,13 @@ class PipelineRequest(BaseModel):
     mode: str = "sequence"
     steps: list[PipelineStepRequest]
     context: dict = {}
+    target: str = ""
+    channel: str = ""
+    callback_meta: dict = {}
 
 
-def register(app, pipeline_mgr: PipelineManager | None):
+def register(app, pipeline_mgr: PipelineManager | None,
+             webhook_account_id: str = "", webhook_default_target: str = ""):
 
     @app.post("/pipelines")
     async def submit_pipeline(req: PipelineRequest):
@@ -30,10 +34,20 @@ def register(app, pipeline_mgr: PipelineManager | None):
             return JSONResponse({"error": f"invalid mode: {req.mode}"}, status_code=400)
         if not req.steps:
             return JSONResponse({"error": "steps required"}, status_code=400)
+        meta = req.callback_meta
+        if req.target:
+            meta["target"] = req.target
+        elif webhook_default_target and "target" not in meta:
+            meta["target"] = webhook_default_target
+        if webhook_account_id and "account_id" not in meta:
+            meta["account_id"] = webhook_account_id
+        if req.channel:
+            meta["channel"] = req.channel
         pl = pipeline_mgr.submit(
             mode=req.mode,
             steps=[s.model_dump() for s in req.steps],
             context=req.context,
+            webhook_meta=meta,
         )
         return {"pipeline_id": pl.pipeline_id, "status": pl.status, "mode": pl.mode,
                 "steps": len(pl.steps)}

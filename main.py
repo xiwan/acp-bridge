@@ -151,8 +151,10 @@ def main():
 
     # --- Pipeline manager ---
     from src.pipeline import PipelineManager
-    pipeline_mgr = PipelineManager(pool, agents_cfg) if pool else None
-    pipelines_routes.register(app, pipeline_mgr)
+    pipeline_mgr = PipelineManager(pool, agents_cfg,
+                                   webhook_url=webhook_cfg.get("url", ""),
+                                   webhook_token=webhook_cfg.get("token", "")) if pool else None
+    pipelines_routes.register(app, pipeline_mgr, webhook_account_id, webhook_default_target)
 
     if ui_enabled:
         chat_routes.register(app, config)
