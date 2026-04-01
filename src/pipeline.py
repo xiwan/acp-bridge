@@ -152,44 +152,24 @@ class PipelineManager:
         self._store.save(pl)
         log.info("pipeline_done: id=%s status=%s duration=%.1fs",
                  pl.pipeline_id, pl.status, pl.completed_at - pl.created_at)
-        if pl.webhook_meta.get("target"):
-            await self._webhook(pl)
+        await self._webhook(pl)
 
-    async def _webhook(self, pl: Pipeline):
+    async def _send_webhook(self, pl: Pipeline, message: str):
+        """Send a single message payload via webhook."""
         url = self._webhook_url
         if not url:
             return
         target = pl.webhook_meta.get("target", "")
         channel = pl.webhook_meta.get("channel", "discord")
         account_id = pl.webhook_meta.get("account_id", "")
-
-        # Build summary message
-        dur = round(pl.completed_at - pl.created_at, 1)
-        agents = " → ".join(s.agent for s in pl.steps) if pl.mode == "sequence" else \
-                 " | ".join(s.agent for s in pl.steps)
-        lines = [f"🔗 **Pipeline** ({pl.mode}) — `{pl.pipeline_id[:8]}`",
-                 f"> Agents: {agents}"]
-        if pl.status == "failed":
-            lines.append(f"> ❌ {pl.error}")
-        else:
-            lines.append(f"> ✅ Completed in {dur}s")
-        for s in pl.steps:
-            if s.result:
-                preview = s.result[:300] + "..." if len(s.result) > 300 else s.result
-                lines.append(f">\n> **{s.agent}** ({round(s.completed_at - s.started_at, 1)}s):")
-                for ln in preview.splitlines():
-                    lines.append(f"> {ln}")
-
         payload = {"tool": "message", "action": "send",
-                   "args": {"channel": channel, "target": target,
-                            "message": "\n".join(lines)}}
+                   "args": {"channel": channel, "target": target, "message": message}}
         headers = {"Content-Type": "application/json"}
         if self._webhook_token:
             headers["Authorization"] = f"Bearer {self._webhook_token}"
         if account_id:
             headers["x-openclaw-account-id"] = account_id
             headers["x-openclaw-message-channel"] = channel
-
         try:
             if not self._http or self._http.is_closed:
                 self._http = httpx.AsyncClient(timeout=10)
@@ -201,10 +181,38 @@ class PipelineManager:
         except Exception as e:
             log.error("pipeline_webhook_failed: id=%s error=%s", pl.pipeline_id, e)
 
+    async def _webhook_step(self, pl: Pipeline, step: PipelineStep):
+        """Push a single step result immediately after it completes."""
+        if not self._webhook_url or not pl.webhook_meta.get("target"):
+            return
+        dur = round(step.completed_at - step.started_at, 1)
+        icon = "✅" if step.status == "completed" else "❌"
+        lines = [f"🔗 **Pipeline** `{pl.pipeline_id[:8]}` — **{step.agent}** {icon}"]
+        if step.status == "failed":
+            lines.append(f"> ❌ {step.error}")
+        else:
+            preview = step.result[:300] + "..." if len(step.result) > 300 else step.result
+            for ln in preview.splitlines():
+                lines.append(f"> {ln}")
+        lines.append(f"> ⏱️ {dur}s")
+        await self._send_webhook(pl, "\n".join(lines))
+
+    async def _webhook(self, pl: Pipeline):
+        """Final summary push — overall status + total duration."""
+        if not self._webhook_url or not pl.webhook_meta.get("target"):
+            return
+        dur = round(pl.completed_at - pl.created_at, 1)
+        if pl.status == "failed":
+            msg = f"🔗 **Pipeline** `{pl.pipeline_id[:8]}` ❌ {pl.error} | 耗时 {dur}s"
+        else:
+            msg = f"🔗 **Pipeline** `{pl.pipeline_id[:8]}` ✅ 全部完成，耗时 {dur}s"
+        await self._send_webhook(pl, msg)
+
     async def _run_sequence(self, pl: Pipeline):
         for step in pl.steps:
             prompt = self._render(step.prompt_template, pl.context)
             await self._exec_step(pl, step, prompt)
+            await self._webhook_step(pl, step)
             if step.status == "failed":
                 pl.status = "failed"
                 pl.error = f"step {step.agent} failed: {step.error}"
@@ -213,10 +221,14 @@ class PipelineManager:
                 pl.context[step.output_as] = step.result
 
     async def _run_parallel(self, pl: Pipeline):
+        async def _exec_and_push(step, prompt):
+            await self._exec_step(pl, step, prompt)
+            await self._webhook_step(pl, step)
+
         tasks = []
         for step in pl.steps:
             prompt = self._render(step.prompt_template, pl.context)
-            tasks.append(self._exec_step(pl, step, prompt))
+            tasks.append(_exec_and_push(step, prompt))
         await asyncio.gather(*tasks)
         failed = [s for s in pl.steps if s.status == "failed"]
         if failed:
@@ -259,7 +271,9 @@ class PipelineManager:
                     except asyncio.CancelledError:
                         pass
 
-        if not winner:
+        if winner:
+            await self._webhook_step(pl, winner)
+        else:
             pl.status = "failed"
             pl.error = "all agents failed"
 
