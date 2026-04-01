@@ -117,6 +117,7 @@ curl -s -X POST "$ACP_BRIDGE_URL/pipelines" \
 
 - `output_as` + `{{var}}`: pass one step's output to the next (sequence mode)
 - If user doesn't specify agents, use all available from `$ACP_CLIENT -l`
+- Supports both ACP and PTY agents (e.g. codex) — mix freely
 - Poll `GET /pipelines/<id>` until status is `completed` or `failed`
 
 ### Reply Format

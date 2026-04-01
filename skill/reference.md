@@ -111,6 +111,8 @@ Missing `target` → job runs but no push. Missing `account_id` → OpenClaw ret
 
 Multi-agent collaboration: sequence, parallel, or race execution.
 
+Supports both ACP agents (Kiro, Claude, Qwen, OpenCode) and PTY agents (Codex) — mix freely in any mode.
+
 ### Submit
 
 ```bash
