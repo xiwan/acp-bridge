@@ -7,6 +7,23 @@ import os
 import re
 import sys
 import time
+from pathlib import Path
+
+
+def _load_dotenv(path: str = ".env") -> None:
+    """Load .env file into os.environ (won't override existing vars)."""
+    p = Path(__file__).resolve().parent / path
+    if not p.exists():
+        return
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip())
+
+
+_load_dotenv()
 
 import uvicorn
 import yaml
@@ -198,6 +215,10 @@ def main():
     log.info("auth_token=%s", auth_token[:8] + "..." if len(auth_token) > 8 else auth_token)
     if job_mgr:
         log.info("jobs: monitor=60s stuck_timeout=600s webhook=%s", webhook_cfg.get("url", "(none)"))
+    webhook_token = webhook_cfg.get("token", "")
+    if webhook_cfg.get("url") and not webhook_token:
+        log.warning("webhook: url is set but token is empty — webhook calls will fail with 401. "
+                    "Set OPENCLAW_TOKEN env var or check config.yaml")
     if openclaw_url:
         log.info("tools_proxy: openclaw=%s", openclaw_url.replace("/tools/invoke", ""))
     if ui_enabled:

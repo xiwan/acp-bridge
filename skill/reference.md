@@ -74,10 +74,19 @@ curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/jobs/<job_id>"
 ### Monitor
 
 ```bash
+# Job status
 curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/jobs"
+
+# Pool stats (per-agent sessions, busy count)
+curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/health/agents"
 ```
 
 Jobs stuck >10 minutes are auto-marked failed.
+
+Pool monitoring (every 60s automatic):
+- Ping idle connections, kill unresponsive ones
+- Clean up sessions past TTL (default 24h)
+- Kill orphaned processes from previous runs
 
 ## Target Format
 

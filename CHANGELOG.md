@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.10.4 | 2026-04-01 | Connection pool LRU eviction: 满载时淘汰最不活跃的空闲连接，同 agent 优先复用进程，消灭 pool_exhausted |
 | v0.10.3 | 2026-04-01 | Pipeline per-step webhook push: sequence逐步推送, parallel完成即推, race赢家即推, 最终推汇总耗时 |
 | v0.10.2 | 2026-03-31 | Pipeline SQLite persistence — survives restarts, queryable via API |
 | v0.10.1 | 2026-03-31 | Pipeline session_id fix, skill pipeline recognition rules |

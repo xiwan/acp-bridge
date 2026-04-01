@@ -175,7 +175,10 @@ class PipelineManager:
                 self._http = httpx.AsyncClient(timeout=10)
             resp = await self._http.post(url, json=payload, headers=headers)
             log.info("pipeline_webhook: id=%s status=%d", pl.pipeline_id, resp.status_code)
-            if resp.status_code != 200:
+            if resp.status_code == 401:
+                log.warning("pipeline_webhook_unauthorized: id=%s — OPENCLAW_TOKEN may be missing or wrong",
+                            pl.pipeline_id)
+            elif resp.status_code != 200:
                 log.warning("pipeline_webhook_rejected: id=%s body=%s",
                             pl.pipeline_id, resp.text[:300])
         except Exception as e:

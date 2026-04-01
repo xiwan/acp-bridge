@@ -37,6 +37,7 @@ class AcpConnection:
     acp_session_id: str | None = field(default=None, init=False)
     last_active: float = field(default_factory=time.time, init=False)
     session_reset: bool = field(default=False, init=False)
+    _busy: bool = field(default=False, init=False)
 
     def _next_id(self) -> int:
         self._req_id += 1
@@ -159,6 +160,7 @@ class AcpConnection:
             self._unsubscribe(sub_id)
 
     async def session_prompt(self, prompt: str, idle_timeout: float = 300) -> AsyncIterator[dict]:
+        self._busy = True
         self.last_active = time.time()
         last_event_time = time.time()
         sub_id, q = self._subscribe()
@@ -207,6 +209,7 @@ class AcpConnection:
         finally:
             self._unsubscribe(sub_id)
             self.last_active = time.time()
+            self._busy = False
 
     async def session_cancel(self) -> None:
         await self._send_notification("session/cancel", {
@@ -255,6 +258,37 @@ class AcpProcessPool:
     def _count_agent(self, agent: str) -> int:
         return sum(1 for (a, _) in self._connections if a == agent)
 
+    def _lru_idle(self, agent: str | None = None) -> tuple[str, str] | None:
+        """Return key of least-recently-used idle connection, optionally filtered by agent."""
+        candidates = [
+            (k, c) for k, c in self._connections.items()
+            if not c._busy and c.alive and (agent is None or k[0] == agent)
+        ]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda x: x[1].last_active)[0]
+
+    async def _evict(self, key: tuple[str, str]) -> None:
+        """Kill and remove a connection from the pool."""
+        conn = self._connections.pop(key, None)
+        if conn:
+            log.info("lru_evict: agent=%s session=%s idle=%.0fs",
+                     key[0], key[1], time.time() - conn.last_active)
+            await conn.kill()
+            self._save_pids()
+
+    async def _reuse(self, old_key: tuple[str, str], new_key: tuple[str, str], cwd: str) -> AcpConnection:
+        """Reuse an existing connection under a new session key — reset context via session/new."""
+        conn = self._connections.pop(old_key)
+        new_agent, new_session_id = new_key
+        log.info("lru_reuse: agent=%s session=%s→%s", new_agent, old_key[1], new_session_id)
+        conn.session_id = new_session_id
+        conn.session_reset = True
+        await conn.session_new(cwd or self._config[new_agent].get("working_dir", "/tmp"))
+        self._connections[new_key] = conn
+        self._save_pids()
+        return conn
+
     async def get_or_create(self, agent: str, session_id: str, cwd: str = "") -> AcpConnection:
         key = (agent, session_id)
         conn = self._connections.get(key)
@@ -267,10 +301,22 @@ class AcpProcessPool:
             log.warning("stale connection: agent=%s session=%s, rebuilding", agent, session_id)
             self._connections.pop(key, None)
 
-        if len(self._connections) >= self._max:
-            raise PoolExhaustedError(f"global limit reached ({self._max})")
+        # per-agent limit: evict LRU idle same-agent connection to free a slot
         if self._count_agent(agent) >= self._max_per_agent:
-            raise PoolExhaustedError(f"per-agent limit reached for {agent} ({self._max_per_agent})")
+            lru = self._lru_idle(agent=agent)
+            if lru is None:
+                raise PoolExhaustedError(f"per-agent limit for {agent} ({self._max_per_agent}), all busy")
+            await self._evict(lru)
+
+        # global limit: prefer reusing same-agent process, else evict globally LRU
+        if len(self._connections) >= self._max:
+            lru_same = self._lru_idle(agent=agent)
+            if lru_same:
+                return await self._reuse(lru_same, key, cwd)
+            lru = self._lru_idle()
+            if lru is None:
+                raise PoolExhaustedError(f"global limit ({self._max}), all connections busy")
+            await self._evict(lru)
 
         agent_cfg = self._config.get(agent)
         if not agent_cfg:
@@ -383,7 +429,10 @@ class AcpProcessPool:
     @property
     def stats(self) -> dict:
         agents: dict[str, int] = {}
+        busy = 0
         for (a, _), c in self._connections.items():
             if c.alive:
                 agents[a] = agents.get(a, 0) + 1
-        return {"total": len(self._connections), "by_agent": agents}
+            if c._busy:
+                busy += 1
+        return {"total": len(self._connections), "busy": busy, "by_agent": agents}
