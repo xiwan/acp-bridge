@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -13,6 +15,8 @@ from .sse import transform_notification
 from .store import PipelineStore
 
 log = logging.getLogger("acp-bridge.pipeline")
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
 
 
 @dataclass
@@ -285,6 +289,17 @@ class PipelineManager:
         step.started_at = time.time()
         step_idx = pl.steps.index(step)
         session_id = f"pipeline-{pl.pipeline_id}-{step.agent}-{step_idx}"
+        cfg = self._agents_cfg.get(step.agent, {})
+        if cfg.get("mode") == "pty":
+            await self._exec_step_pty(step, prompt, cfg)
+        else:
+            await self._exec_step_acp(step, prompt, session_id)
+        step.completed_at = time.time()
+        log.info("step_done: pipeline=%s agent=%s status=%s duration=%.1fs",
+                 pl.pipeline_id, step.agent, step.status,
+                 step.completed_at - step.started_at)
+
+    async def _exec_step_acp(self, step: PipelineStep, prompt: str, session_id: str):
         parts = []
         try:
             conn = await self._pool.get_or_create(step.agent, session_id)
@@ -306,10 +321,45 @@ class PipelineManager:
             step.error = str(e)
             step.status = "failed"
         step.result = "".join(parts)
-        step.completed_at = time.time()
-        log.info("step_done: pipeline=%s agent=%s status=%s duration=%.1fs",
-                 pl.pipeline_id, step.agent, step.status,
-                 step.completed_at - step.started_at)
+
+    async def _exec_step_pty(self, step: PipelineStep, prompt: str, cfg: dict):
+        command = cfg["command"]
+        args = cfg.get("args", [])
+        idle_timeout = cfg.get("idle_timeout", 300)
+        env = os.environ.copy()
+        env.update({"TERM": "dumb", "NO_COLOR": "1", "LANG": "en_US.UTF-8"})
+        env.update(cfg.get("env", {}))
+        parts = []
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                command, *args, prompt,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.DEVNULL,
+                cwd=cfg.get("working_dir", "/tmp"), env=env,
+            )
+            while True:
+                try:
+                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=idle_timeout)
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+                    step.error = f"agent timeout (idle {idle_timeout}s)"
+                    step.status = "failed"
+                    return
+                if not line:
+                    break
+                text = ANSI_RE.sub("", line.decode()).rstrip("\n")
+                if text:
+                    parts.append(text + "\n")
+            await proc.wait()
+            step.status = "completed" if proc.returncode == 0 else "failed"
+            if proc.returncode != 0:
+                stderr = (await proc.stderr.read()).decode().strip()
+                step.error = stderr or f"exit code {proc.returncode}"
+        except Exception as e:
+            step.error = str(e)
+            step.status = "failed"
+        step.result = "".join(parts)
 
     @staticmethod
     def _render(template: str, context: dict) -> str:
