@@ -370,11 +370,13 @@ class PipelineManager:
             seen_agents.add(current_agent)
 
             # Build prompt — each agent gets topic+rules on their first turn
-            if first_turn_for_agent:
+            # PTY agents get it every turn (no session memory)
+            is_pty = self._agents_cfg.get(current_agent, {}).get("mode") == "pty"
+            if first_turn_for_agent or is_pty:
                 tpl = _load_prompt("conversation_first_turn_zh.txt") if has_cjk else _load_prompt("conversation_first_turn.txt")
                 prompt = tpl.format(topic=topic, participants=participants_block,
                                     agent=current_agent, shared_cwd=shared_cwd)
-                if initial_context:
+                if initial_context and first_turn_for_agent:
                     prompt += f"\n{initial_context}\n"
                 prompt += a2a_block
                 if last_output:
