@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.10.8 | 2026-04-02 | Conversation 修复增强：中文自动检测、每个 agent 首轮注入 topic、prompt 文件化管理、共享工作目录、transcript 空输出 fallback、webhook 完整内容分段推送 |
 | v0.10.7 | 2026-04-02 | Pipeline conversation mode: 多 agent 多轮对话，Bridge 只传话 + SQLite 记录，支持 @mention 定向调度 |
 | v0.10.6 | 2026-04-02 | Pipeline random mode: 从 steps 中随机选一个 agent 执行，其余跳过 |
 | v0.10.5 | 2026-04-01 | Pipeline PTY support: Codex 等 PTY agent 可参与 pipeline (sequence/parallel/race)，.env auto-loader 统一环境变量管理 |
