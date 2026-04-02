@@ -25,6 +25,7 @@ class PipelineRequest(BaseModel):
     participants: list[str] = []
     topic: str = ""
     initial_context: str = ""
+    solo: dict = {}
     config: dict = {}
 
 
@@ -44,7 +45,8 @@ def register(app, pipeline_mgr: PipelineManager | None,
                 return JSONResponse({"error": "conversation requires a topic"}, status_code=400)
             context = req.context.copy()
             context.update({"participants": req.participants, "topic": req.topic,
-                            "initial_context": req.initial_context, "config": req.config})
+                            "initial_context": req.initial_context, "solo": req.solo,
+                            "config": req.config})
             steps = [PipelineStepRequest(agent=p, prompt="") for p in req.participants]
         else:
             if not req.steps:

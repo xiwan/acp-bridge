@@ -332,6 +332,7 @@ class PipelineManager:
         stop_conditions = config.get("stop_conditions", ["DONE"])
         no_progress_threshold = config.get("no_progress_threshold", 2)
         a2a_rules = config.get("a2a_rules", True)
+        solo = pl.context.get("solo", {})
 
         # Shared working directory for all participants
         conv_base = config.get("workdir") or self._agents_cfg.get("_conversation_workdir", "/tmp/acp-conversations")
@@ -376,6 +377,8 @@ class PipelineManager:
                 tpl = _load_prompt("conversation_first_turn_zh.txt") if has_cjk else _load_prompt("conversation_first_turn.txt")
                 prompt = tpl.format(topic=topic, participants=participants_block,
                                     agent=current_agent, shared_cwd=shared_cwd)
+                if solo.get(current_agent):
+                    prompt += f"\n[SOLO] {solo[current_agent]}\n"
                 if initial_context and first_turn_for_agent:
                     prompt += f"\n{initial_context}\n"
                 prompt += a2a_block
