@@ -376,13 +376,24 @@ class PipelineManager:
 
             # Build prompt
             if turn == 1:
-                prompt = (
-                    f"[CONVERSATION]\n"
-                    f"Topic: {topic}\n"
-                    f"Participants:\n{participants_block}\n"
-                    f"You are: {current_agent}\n"
-                    f"Shared workspace: {shared_cwd}\n"
-                )
+                if has_cjk:
+                    prompt = (
+                        f"[多 Agent 对话]\n"
+                        f"话题: {topic}\n"
+                        f"参与者:\n{participants_block}\n"
+                        f"你是: {current_agent}\n"
+                        f"共享工作目录: {shared_cwd}\n"
+                        f"\n你正在和其他 AI agent 进行多轮对话。直接回复你的观点即可，Bridge 会自动把你的回复转发给其他参与者。不要尝试自己调用 API 或脚本来联系其他 agent。\n"
+                    )
+                else:
+                    prompt = (
+                        f"[CONVERSATION]\n"
+                        f"Topic: {topic}\n"
+                        f"Participants:\n{participants_block}\n"
+                        f"You are: {current_agent}\n"
+                        f"Shared workspace: {shared_cwd}\n"
+                        f"\nYou are in a multi-agent conversation. Just reply with your thoughts directly — the Bridge will relay your response to other participants. Do NOT try to call APIs or scripts to contact other agents.\n"
+                    )
                 if initial_context:
                     prompt += f"\n{initial_context}\n"
                 prompt += a2a_block
