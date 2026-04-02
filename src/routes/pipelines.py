@@ -30,7 +30,7 @@ def register(app, pipeline_mgr: PipelineManager | None,
     async def submit_pipeline(req: PipelineRequest):
         if not pipeline_mgr:
             return JSONResponse({"error": "pipeline not available (no pool)"}, status_code=503)
-        if req.mode not in ("sequence", "parallel", "race"):
+        if req.mode not in ("sequence", "parallel", "race", "random"):
             return JSONResponse({"error": f"invalid mode: {req.mode}"}, status_code=400)
         if not req.steps:
             return JSONResponse({"error": "steps required"}, status_code=400)

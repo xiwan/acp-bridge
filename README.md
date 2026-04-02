@@ -77,7 +77,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.10.5
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.10.6
 
 ## Project Structure
 
@@ -646,6 +646,14 @@ This library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) fil
    │          └──► qwen ────► ✗ (running)                        │
    └──────────────────────────────────────────────────────────────┘
 
+   mode: "random" — 随机选一个执行
+   ┌──────────────────────────────────────────────────────────────┐
+   │          ┌──  kiro ────  (skipped)                          │
+   │  prompt ─┼──  claude ──  (skipped)                          │
+   │          ├──► codex ───► ✓ CHOSEN! → 执行并返回             │
+   │          └──  qwen ────  (skipped)                          │
+   └──────────────────────────────────────────────────────────────┘
+
 5. /run (sessions_spawn) — OpenClaw Native Integration
    sessions_spawn(runtime="acp", agentId="kiro", task="...")
    特点：OpenClaw 原生 API，支持 thread 绑定、streaming
@@ -663,5 +671,6 @@ This library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) fil
     sequence│ Yes      │ Chained │             │   串行接力
     parallel│ Yes      │ No      │             │   并行 / 多视角
     race    │ Yes      │ No      │             │   竞速取优
+    random  │ Yes      │ No      │             │   随机选一
   /run      │ No       │ Yes     │ No          │ OpenClaw native spawn
 ```
