@@ -477,21 +477,14 @@ class PipelineManager:
         if not self._webhook_url or not pl.webhook_meta.get("target"):
             return
         header = f"💬 **Conv** `{pl.pipeline_id[:8]}` — Turn {turn} **{agent}** ({duration}s)"
-        # Split into chunks to fit message limits (~1800 chars per message, leave room for header)
-        max_content = 1600
+        max_content = 1800
         if len(content) <= max_content:
-            lines = [header]
-            for ln in content.splitlines():
-                lines.append(f"> {ln}")
-            await self._send_webhook(pl, "\n".join(lines))
+            await self._send_webhook(pl, f"{header}\n{content}")
         else:
-            # First chunk with header
             chunks = [content[i:i+max_content] for i in range(0, len(content), max_content)]
             for idx, chunk in enumerate(chunks):
-                lines = [f"{header} ({idx+1}/{len(chunks)})"] if len(chunks) > 1 else [header]
-                for ln in chunk.splitlines():
-                    lines.append(f"> {ln}")
-                await self._send_webhook(pl, "\n".join(lines))
+                tag = f" ({idx+1}/{len(chunks)})" if len(chunks) > 1 else ""
+                await self._send_webhook(pl, f"{header}{tag}\n{chunk}")
                 if idx < len(chunks) - 1:
                     await asyncio.sleep(0.5)
 
