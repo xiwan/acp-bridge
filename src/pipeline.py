@@ -419,7 +419,7 @@ class PipelineManager:
 
             # Next agent: check @mention or round-robin
             mention = MENTION_RE.search(output)
-            if mention and mention.group(1) in participants:
+            if mention and mention.group(1) in participants and mention.group(1) != current_agent:
                 agent_index = participants.index(mention.group(1))
             else:
                 agent_index = (agent_index + 1) % len(participants)
