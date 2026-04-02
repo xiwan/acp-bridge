@@ -98,20 +98,33 @@ When the user asks multiple agents to work together, construct a pipeline API ca
 | "先让 X 做...再让 Y 做..." / "X analyze, then Y review" | `sequence` | "让 kiro 分析代码，然后让 claude review" |
 | "同时问 X 和 Y" / "ask X and Y together" | `parallel` | "同时让 kiro 和 claude 解释 ACP 协议" |
 | "谁快用谁" / "whoever finishes first" | `race` | "让 kiro 和 claude 都算一下，谁快用谁" |
-| "让所有 agent 讨论..." / "all agents discuss" | `parallel` | "让所有 agent 讨论微服务架构" |
+| "随便找一个" / "pick any agent" | `random` | "随便找个 agent 帮我看看这段代码" |
+| "让 X 和 Y 讨论..." / "have X and Y discuss" | `conversation` | "让 kiro 和 claude 讨论微服务架构" |
 
 ### How to Call
 
 ```bash
+# sequence / parallel / race / random
 curl -s -X POST "$ACP_BRIDGE_URL/pipelines" \
   -H "Authorization: Bearer $ACP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "mode": "<sequence|parallel|race>",
+    "mode": "<sequence|parallel|race|random>",
     "steps": [
       {"agent": "<name>", "prompt": "<task>", "output_as": "<var>"},
       {"agent": "<name>", "prompt": "based on: {{<var>}}"}
     ]
+  }'
+
+# conversation (multi-turn dialog)
+curl -s -X POST "$ACP_BRIDGE_URL/pipelines" \
+  -H "Authorization: Bearer $ACP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "conversation",
+    "participants": ["kiro", "claude"],
+    "topic": "Review the auth module for security issues",
+    "config": {"max_turns": 8, "stop_conditions": ["DONE", "CONSENSUS"]}
   }'
 ```
 

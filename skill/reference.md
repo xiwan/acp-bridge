@@ -135,6 +135,27 @@ curl -X POST "$ACP_BRIDGE_URL/pipelines" \
 | `sequence` | Steps run in order; `{{output_as}}` passes output to next step |
 | `parallel` | All steps run concurrently; results merged |
 | `race` | All steps run concurrently; first to complete wins |
+| `random` | Randomly pick one step to execute; others skipped |
+| `conversation` | Multi-turn dialog between agents; Bridge relays messages |
+
+### Conversation Mode
+
+```bash
+curl -X POST "$ACP_BRIDGE_URL/pipelines" \
+  -H "Authorization: Bearer $ACP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "conversation",
+    "participants": ["kiro", "claude"],
+    "topic": "Review the auth module",
+    "config": {"max_turns": 8, "stop_conditions": ["DONE", "CONSENSUS"]}
+  }'
+```
+
+- Bridge only relays "what the last agent said" — agents maintain their own context
+- Agents can use `@agent_name` to direct messages; Bridge routes accordingly
+- Stops on `STATUS: DONE`, `STATUS: CONSENSUS`, consecutive `PASS`, or max turns
+- Full transcript stored in SQLite, returned via `GET /pipelines/<id>`
 
 ### Query
 
