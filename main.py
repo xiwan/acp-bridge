@@ -36,6 +36,11 @@ from src.jobs import JobManager
 from src.security import SecurityMiddleware
 from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes
 
+try:
+    from acp_sdk.models.models import Metadata
+except ImportError:
+    Metadata = None
+
 _VERSION = open(os.path.join(os.path.dirname(__file__), "VERSION")).read().strip()
 
 log = logging.getLogger("acp-bridge")
@@ -121,7 +126,8 @@ def main():
             handler = make_acp_agent_handler(name, pool)
         else:
             handler = make_pty_agent_handler(cfg, verbose=args.verbose)
-        server.agent(name=name, description=cfg.get("description", ""))(handler)
+        server.agent(name=name, description=cfg.get("description", ""),
+                     metadata=Metadata(**cfg["metadata"]) if Metadata and cfg.get("metadata") else None)(handler)
         log.info("registered: agent=%s mode=%s cmd=%s", name, mode, cfg.get("command"))
 
     # --- Config values ---

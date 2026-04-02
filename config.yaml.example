@@ -33,6 +33,16 @@ agents:
     acp_args: ["acp", "--trust-all-tools"]
     working_dir: "/tmp"
     description: "Kiro CLI agent"
+    metadata:
+      author: {name: "AWS", url: "https://kiro.dev"}
+      license: "Apache-2.0"
+      programming_language: "TypeScript"
+      natural_languages: ["en"]
+      domains: ["coding", "devops", "cloud"]
+      tags: ["agentic-ide", "spec-driven", "aws"]
+      links:
+        - {type: "source-code", url: "https://github.com/aws/kiro-cli"}
+        - {type: "homepage", url: "https://kiro.dev"}
   claude:
     enabled: true
     mode: "acp"
@@ -40,6 +50,16 @@ agents:
     acp_args: []
     working_dir: "/tmp"
     description: "Claude Code agent (via ACP adapter)"
+    metadata:
+      author: {name: "Anthropic", url: "https://anthropic.com"}
+      license: "MIT"
+      programming_language: "TypeScript"
+      natural_languages: ["en"]
+      domains: ["coding", "refactoring", "debugging"]
+      tags: ["agentic-cli", "claude-sonnet", "terminal"]
+      links:
+        - {type: "source-code", url: "https://github.com/anthropics/claude-code"}
+        - {type: "documentation", url: "https://docs.anthropic.com/en/docs/claude-code"}
   codex:
     enabled: true
     mode: "pty"
@@ -47,6 +67,15 @@ agents:
     args: ["exec", "--full-auto", "--skip-git-repo-check"]
     working_dir: "/tmp"
     description: "OpenAI Codex CLI agent"
+    metadata:
+      author: {name: "OpenAI", url: "https://openai.com"}
+      license: "Apache-2.0"
+      programming_language: "Rust"
+      natural_languages: ["en"]
+      domains: ["coding", "automation", "code-review"]
+      tags: ["agentic-cli", "open-source", "terminal"]
+      links:
+        - {type: "source-code", url: "https://github.com/openai/codex"}
   qwen:
     enabled: true
     mode: "acp"
@@ -54,6 +83,16 @@ agents:
     acp_args: ["--acp"]
     working_dir: "/tmp"
     description: "Qwen Code agent"
+    metadata:
+      author: {name: "Alibaba Qwen Team", url: "https://qwenlm.github.io"}
+      license: "Apache-2.0"
+      programming_language: "TypeScript"
+      natural_languages: ["en", "zh"]
+      domains: ["coding", "debugging", "code-generation"]
+      tags: ["agentic-cli", "open-source", "qwen3-coder"]
+      links:
+        - {type: "source-code", url: "https://github.com/QwenLM/qwen-code"}
+        - {type: "documentation", url: "https://qwenlm.github.io/qwen-code-docs"}
   opencode:
     enabled: true
     mode: "acp"
@@ -61,6 +100,16 @@ agents:
     acp_args: ["acp"]
     working_dir: "/tmp"
     description: "OpenCode agent (open source, multi-provider)"
+    metadata:
+      author: {name: "OpenCode AI", url: "https://opencode.ai"}
+      license: "MIT"
+      programming_language: "Go"
+      natural_languages: ["en"]
+      domains: ["coding", "multi-provider", "terminal"]
+      tags: ["agentic-cli", "open-source", "provider-agnostic"]
+      links:
+        - {type: "source-code", url: "https://github.com/opencode-ai/opencode"}
+        - {type: "homepage", url: "https://opencode.ai"}
 
 # webhook (optional): async job completion callback via OpenClaw Gateway
 # webhook:
