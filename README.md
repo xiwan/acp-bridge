@@ -77,7 +77,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.10.6
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.10.7
 
 ## Project Structure
 
@@ -672,5 +672,6 @@ This library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) fil
     parallel│ Yes      │ No      │             │   并行 / 多视角
     race    │ Yes      │ No      │             │   竞速取优
     random  │ Yes      │ No      │             │   随机选一
+    convers.│ Yes      │ Per-agent│            │   多轮对话协作
   /run      │ No       │ Yes     │ No          │ OpenClaw native spawn
 ```

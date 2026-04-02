@@ -167,6 +167,17 @@ CREATE TABLE IF NOT EXISTS pipelines (
     completed_at REAL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_pipelines_created ON pipelines(created_at);
+
+CREATE TABLE IF NOT EXISTS conversation_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    pipeline_id  TEXT NOT NULL,
+    turn         INTEGER NOT NULL,
+    agent        TEXT NOT NULL,
+    content      TEXT NOT NULL,
+    duration     REAL DEFAULT 0,
+    created_at   REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conv_pipeline ON conversation_log(pipeline_id);
 """
 
 
@@ -221,3 +232,18 @@ class PipelineStore:
         d["context"] = json.loads(d["context"])
         d["webhook_meta"] = json.loads(d["webhook_meta"])
         return d
+
+    def save_turn(self, pipeline_id: str, turn: int, agent: str,
+                  content: str, duration: float = 0) -> None:
+        self._db.execute(
+            "INSERT INTO conversation_log (pipeline_id, turn, agent, content, duration, created_at) VALUES (?,?,?,?,?,?)",
+            (pipeline_id, turn, agent, content, duration, time.time()),
+        )
+        self._db.commit()
+
+    def load_transcript(self, pipeline_id: str) -> list[dict]:
+        rows = self._db.execute(
+            "SELECT turn, agent, content, duration FROM conversation_log WHERE pipeline_id = ? ORDER BY turn",
+            (pipeline_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]

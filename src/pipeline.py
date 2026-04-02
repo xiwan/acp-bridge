@@ -18,6 +18,7 @@ from .store import PipelineStore
 log = logging.getLogger("acp-bridge.pipeline")
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
+MENTION_RE = re.compile(r"@(\w+)")
 
 
 @dataclass
@@ -67,6 +68,11 @@ class Pipeline:
             d["duration"] = round(self.completed_at - self.created_at, 1)
         if self.error:
             d["error"] = self.error
+        if self.mode == "conversation":
+            d["participants"] = self.context.get("participants", [])
+            d["topic"] = self.context.get("topic", "")
+            d["turns"] = self.context.get("turns", 0)
+            d["stop_reason"] = self.context.get("stop_reason", "")
         return d
 
 
@@ -111,6 +117,9 @@ class PipelineManager:
             return self._dict_to_pipeline(d)
         return None
 
+    def get_transcript(self, pipeline_id: str) -> list[dict]:
+        return self._store.load_transcript(pipeline_id)
+
     def list_all(self, limit: int = 50) -> list[Pipeline]:
         seen = set(self._pipelines.keys())
         pls = list(self._pipelines.values())
@@ -146,6 +155,8 @@ class PipelineManager:
                 await self._run_race(pl)
             elif pl.mode == "random":
                 await self._run_random(pl)
+            elif pl.mode == "conversation":
+                await self._run_conversation(pl)
             else:
                 pl.error = f"unknown mode: {pl.mode}"
                 pl.status = "failed"
@@ -298,6 +309,142 @@ class PipelineManager:
         if chosen.status == "failed":
             pl.status = "failed"
             pl.error = f"step {chosen.agent} failed: {chosen.error}"
+
+    async def _run_conversation(self, pl: Pipeline):
+        participants = pl.context.get("participants", [])
+        topic = pl.context.get("topic", "")
+        initial_context = pl.context.get("initial_context", "")
+        config = pl.context.get("config", {})
+        max_turns = config.get("max_turns", 10)
+        turn_timeout = config.get("turn_timeout_seconds", 120)
+        stop_conditions = config.get("stop_conditions", ["DONE"])
+        no_progress_threshold = config.get("no_progress_threshold", 2)
+        a2a_rules = config.get("a2a_rules", True)
+
+        # Build agent descriptions from metadata
+        agent_descs = []
+        for name in participants:
+            cfg = self._agents_cfg.get(name, {})
+            agent_descs.append(f"- {name}: {cfg.get('description', '')}")
+        participants_block = "\n".join(agent_descs)
+
+        a2a_block = (
+            "\n[A2A RULES]\n"
+            "1. You are communicating with other AI agents, not humans — skip pleasantries\n"
+            "2. Use structured keywords: ANALYSIS / PROPOSAL / FIX / RESPONSE / QUESTION\n"
+            "3. Address others with @{agent_name}\n"
+            "4. Say \"STATUS: DONE\" when task is complete\n"
+            "5. Say \"STATUS: CONSENSUS\" when all agree\n"
+            "6. Say \"PASS\" if nothing to add\n"
+            "7. NO \"thank you\" / \"great point\" / repeating what others said"
+        ) if a2a_rules else ""
+
+        no_progress_count = 0
+        agent_index = 0
+        last_output = ""
+        last_agent = ""
+        transcript = []
+
+        for turn in range(1, max_turns + 1):
+            current_agent = participants[agent_index]
+            session_id = f"conv-{pl.pipeline_id}-{current_agent}"
+
+            # Build prompt
+            if turn == 1:
+                prompt = (
+                    f"[CONVERSATION]\n"
+                    f"Topic: {topic}\n"
+                    f"Participants:\n{participants_block}\n"
+                    f"You are: {current_agent}\n"
+                )
+                if initial_context:
+                    prompt += f"\n{initial_context}\n"
+                prompt += a2a_block
+            else:
+                prompt = f"[{last_agent}]: {last_output}"
+
+            # Execute
+            started = time.time()
+            output = await self._exec_conversation_turn(
+                current_agent, session_id, prompt, turn_timeout)
+            duration = round(time.time() - started, 1)
+
+            # Record
+            transcript.append({"turn": turn, "agent": current_agent,
+                               "content": output, "duration": duration})
+            self._store.save_turn(pl.pipeline_id, turn, current_agent, output, duration)
+            log.info("conv_turn: pipeline=%s turn=%d agent=%s duration=%.1fs",
+                     pl.pipeline_id, turn, current_agent, duration)
+
+            # Webhook per turn
+            await self._webhook_conversation_turn(pl, turn, current_agent, output, duration)
+
+            # Check stop conditions
+            upper = output.upper()
+            if "DONE" in stop_conditions and "STATUS: DONE" in upper:
+                pl.context["stop_reason"] = "DONE"
+                break
+            if "CONSENSUS" in stop_conditions and "STATUS: CONSENSUS" in upper:
+                pl.context["stop_reason"] = "CONSENSUS"
+                break
+
+            # No progress detection
+            if output.strip().upper() in ("PASS", "NOTHING TO ADD", ""):
+                no_progress_count += 1
+                if "NO_PROGRESS" in stop_conditions and no_progress_count >= no_progress_threshold:
+                    pl.context["stop_reason"] = "NO_PROGRESS"
+                    break
+            else:
+                no_progress_count = 0
+
+            last_output = output
+            last_agent = current_agent
+
+            # Next agent: check @mention or round-robin
+            mention = MENTION_RE.search(output)
+            if mention and mention.group(1) in participants:
+                agent_index = participants.index(mention.group(1))
+            else:
+                agent_index = (agent_index + 1) % len(participants)
+        else:
+            pl.context["stop_reason"] = "MAX_TURNS"
+
+        pl.context["transcript"] = transcript
+        pl.context["turns"] = len(transcript)
+        pl.status = "completed"
+
+    async def _exec_conversation_turn(self, agent: str, session_id: str,
+                                       prompt: str, timeout: float) -> str:
+        cfg = self._agents_cfg.get(agent, {})
+        if cfg.get("mode") == "pty":
+            step = PipelineStep(agent=agent, prompt_template="")
+            await self._exec_step_pty(step, prompt, cfg)
+            return step.result
+        # ACP mode
+        parts = []
+        try:
+            conn = await self._pool.get_or_create(agent, session_id)
+            async for notification in conn.session_prompt(prompt, idle_timeout=timeout):
+                if "_prompt_result" in notification:
+                    break
+                event = transform_notification(notification)
+                if event and event["type"] == "message.part":
+                    parts.append(event["content"])
+        except (PoolExhaustedError, AcpError) as e:
+            return f"[ERROR] {e}"
+        except Exception as e:
+            return f"[ERROR] {e}"
+        return "".join(parts)
+
+    async def _webhook_conversation_turn(self, pl: Pipeline, turn: int,
+                                          agent: str, content: str, duration: float):
+        if not self._webhook_url or not pl.webhook_meta.get("target"):
+            return
+        preview = content[:300] + "..." if len(content) > 300 else content
+        lines = [f"💬 **Conv** `{pl.pipeline_id[:8]}` — Turn {turn} **{agent}** ({duration}s)"]
+        for ln in preview.splitlines():
+            lines.append(f"> {ln}")
+        await self._send_webhook(pl, "\n".join(lines))
 
     async def _exec_step(self, pl: Pipeline, step: PipelineStep, prompt: str):
         step.status = "running"

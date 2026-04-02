@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.10.7 | 2026-04-02 | Pipeline conversation mode: 多 agent 多轮对话，Bridge 只传话 + SQLite 记录，支持 @mention 定向调度 |
 | v0.10.6 | 2026-04-02 | Pipeline random mode: 从 steps 中随机选一个 agent 执行，其余跳过 |
 | v0.10.5 | 2026-04-01 | Pipeline PTY support: Codex 等 PTY agent 可参与 pipeline (sequence/parallel/race)，.env auto-loader 统一环境变量管理 |
 | v0.10.4 | 2026-04-01 | Connection pool LRU eviction: 满载时淘汰最不活跃的空闲连接，同 agent 优先复用进程，消灭 pool_exhausted |
