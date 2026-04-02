@@ -213,13 +213,20 @@ Checklist:
 
 ### Phase 7: Commit & Push
 
+**Rule: `git commit` 可以自动执行，但 `git push`、`git tag`、release 必须等人确认。**
+
 ```bash
+# Auto — agent can do this without asking
 git add -A
 git commit -m "v<VERSION>: <description>"
+
+# Manual — STOP and ask human before running
 git push
+git tag v<VERSION>
+git push --tags
 ```
 
-After successful push:
+After human confirms and push succeeds:
 1. Update version log: check off Phase 7, set status to `✅ Committed`, fill in `Completed` timestamp
 2. Update `OPERATIONS.md` Part 2: reset all fields to empty, status back to `idle`
 
