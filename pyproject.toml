@@ -2,6 +2,7 @@
 name = "acp-bridge"
 dynamic = ["version"]
 description = "Bridge service exposing local CLI agents via ACP over HTTP"
+authors = [{name = "Xi Wan", email = "5155280@qq.com"}]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
