@@ -439,10 +439,12 @@ class PipelineManager:
             return step.result
         # ACP mode
         parts = []
+        prompt_result = None
         try:
             conn = await self._pool.get_or_create(agent, session_id, cwd=cwd)
             async for notification in conn.session_prompt(prompt, idle_timeout=timeout):
                 if "_prompt_result" in notification:
+                    prompt_result = notification["_prompt_result"]
                     break
                 event = transform_notification(notification)
                 if event and event["type"] == "message.part":
@@ -451,17 +453,45 @@ class PipelineManager:
             return f"[ERROR] {e}"
         except Exception as e:
             return f"[ERROR] {e}"
-        return "".join(parts)
+
+        output = "".join(parts)
+
+        # Fallback: extract from prompt result if streaming yielded nothing
+        if not output and prompt_result:
+            result = prompt_result.get("result", {})
+            for msg in result.get("messages", []):
+                for part in msg.get("parts", []):
+                    text = part.get("content", "") or part.get("text", "")
+                    if text:
+                        output += text
+
+        if not output:
+            log.warning("conv_turn_empty: agent=%s session=%s", agent, session_id)
+
+        return output
 
     async def _webhook_conversation_turn(self, pl: Pipeline, turn: int,
                                           agent: str, content: str, duration: float):
         if not self._webhook_url or not pl.webhook_meta.get("target"):
             return
-        preview = content[:300] + "..." if len(content) > 300 else content
-        lines = [f"💬 **Conv** `{pl.pipeline_id[:8]}` — Turn {turn} **{agent}** ({duration}s)"]
-        for ln in preview.splitlines():
-            lines.append(f"> {ln}")
-        await self._send_webhook(pl, "\n".join(lines))
+        header = f"💬 **Conv** `{pl.pipeline_id[:8]}` — Turn {turn} **{agent}** ({duration}s)"
+        # Split into chunks to fit message limits (~1800 chars per message, leave room for header)
+        max_content = 1600
+        if len(content) <= max_content:
+            lines = [header]
+            for ln in content.splitlines():
+                lines.append(f"> {ln}")
+            await self._send_webhook(pl, "\n".join(lines))
+        else:
+            # First chunk with header
+            chunks = [content[i:i+max_content] for i in range(0, len(content), max_content)]
+            for idx, chunk in enumerate(chunks):
+                lines = [f"{header} ({idx+1}/{len(chunks)})"] if len(chunks) > 1 else [header]
+                for ln in chunk.splitlines():
+                    lines.append(f"> {ln}")
+                await self._send_webhook(pl, "\n".join(lines))
+                if idx < len(chunks) - 1:
+                    await asyncio.sleep(0.5)
 
     async def _exec_step(self, pl: Pipeline, step: PipelineStep, prompt: str):
         step.status = "running"
