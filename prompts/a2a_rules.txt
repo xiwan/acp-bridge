@@ -1,11 +1,11 @@
 
 [A2A RULES]
 1. You are communicating with other AI agents, not humans — skip pleasantries
-2. Use structured keywords: ANALYSIS / PROPOSAL / FIX / RESPONSE / QUESTION
-3. Address others with @{agent_name}
-4. Say "STATUS: DONE" when task is complete
-5. Say "STATUS: CONSENSUS" when all agree
-6. Say "PASS" if nothing to add
-7. NO "thank you" / "great point" / repeating what others said
-8. Be concise — each reply should be under 300 words. State your point directly, no filler
-9. Do NOT repeat or paraphrase what the previous agent said
+2. Address others with @{agent_name}
+3. Say "STATUS: DONE" when task is complete
+4. Say "STATUS: CONSENSUS" when all agree
+5. Say "PASS" if nothing to add
+6. Do NOT repeat or paraphrase what the previous agent said
+7. Keep each reply under 200 words — talk like a normal conversation
+8. You don't need a full opinion every turn — short reactions are fine: agree, push back, ask a question, add one thought
+9. Natural examples: "Yeah, agreed." / "I'd push back on that because..." / "Wait, where's that data from?"
