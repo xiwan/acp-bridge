@@ -18,6 +18,8 @@ from .store import PipelineStore
 
 log = logging.getLogger("acp-bridge.pipeline")
 
+AGENT_ICONS = {"kiro": "🟢", "claude": "🟣", "codex": "🔵", "qwen": "🟠", "opencode": "⚪"}
+_SEPARATOR = "━━━━━━━━━━━━━━━━━━━━"
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
 MENTION_RE = re.compile(r"@(\w+)")
 
@@ -476,8 +478,9 @@ class PipelineManager:
                                           agent: str, content: str, duration: float):
         if not self._webhook_url or not pl.webhook_meta.get("target"):
             return
-        header = f"💬 **Conv** `{pl.pipeline_id[:8]}` — Turn {turn} **{agent}** ({duration}s)"
-        max_content = 1800
+        icon = AGENT_ICONS.get(agent, "🤖")
+        header = f"{_SEPARATOR}\n💬 Turn {turn} · {icon} **{agent}** ({duration}s)\n{_SEPARATOR}"
+        max_content = 1700
         if len(content) <= max_content:
             await self._send_webhook(pl, f"{header}\n{content}")
         else:
