@@ -179,6 +179,12 @@ Update `OPERATIONS.md` Part 2 status to `pre-commit`.
 All must pass before commit:
 
 ```bash
+# 0. Docker rebuild (if running in container)
+#    Stop old container, prune dangling images, rebuild fresh
+sudo docker compose -f docker/light/docker-compose.yml down
+sudo docker image prune -f
+sudo docker compose -f docker/light/docker-compose.yml up -d --build
+
 # 1. Full test suite
 bash test/test.sh http://127.0.0.1:18010
 
@@ -196,6 +202,7 @@ git diff --stat
 ```
 
 Checklist:
+- [ ] Docker: old container stopped, dangling images pruned, fresh rebuild
 - [ ] All tests pass
 - [ ] Version file updated
 - [ ] Version consistent across sync files
