@@ -369,13 +369,16 @@ class PipelineManager:
         last_output = ""
         last_agent = ""
         transcript = []
+        seen_agents = set()
 
         for turn in range(1, max_turns + 1):
             current_agent = participants[agent_index]
             session_id = f"conv-{pl.pipeline_id}-{current_agent}"
+            first_turn_for_agent = current_agent not in seen_agents
+            seen_agents.add(current_agent)
 
-            # Build prompt
-            if turn == 1:
+            # Build prompt — each agent gets topic+rules on their first turn
+            if first_turn_for_agent:
                 if has_cjk:
                     prompt = (
                         f"[多 Agent 对话]\n"
@@ -397,6 +400,8 @@ class PipelineManager:
                 if initial_context:
                     prompt += f"\n{initial_context}\n"
                 prompt += a2a_block
+                if last_output:
+                    prompt += f"\n\n[{last_agent}]: {last_output}"
             else:
                 prompt = f"[{last_agent}]: {last_output}"
 
