@@ -73,6 +73,7 @@ class Pipeline:
             d["topic"] = self.context.get("topic", "")
             d["turns"] = self.context.get("turns", 0)
             d["stop_reason"] = self.context.get("stop_reason", "")
+            d["shared_cwd"] = self.context.get("shared_cwd", "")
         return d
 
 
@@ -321,6 +322,14 @@ class PipelineManager:
         no_progress_threshold = config.get("no_progress_threshold", 2)
         a2a_rules = config.get("a2a_rules", True)
 
+        # Shared working directory for all participants
+        conv_base = config.get("workdir") or self._agents_cfg.get("_conversation_workdir", "/tmp/acp-conversations")
+        shared_cwd = os.path.join(conv_base, f"conv-{pl.pipeline_id[:8]}")
+        os.makedirs(shared_cwd, exist_ok=True)
+        pl.context["shared_cwd"] = shared_cwd
+        log.info("conv_start: pipeline=%s shared_cwd=%s participants=%s",
+                 pl.pipeline_id, shared_cwd, participants)
+
         # Build agent descriptions from metadata
         agent_descs = []
         for name in participants:
@@ -372,6 +381,7 @@ class PipelineManager:
                     f"Topic: {topic}\n"
                     f"Participants:\n{participants_block}\n"
                     f"You are: {current_agent}\n"
+                    f"Shared workspace: {shared_cwd}\n"
                 )
                 if initial_context:
                     prompt += f"\n{initial_context}\n"
@@ -382,7 +392,7 @@ class PipelineManager:
             # Execute
             started = time.time()
             output = await self._exec_conversation_turn(
-                current_agent, session_id, prompt, turn_timeout)
+                current_agent, session_id, prompt, turn_timeout, cwd=shared_cwd)
             duration = round(time.time() - started, 1)
 
             # Record
@@ -430,16 +440,18 @@ class PipelineManager:
         pl.status = "completed"
 
     async def _exec_conversation_turn(self, agent: str, session_id: str,
-                                       prompt: str, timeout: float) -> str:
+                                       prompt: str, timeout: float,
+                                       cwd: str = "") -> str:
         cfg = self._agents_cfg.get(agent, {})
         if cfg.get("mode") == "pty":
             step = PipelineStep(agent=agent, prompt_template="")
-            await self._exec_step_pty(step, prompt, cfg)
+            pty_cfg = {**cfg, "working_dir": cwd} if cwd else cfg
+            await self._exec_step_pty(step, prompt, pty_cfg)
             return step.result
         # ACP mode
         parts = []
         try:
-            conn = await self._pool.get_or_create(agent, session_id)
+            conn = await self._pool.get_or_create(agent, session_id, cwd=cwd)
             async for notification in conn.session_prompt(prompt, idle_timeout=timeout):
                 if "_prompt_result" in notification:
                     break
