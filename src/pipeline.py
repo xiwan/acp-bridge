@@ -78,6 +78,8 @@ class Pipeline:
         if self.mode == "conversation":
             d["participants"] = self.context.get("participants", [])
             d["topic"] = self.context.get("topic", "")
+            d["initial_context"] = self.context.get("initial_context", "")
+            d["config"] = self.context.get("config", {})
             d["turns"] = self.context.get("turns", 0)
             d["stop_reason"] = self.context.get("stop_reason", "")
             d["shared_cwd"] = self.context.get("shared_cwd", "")
