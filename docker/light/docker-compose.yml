@@ -26,6 +26,7 @@ services:
     volumes:
       - ../../config.yaml:/app/config.yaml
       - ../../data:/app/data
+      - /tmp/acp-conversations:/tmp/acp-conversations
 
       ## --- Kiro CLI (native binary) ---
       - /home/ec2-user/.local/bin/kiro-cli:/usr/local/bin/kiro-cli:ro

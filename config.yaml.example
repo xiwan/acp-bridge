@@ -5,6 +5,7 @@ server:
   shutdown_timeout: 30
   ui: false                                     # enable Web UI at /ui (or use --ui flag)
   upload_dir: "/tmp/acp-uploads"                # file upload storage directory
+  conversation_workdir: "/tmp/acp-conversations" # shared workspace for conversation mode
 
 pool:
   max_processes: 20
