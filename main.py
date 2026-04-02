@@ -111,6 +111,10 @@ def main():
     # --- Process pool ---
     pool_cfg = config.get("pool", {})
     acp_agents = {k: v for k, v in agents_cfg.items() if v.get("mode") == "acp"}
+
+    # Ensure all working dirs exist
+    for cfg in agents_cfg.values():
+        os.makedirs(cfg.get("working_dir", "/tmp"), exist_ok=True)
     pool = AcpProcessPool(
         agents_config=acp_agents,
         max_processes=pool_cfg.get("max_processes", 20),
