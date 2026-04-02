@@ -157,6 +157,14 @@ curl -X POST "$ACP_BRIDGE_URL/pipelines" \
 - Stops on `STATUS: DONE`, `STATUS: CONSENSUS`, consecutive `PASS`, or max turns
 - Full transcript stored in SQLite, returned via `GET /pipelines/<id>`
 
+### Query Conversation
+
+```bash
+curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/pipelines/<id>"
+```
+
+Returns: `pipeline_id`, `mode`, `status`, `participants`, `topic`, `initial_context`, `config`, `turns`, `stop_reason`, `shared_cwd`, `duration`, and full `transcript` (array of `{turn, agent, content, duration}`).
+
 ### Query
 
 ```bash
