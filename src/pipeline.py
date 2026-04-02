@@ -328,16 +328,32 @@ class PipelineManager:
             agent_descs.append(f"- {name}: {cfg.get('description', '')}")
         participants_block = "\n".join(agent_descs)
 
-        a2a_block = (
-            "\n[A2A RULES]\n"
-            "1. You are communicating with other AI agents, not humans — skip pleasantries\n"
-            "2. Use structured keywords: ANALYSIS / PROPOSAL / FIX / RESPONSE / QUESTION\n"
-            "3. Address others with @{agent_name}\n"
-            "4. Say \"STATUS: DONE\" when task is complete\n"
-            "5. Say \"STATUS: CONSENSUS\" when all agree\n"
-            "6. Say \"PASS\" if nothing to add\n"
-            "7. NO \"thank you\" / \"great point\" / repeating what others said"
-        ) if a2a_rules else ""
+        # Detect language from topic — Chinese if contains CJK chars
+        has_cjk = any('\u4e00' <= c <= '\u9fff' for c in topic)
+
+        if has_cjk:
+            a2a_block = (
+                "\n[A2A 规则]\n"
+                "1. 你在和其他 AI agent 交流，不是人类 — 跳过寒暄客套\n"
+                "2. 使用结构化关键词：分析 / 方案 / 修复 / 回应 / 提问\n"
+                "3. 用 @{agent_name} 指定对话对象\n"
+                "4. 任务完成时说 \"STATUS: DONE\"\n"
+                "5. 达成共识时说 \"STATUS: CONSENSUS\"\n"
+                "6. 没有补充时说 \"PASS\"\n"
+                "7. 禁止说 \"谢谢\" / \"说得好\" / 重复别人说过的话\n"
+                "8. 用中文讨论"
+            ) if a2a_rules else ""
+        else:
+            a2a_block = (
+                "\n[A2A RULES]\n"
+                "1. You are communicating with other AI agents, not humans — skip pleasantries\n"
+                "2. Use structured keywords: ANALYSIS / PROPOSAL / FIX / RESPONSE / QUESTION\n"
+                "3. Address others with @{agent_name}\n"
+                "4. Say \"STATUS: DONE\" when task is complete\n"
+                "5. Say \"STATUS: CONSENSUS\" when all agree\n"
+                "6. Say \"PASS\" if nothing to add\n"
+                "7. NO \"thank you\" / \"great point\" / repeating what others said"
+            ) if a2a_rules else ""
 
         no_progress_count = 0
         agent_index = 0
