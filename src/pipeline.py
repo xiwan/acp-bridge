@@ -8,6 +8,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import httpx
 
@@ -19,6 +20,12 @@ log = logging.getLogger("acp-bridge.pipeline")
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
 MENTION_RE = re.compile(r"@(\w+)")
+
+_PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+
+
+def _load_prompt(name: str) -> str:
+    return (_PROMPTS_DIR / name).read_text().strip()
 
 
 @dataclass
@@ -341,28 +348,9 @@ class PipelineManager:
         has_cjk = any('\u4e00' <= c <= '\u9fff' for c in topic)
 
         if has_cjk:
-            a2a_block = (
-                "\n[A2A 规则]\n"
-                "1. 你在和其他 AI agent 交流，不是人类 — 跳过寒暄客套\n"
-                "2. 使用结构化关键词：分析 / 方案 / 修复 / 回应 / 提问\n"
-                "3. 用 @{agent_name} 指定对话对象\n"
-                "4. 任务完成时说 \"STATUS: DONE\"\n"
-                "5. 达成共识时说 \"STATUS: CONSENSUS\"\n"
-                "6. 没有补充时说 \"PASS\"\n"
-                "7. 禁止说 \"谢谢\" / \"说得好\" / 重复别人说过的话\n"
-                "8. 用中文讨论"
-            ) if a2a_rules else ""
+            a2a_block = _load_prompt("a2a_rules_zh.txt") if a2a_rules else ""
         else:
-            a2a_block = (
-                "\n[A2A RULES]\n"
-                "1. You are communicating with other AI agents, not humans — skip pleasantries\n"
-                "2. Use structured keywords: ANALYSIS / PROPOSAL / FIX / RESPONSE / QUESTION\n"
-                "3. Address others with @{agent_name}\n"
-                "4. Say \"STATUS: DONE\" when task is complete\n"
-                "5. Say \"STATUS: CONSENSUS\" when all agree\n"
-                "6. Say \"PASS\" if nothing to add\n"
-                "7. NO \"thank you\" / \"great point\" / repeating what others said"
-            ) if a2a_rules else ""
+            a2a_block = _load_prompt("a2a_rules.txt") if a2a_rules else ""
 
         no_progress_count = 0
         agent_index = 0
@@ -379,24 +367,9 @@ class PipelineManager:
 
             # Build prompt — each agent gets topic+rules on their first turn
             if first_turn_for_agent:
-                if has_cjk:
-                    prompt = (
-                        f"[多 Agent 对话]\n"
-                        f"话题: {topic}\n"
-                        f"参与者:\n{participants_block}\n"
-                        f"你是: {current_agent}\n"
-                        f"共享工作目录: {shared_cwd}\n"
-                        f"\n你正在和其他 AI agent 进行多轮对话。直接回复你的观点即可，Bridge 会自动把你的回复转发给其他参与者。不要尝试自己调用 API 或脚本来联系其他 agent。\n"
-                    )
-                else:
-                    prompt = (
-                        f"[CONVERSATION]\n"
-                        f"Topic: {topic}\n"
-                        f"Participants:\n{participants_block}\n"
-                        f"You are: {current_agent}\n"
-                        f"Shared workspace: {shared_cwd}\n"
-                        f"\nYou are in a multi-agent conversation. Just reply with your thoughts directly — the Bridge will relay your response to other participants. Do NOT try to call APIs or scripts to contact other agents.\n"
-                    )
+                tpl = _load_prompt("conversation_first_turn_zh.txt") if has_cjk else _load_prompt("conversation_first_turn.txt")
+                prompt = tpl.format(topic=topic, participants=participants_block,
+                                    agent=current_agent, shared_cwd=shared_cwd)
                 if initial_context:
                     prompt += f"\n{initial_context}\n"
                 prompt += a2a_block

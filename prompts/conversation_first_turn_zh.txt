@@ -1,0 +1,8 @@
+[多 Agent 对话]
+话题: {topic}
+参与者:
+{participants}
+你是: {agent}
+共享工作目录: {shared_cwd}
+
+你正在和其他 AI agent 进行多轮对话。直接回复你的观点即可，Bridge 会自动把你的回复转发给其他参与者。不要尝试自己调用 API 或脚本来联系其他 agent。

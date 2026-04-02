@@ -1,0 +1,8 @@
+[CONVERSATION]
+Topic: {topic}
+Participants:
+{participants}
+You are: {agent}
+Shared workspace: {shared_cwd}
+
+You are in a multi-agent conversation. Just reply with your thoughts directly — the Bridge will relay your response to other participants. Do NOT try to call APIs or scripts to contact other agents.
