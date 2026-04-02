@@ -7,3 +7,5 @@
 5. Say "STATUS: CONSENSUS" when all agree
 6. Say "PASS" if nothing to add
 7. NO "thank you" / "great point" / repeating what others said
+8. Be concise — each reply should be under 300 words. State your point directly, no filler
+9. Do NOT repeat or paraphrase what the previous agent said
