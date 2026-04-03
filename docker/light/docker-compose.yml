@@ -13,7 +13,7 @@ services:
     build:
       context: ../..
       dockerfile: docker/light/Dockerfile
-    command: ["uv", "run", "main.py", "--ui"]
+    command: ["uv", "run", "main.py", "--ui", "--verbose"]
     network_mode: host
     environment:
       - ACP_BRIDGE_TOKEN
@@ -26,7 +26,7 @@ services:
     volumes:
       - ../../config.yaml:/app/config.yaml
       - ../../data:/app/data
-      - /tmp/acp-conversations:/tmp/acp-conversations
+      - /tmp/acp-pipelines:/tmp/acp-pipelines
 
       ## --- Kiro CLI (native binary) ---
       - /home/ec2-user/.local/bin/kiro-cli:/usr/local/bin/kiro-cli:ro

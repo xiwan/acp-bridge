@@ -178,8 +178,8 @@ def main():
 
     # --- Pipeline manager ---
     from src.pipeline import PipelineManager
-    conv_workdir = srv_cfg.get("conversation_workdir", "/tmp/acp-conversations")
-    agents_cfg["_conversation_workdir"] = conv_workdir
+    conv_workdir = srv_cfg.get("public_workdir", srv_cfg.get("conversation_workdir", "/tmp/acp-pipelines"))
+    agents_cfg["_public_workdir"] = conv_workdir
     pipeline_mgr = PipelineManager(pool, agents_cfg,
                                    webhook_url=webhook_cfg.get("url", ""),
                                    webhook_token=webhook_cfg.get("token", "")) if pool else None

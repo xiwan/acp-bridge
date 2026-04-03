@@ -81,11 +81,11 @@ AWS_SECRET_ACCESS_KEY=
 > When no task is active, it shows "No active version."
 
 ```yaml
-version: "0.10.9"
-description: "A2A rules: enforce file writes to shared_cwd"
+version: "0.10.10"
+description: "Shared workspace for all pipeline modes"
 status: "in-progress"
 current_phase: "Phase 3"
-log_file: "versions/v0.10.9.md"
+log_file: "versions/v0.10.10.md"
 ```
 
 ---

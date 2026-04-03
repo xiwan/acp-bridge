@@ -77,6 +77,7 @@ class Pipeline:
             d["duration"] = round(self.completed_at - self.created_at, 1)
         if self.error:
             d["error"] = self.error
+        d["shared_cwd"] = self.context.get("shared_cwd", "")
         if self.mode == "conversation":
             d["participants"] = self.context.get("participants", [])
             d["topic"] = self.context.get("topic", "")
@@ -84,7 +85,6 @@ class Pipeline:
             d["config"] = self.context.get("config", {})
             d["turns"] = self.context.get("turns", 0)
             d["stop_reason"] = self.context.get("stop_reason", "")
-            d["shared_cwd"] = self.context.get("shared_cwd", "")
         return d
 
 
@@ -99,6 +99,18 @@ class PipelineManager:
         self._webhook_token = webhook_token
         self._http: httpx.AsyncClient | None = None
         self._store = PipelineStore(db_path)
+
+    def _make_shared_cwd(self, pl: Pipeline) -> str:
+        """Create and return a shared workspace directory for the pipeline."""
+        base = self._agents_cfg.get("_public_workdir",
+                   self._agents_cfg.get("_conversation_workdir", "/tmp/acp-pipelines"))
+        if pl.mode == "conversation":
+            shared_cwd = os.path.join(base, "conversation", f"conv-{pl.pipeline_id[:8]}")
+        else:
+            shared_cwd = os.path.join(base, pl.mode, f"pipeline-{pl.pipeline_id[:8]}")
+        os.makedirs(shared_cwd, exist_ok=True)
+        pl.context["shared_cwd"] = shared_cwd
+        return shared_cwd
 
     def submit(self, mode: str, steps: list[dict], context: dict | None = None,
                webhook_meta: dict | None = None) -> Pipeline:
@@ -158,6 +170,8 @@ class PipelineManager:
 
     async def _run(self, pl: Pipeline):
         pl.status = "running"
+        shared_cwd = self._make_shared_cwd(pl)
+        log.info("pipeline_cwd: id=%s mode=%s cwd=%s", pl.pipeline_id, pl.mode, shared_cwd)
         try:
             if pl.mode == "sequence":
                 await self._run_sequence(pl)
@@ -334,11 +348,7 @@ class PipelineManager:
         a2a_rules = config.get("a2a_rules", True)
         solo = pl.context.get("solo", {})
 
-        # Shared working directory for all participants
-        conv_base = config.get("workdir") or self._agents_cfg.get("_conversation_workdir", "/tmp/acp-conversations")
-        shared_cwd = os.path.join(conv_base, f"conv-{pl.pipeline_id[:8]}")
-        os.makedirs(shared_cwd, exist_ok=True)
-        pl.context["shared_cwd"] = shared_cwd
+        shared_cwd = pl.context.get("shared_cwd", "")  # already created by _run
         log.info("conv_start: pipeline=%s shared_cwd=%s participants=%s",
                  pl.pipeline_id, shared_cwd, participants)
 
@@ -501,20 +511,29 @@ class PipelineManager:
         step.started_at = time.time()
         step_idx = pl.steps.index(step)
         session_id = f"pipeline-{pl.pipeline_id}-{step.agent}-{step_idx}"
+        shared_cwd = pl.context.get("shared_cwd", "")
+
+        # Inject shared workspace hint for non-conversation modes
+        if shared_cwd and pl.mode != "conversation":
+            has_cjk = any('\u4e00' <= c <= '\u9fff' for c in prompt)
+            ws_prompt = _load_prompt("shared_workspace_zh.txt") if has_cjk else _load_prompt("shared_workspace.txt")
+            prompt = ws_prompt.format(shared_cwd=shared_cwd) + "\n\n" + prompt
+
         cfg = self._agents_cfg.get(step.agent, {})
         if cfg.get("mode") == "pty":
-            await self._exec_step_pty(step, prompt, cfg)
+            pty_cfg = {**cfg, "working_dir": shared_cwd} if shared_cwd else cfg
+            await self._exec_step_pty(step, prompt, pty_cfg)
         else:
-            await self._exec_step_acp(step, prompt, session_id)
+            await self._exec_step_acp(step, prompt, session_id, cwd=shared_cwd)
         step.completed_at = time.time()
         log.info("step_done: pipeline=%s agent=%s status=%s duration=%.1fs",
                  pl.pipeline_id, step.agent, step.status,
                  step.completed_at - step.started_at)
 
-    async def _exec_step_acp(self, step: PipelineStep, prompt: str, session_id: str):
+    async def _exec_step_acp(self, step: PipelineStep, prompt: str, session_id: str, cwd: str = ""):
         parts = []
         try:
-            conn = await self._pool.get_or_create(step.agent, session_id)
+            conn = await self._pool.get_or_create(step.agent, session_id, cwd=cwd)
             async for notification in conn.session_prompt(prompt):
                 if "_prompt_result" in notification:
                     if "error" in notification["_prompt_result"]:

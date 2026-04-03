@@ -1,0 +1,4 @@
+[SHARED WORKSPACE]
+All agents in this pipeline share the same working directory: {shared_cwd}
+Other agents may have already created or modified files here — check the directory contents before starting.
+Write all output files to this directory.
