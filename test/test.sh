@@ -48,6 +48,7 @@ run_suite "$TEST_DIR/test_claude.sh"
 run_suite "$TEST_DIR/test_codex.sh"
 run_suite "$TEST_DIR/test_qwen.sh"
 run_suite "$TEST_DIR/test_opencode.sh"
+run_suite "$TEST_DIR/test_pipeline.sh"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

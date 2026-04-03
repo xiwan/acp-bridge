@@ -88,7 +88,7 @@ acp-bridge/
 │   ├── acp_client.py    # ACP process pool + JSON-RPC connection management
 │   ├── agents.py        # Agent handlers (ACP mode + PTY fallback)
 │   ├── jobs.py          # Async job manager (submit, monitor, webhook callback)
-│   ├── pipeline.py      # Multi-agent pipeline (sequence, parallel, race)
+│   ├── pipeline.py      # Multi-agent pipeline (sequence, parallel, race, random, conversation) + shared workspace
 │   ├── sse.py           # ACP session/update → SSE event conversion
 │   └── security.py      # Security middleware (IP allowlist + Bearer Token)
 ├── skill/
