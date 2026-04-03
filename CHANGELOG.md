@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.10.11 | 2026-04-03 | OOM protection: memory-aware pool eviction，内存超 80% 自动驱逐空闲连接，降低默认池上限 |
 | v0.10.10 | 2026-04-03 | Shared workspace for all pipeline modes: sequence/parallel/race/random 共享工作目录，agent 间文件可见 |
 | v0.10.8 | 2026-04-02 | Conversation 修复增强：中文自动检测、每个 agent 首轮注入 topic、prompt 文件化管理、共享工作目录、transcript 空输出 fallback、webhook 完整内容分段推送 |
 | v0.10.7 | 2026-04-02 | Pipeline conversation mode: 多 agent 多轮对话，Bridge 只传话 + SQLite 记录，支持 @mention 定向调度 |

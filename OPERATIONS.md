@@ -81,11 +81,11 @@ AWS_SECRET_ACCESS_KEY=
 > When no task is active, it shows "No active version."
 
 ```yaml
-version: "0.10.10"
-description: "Shared workspace for all pipeline modes"
-status: "pre-commit"
-current_phase: "Phase 6"
-log_file: "versions/v0.10.10.md"
+version: "0.10.11"
+description: "OOM protection: memory-aware pool eviction"
+status: "in-progress"
+current_phase: "Phase 3"
+log_file: "versions/v0.10.11.md"
 ```
 
 ---
@@ -103,6 +103,8 @@ Read the project. Understand before you change.
 5. Check `versions/` — review recent version history for context
 
 **Rule: 先读后写，不懂不动。**
+
+**Rule: 所有 token/密钥都在 `.env` 文件中，`source .env` 即可获取。不要用 curl 探测 token 或尝试读取 token 值，节约 token。**
 
 ### Phase 1: Design — Version Declaration
 

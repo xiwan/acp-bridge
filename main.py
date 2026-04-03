@@ -121,6 +121,8 @@ def main():
         max_per_agent=pool_cfg.get("max_per_agent", 10),
         verbose=args.verbose,
     ) if acp_agents else None
+    if pool:
+        pool._memory_limit_pct = pool_cfg.get("memory_limit_percent", 80)
 
     # --- Register agent handlers ---
     server = Server()
@@ -197,6 +199,7 @@ def main():
             if pool:
                 await pool.health_check()
                 await pool.cleanup_idle(ttl_hours * 3600)
+                await pool.memory_evict()
                 pool.cleanup_ghosts()
             if job_mgr:
                 job_mgr.cleanup()

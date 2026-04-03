@@ -44,6 +44,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 - Native ACP protocol support: structured event stream (thinking / tool_call / text / status)
 - Process pool: reuse subprocess per session, automatic multi-turn context retention
+- Memory protection: auto-evict idle connections when system memory exceeds threshold (OOM prevention)
 - Sync + SSE streaming + Markdown card output
 - Async jobs: submit and return immediately, webhook callback on completion
 - Discord push: send results via OpenClaw Gateway `/tools/invoke`
@@ -77,7 +78,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.10.10
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.10.11
 
 ## Project Structure
 
@@ -243,8 +244,9 @@ server:
   upload_dir: "/tmp/acp-uploads"                # file upload storage directory
 
 pool:
-  max_processes: 20
-  max_per_agent: 10
+  max_processes: 8
+  max_per_agent: 4
+  memory_limit_percent: 80
 
 webhook:
   url: "http://<openclaw-ip>:18789/tools/invoke"

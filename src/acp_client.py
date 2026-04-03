@@ -254,6 +254,7 @@ class AcpProcessPool:
         self._max_per_agent = max_per_agent
         self._verbose = verbose
         self._connections: dict[tuple[str, str], AcpConnection] = {}
+        self._memory_limit_pct: float = 80.0
 
     def _count_agent(self, agent: str) -> int:
         return sum(1 for (a, _) in self._connections if a == agent)
@@ -369,6 +370,41 @@ class AcpProcessPool:
             conn = self._connections.pop(key)
             log.info("cleanup idle: agent=%s session=%s", key[0], key[1])
             await conn.kill()
+
+    @staticmethod
+    def _mem_used_pct() -> float:
+        """Return system memory usage percentage via /proc/meminfo (Linux only)."""
+        try:
+            info = {}
+            for line in Path("/proc/meminfo").read_text().splitlines():
+                parts = line.split()
+                if len(parts) >= 2:
+                    info[parts[0].rstrip(":")] = int(parts[1])
+            total = info.get("MemTotal", 0)
+            avail = info.get("MemAvailable", 0)
+            if total <= 0:
+                return 0.0
+            return (total - avail) / total * 100
+        except Exception:
+            return 0.0
+
+    async def memory_evict(self) -> int:
+        """Evict idle connections when system memory exceeds threshold. Returns count evicted."""
+        pct = self._mem_used_pct()
+        if pct < self._memory_limit_pct:
+            return 0
+        evicted = 0
+        while pct >= self._memory_limit_pct:
+            lru = self._lru_idle()
+            if not lru:
+                log.warning("memory_pressure: %.0f%% used, no idle connections to evict", pct)
+                break
+            log.warning("memory_evict: %.0f%% used (limit %.0f%%), evicting agent=%s session=%s",
+                        pct, self._memory_limit_pct, lru[0], lru[1])
+            await self._evict(lru)
+            evicted += 1
+            pct = self._mem_used_pct()
+        return evicted
 
     async def health_check(self) -> None:
         """Ping all idle connections; kill and remove unresponsive ones."""
