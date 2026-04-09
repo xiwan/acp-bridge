@@ -170,9 +170,9 @@ class PipelineManager:
 
     async def _run(self, pl: Pipeline):
         pl.status = "running"
-        shared_cwd = self._make_shared_cwd(pl)
-        log.info("pipeline_cwd: id=%s mode=%s cwd=%s", pl.pipeline_id, pl.mode, shared_cwd)
         try:
+            shared_cwd = self._make_shared_cwd(pl)
+            log.info("pipeline_cwd: id=%s mode=%s cwd=%s", pl.pipeline_id, pl.mode, shared_cwd)
             if pl.mode == "sequence":
                 await self._run_sequence(pl)
             elif pl.mode == "parallel":
@@ -268,14 +268,22 @@ class PipelineManager:
                 pl.context[step.output_as] = step.result
 
     async def _run_parallel(self, pl: Pipeline):
-        async def _exec_and_push(step, prompt):
+        shared_cwd = pl.context.get("shared_cwd", "")
+
+        async def _exec_and_push(step, prompt, step_cwd):
+            saved = pl.context.get("shared_cwd", "")
+            pl.context["shared_cwd"] = step_cwd
             await self._exec_step(pl, step, prompt)
+            pl.context["shared_cwd"] = saved
             await self._webhook_step(pl, step)
 
         tasks = []
         for step in pl.steps:
             prompt = self._render(step.prompt_template, pl.context)
-            tasks.append(_exec_and_push(step, prompt))
+            step_cwd = os.path.join(shared_cwd, step.agent) if shared_cwd else ""
+            if step_cwd:
+                os.makedirs(step_cwd, exist_ok=True)
+            tasks.append(_exec_and_push(step, prompt, step_cwd))
         await asyncio.gather(*tasks)
         failed = [s for s in pl.steps if s.status == "failed"]
         if failed:
@@ -283,8 +291,13 @@ class PipelineManager:
             pl.error = "; ".join(f"{s.agent}: {s.error}" for s in failed)
 
     async def _run_race(self, pl: Pipeline):
-        async def _race_step(step, prompt):
+        shared_cwd = pl.context.get("shared_cwd", "")
+
+        async def _race_step(step, prompt, step_cwd):
+            saved = pl.context.get("shared_cwd", "")
+            pl.context["shared_cwd"] = step_cwd
             await self._exec_step(pl, step, prompt)
+            pl.context["shared_cwd"] = saved
             if step.status == "completed":
                 return step
             return None
@@ -292,7 +305,10 @@ class PipelineManager:
         tasks = []
         for step in pl.steps:
             prompt = self._render(step.prompt_template, pl.context)
-            tasks.append(asyncio.create_task(_race_step(step, prompt)))
+            step_cwd = os.path.join(shared_cwd, step.agent) if shared_cwd else ""
+            if step_cwd:
+                os.makedirs(step_cwd, exist_ok=True)
+            tasks.append(asyncio.create_task(_race_step(step, prompt, step_cwd)))
 
         winner = None
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

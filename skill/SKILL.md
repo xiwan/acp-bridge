@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.10.11 — 通过 ACP Bridge HTTP API 调用远程 CLI agent，支持多 agent pipeline。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /cli qw <prompt> (qwen) | /cli oc <prompt> (opencode) | /chat ko (进入对话模式)"
+description: "v0.10.12 — 通过 ACP Bridge HTTP API 调用远程 CLI agent，支持多 agent pipeline。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /cli qw <prompt> (qwen) | /cli oc <prompt> (opencode) | /chat ko (进入对话模式)"
 disable-model-invocation: true
 ---
 

@@ -63,6 +63,9 @@ RUN touch /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat /usr/local/bin/ki
 
 RUN useradd -m -d /home/app app
 
+# Pre-create dirs that may be volume-mounted (ensures app ownership inside container)
+RUN mkdir -p /tmp/acp-pipelines /app/data && chown app:app /tmp/acp-pipelines /app/data
+
 # uv-managed Python (trimmed) + venv — use --chown to avoid extra layer
 COPY --from=py-builder --chown=app:app /opt/uv/python /opt/uv/python
 ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
