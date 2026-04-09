@@ -81,11 +81,11 @@ AWS_SECRET_ACCESS_KEY=
 > When no task is active, it shows "No active version."
 
 ```yaml
-version: "0.10.12"
-description: "Fix pipeline PermissionError + parallel/race per-agent cwd"
-status: "pre-commit"
-current_phase: "Phase 7: Commit"
-log_file: "versions/v0.10.12.md"
+version: ""
+description: ""
+status: "idle"
+current_phase: ""
+log_file: ""
 ```
 
 ---
