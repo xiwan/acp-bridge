@@ -16,6 +16,7 @@ data/*.db
 # Local scripts
 start.sh
 OPERATIONS.md
+INSTRUCTION.md
 versions/
 
 # IDE / Editor
@@ -28,3 +29,7 @@ acp-bridge.service
 docker/light/.env
 todo.md
 test/scratch/
+
+# OS
+.DS_Store
+docs/
