@@ -54,6 +54,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 - OpenClaw tools proxy: unified entry point for message/tts/nodes/cron/web_search and more
 - Web UI (opt-in): chat interface at `/ui` with persistence (SQLite), message folding, and settings panel
 - Client is pure bash + jq, zero Python dependency
+- Harness Factory support: profile-driven lightweight agents via [harness-factory](https://github.com/xiwan/harness-factory) — same binary, different profiles, different agents
 
 ## Agent Compatibility Matrix
 
@@ -68,6 +69,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google | 🧪 `--experimental-acp` | — | 🟡 Planned | — |
 | [Copilot CLI](https://docs.github.com/en/copilot/reference/acp-server) | GitHub | ✅ `--acp` | — | 🟡 Planned | — |
 | [OpenCode](https://github.com/opencode-ai/opencode) | Open Source | ✅ `opencode acp` | `acp` | ✅ Integrated | 6/6 |
+| [Harness Factory](https://github.com/xiwan/harness-factory) | Open Source | ✅ Native | `acp` | ✅ Integrated | 4/4 |
 | [CoStrict](https://github.com/zgsm-ai/costrict) | Open Source 🇨🇳 | ✅ Native | — | 🟡 Planned | — |
 | [Trae Agent](https://github.com/bytedance/trae-agent) | ByteDance 🇨🇳 | ❌ | — | ⚪ No ACP | — |
 | [Aider](https://github.com/Aider-AI/aider) | Open Source | ❌ | — | ⚪ No ACP | — |
@@ -78,7 +80,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.10.13
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.0
 
 ## Project Structure
 
@@ -301,6 +303,27 @@ agents:
     acp_args: ["acp"]
     working_dir: "/tmp"
     description: "OpenCode agent (open source, multi-provider)"
+  # harness-factory: same binary, different profiles → different agents
+  pr-reviewer:
+    enabled: true
+    mode: "acp"
+    command: "harness-factory"
+    acp_args: []
+    working_dir: "/tmp"
+    description: "Code review agent (harness-factory)"
+    profile:
+      tools:
+        fs: { permissions: [read, list] }
+        git: { permissions: [diff, log, show] }
+        shell: { allowlist: [pytest, mypy, grep] }
+      orchestration: free
+      resources:
+        timeout: 300s
+        max_turns: 20
+      agent:
+        model: "bedrock/anthropic.claude-sonnet-4-6"
+        system_prompt: "You are a code reviewer."
+        temperature: 0.3
 ```
 
 ## Client Usage

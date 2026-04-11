@@ -146,13 +146,13 @@ class AcpConnection:
                  result.get("agentInfo", {}).get("version"))
         return result
 
-    async def session_new(self, cwd: str) -> str:
+    async def session_new(self, cwd: str, profile: dict | None = None) -> str:
         sub_id, q = self._subscribe()
         try:
-            result = await self._send_request("session/new", {
-                "cwd": cwd,
-                "mcpServers": [],
-            })
+            params = {"cwd": cwd, "mcpServers": []}
+            if profile:
+                params["profile"] = profile
+            result = await self._send_request("session/new", params)
             self.acp_session_id = result["sessionId"]
             log.info("session created: acp_session=%s", self.acp_session_id)
             return self.acp_session_id
@@ -278,19 +278,19 @@ class AcpProcessPool:
             await conn.kill()
             self._save_pids()
 
-    async def _reuse(self, old_key: tuple[str, str], new_key: tuple[str, str], cwd: str) -> AcpConnection:
+    async def _reuse(self, old_key: tuple[str, str], new_key: tuple[str, str], cwd: str, profile: dict | None = None) -> AcpConnection:
         """Reuse an existing connection under a new session key — reset context via session/new."""
         conn = self._connections.pop(old_key)
         new_agent, new_session_id = new_key
         log.info("lru_reuse: agent=%s session=%s→%s", new_agent, old_key[1], new_session_id)
         conn.session_id = new_session_id
         conn.session_reset = True
-        await conn.session_new(cwd or self._config[new_agent].get("working_dir", "/tmp"))
+        await conn.session_new(cwd or self._config[new_agent].get("working_dir", "/tmp"), profile=profile)
         self._connections[new_key] = conn
         self._save_pids()
         return conn
 
-    async def get_or_create(self, agent: str, session_id: str, cwd: str = "") -> AcpConnection:
+    async def get_or_create(self, agent: str, session_id: str, cwd: str = "", profile: dict | None = None) -> AcpConnection:
         key = (agent, session_id)
         conn = self._connections.get(key)
 
@@ -313,7 +313,7 @@ class AcpProcessPool:
         if len(self._connections) >= self._max:
             lru_same = self._lru_idle(agent=agent)
             if lru_same:
-                return await self._reuse(lru_same, key, cwd)
+                return await self._reuse(lru_same, key, cwd, profile=profile)
             lru = self._lru_idle()
             if lru is None:
                 raise PoolExhaustedError(f"global limit ({self._max}), all connections busy")
@@ -323,12 +323,12 @@ class AcpProcessPool:
         if not agent_cfg:
             raise AcpError(f"agent not found: {agent}")
 
-        conn = await self._spawn(agent, session_id, agent_cfg, is_rebuild=is_rebuild, cwd_override=cwd)
+        conn = await self._spawn(agent, session_id, agent_cfg, is_rebuild=is_rebuild, cwd_override=cwd, profile=profile)
         self._connections[key] = conn
         self._save_pids()
         return conn
 
-    async def _spawn(self, agent: str, session_id: str, cfg: dict, is_rebuild: bool = False, cwd_override: str = "") -> AcpConnection:
+    async def _spawn(self, agent: str, session_id: str, cfg: dict, is_rebuild: bool = False, cwd_override: str = "", profile: dict | None = None) -> AcpConnection:
         command = cfg["command"]
         acp_args = cfg.get("acp_args", ["acp"])
         cwd = cwd_override or cfg.get("working_dir", "/tmp")
@@ -349,7 +349,7 @@ class AcpProcessPool:
         if is_rebuild:
             conn.session_reset = True
         await conn.initialize()
-        await conn.session_new(cwd)
+        await conn.session_new(cwd, profile=profile)
         return conn
 
     async def close(self, agent: str, session_id: str) -> None:

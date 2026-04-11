@@ -129,7 +129,13 @@ def main():
     for name, cfg in agents_cfg.items():
         mode = cfg.get("mode", "pty")
         if mode == "acp" and pool:
-            handler = make_acp_agent_handler(name, pool)
+            agent_profile = cfg.get("profile")
+            if agent_profile:
+                # Inject litellm config into profile for harness-factory
+                agent_profile.setdefault("litellm_url", litellm_cfg.get("url", ""))
+                litellm_key = litellm_cfg.get("env", {}).get("LITELLM_API_KEY", "")
+                agent_profile.setdefault("litellm_api_key", litellm_key)
+            handler = make_acp_agent_handler(name, pool, profile=agent_profile)
         else:
             handler = make_pty_agent_handler(cfg, verbose=args.verbose)
         server.agent(name=name, description=cfg.get("description", ""),

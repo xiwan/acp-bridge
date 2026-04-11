@@ -118,3 +118,26 @@ agents:
 #   token: "${OPENCLAW_TOKEN}"
 #   account_id: "default"
 #   target: "channel:<discord-channel-id>"
+
+  # harness-factory agents — same binary, different profiles
+  # Requires: harness-factory binary (https://github.com/xiwan/harness-factory)
+  # pr-reviewer:
+  #   enabled: true
+  #   mode: "acp"
+  #   command: "/usr/local/bin/harness-factory"
+  #   acp_args: []
+  #   working_dir: "/tmp"
+  #   description: "Code review agent (harness-factory)"
+  #   profile:
+  #     tools:
+  #       fs: { permissions: [read, list] }
+  #       git: { permissions: [diff, log, show] }
+  #       shell: { allowlist: [pytest, mypy, grep] }
+  #     orchestration: free
+  #     resources:
+  #       timeout: 300s
+  #       max_turns: 20
+  #     agent:
+  #       model: "bedrock/anthropic.claude-sonnet-4-6"
+  #       system_prompt: "You are a code reviewer. Analyze diffs and produce review reports."
+  #       temperature: 0.3

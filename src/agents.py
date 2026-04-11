@@ -22,7 +22,7 @@ def strip_ansi(text: str) -> str:
     return ANSI_RE.sub("", text)
 
 
-def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool):
+def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict | None = None):
     """ACP protocol handler — structured events via stdio JSON-RPC."""
 
     async def handler(
@@ -43,7 +43,7 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool):
         log.info("acp_start: agent=%s session=%s len=%d cwd=%s", agent_name, session_id, len(prompt), cwd or "(default)")
 
         try:
-            conn = await pool.get_or_create(agent_name, session_id, cwd=cwd)
+            conn = await pool.get_or_create(agent_name, session_id, cwd=cwd, profile=profile)
         except PoolExhaustedError as e:
             log.error("pool_exhausted: agent=%s: %s", agent_name, e)
             yield Message(parts=[MessagePart(content=f"[error] pool_exhausted: {e}", content_type="text/plain")])

@@ -2,10 +2,10 @@
 
 > You are the executing agent. Human docs → [README.md](README.md)
 
-ACP Bridge exposes local CLI agents (Kiro/Claude/Codex/Qwen/OpenCode) via HTTP with async job support.
+ACP Bridge exposes local CLI agents (Kiro/Claude/Codex/Qwen/OpenCode/Harness Factory) via HTTP with async job support.
 
 ```
-CLI Agents (kiro/claude/codex/qwen/...) ↕ stdio JSON-RPC → ACP Bridge :18010 ↕ HTTP → OpenClaw / Web UI / HTTP API
+CLI Agents (kiro/claude/codex/qwen/harness-factory/...) ↕ stdio JSON-RPC → ACP Bridge :18010 ↕ HTTP → OpenClaw / Web UI / HTTP API
 ```
 
 ---
@@ -34,6 +34,7 @@ which claude-agent-acp 2>/dev/null && echo "CLAUDE_OK" || echo "CLAUDE_NOT_FOUND
 which codex 2>/dev/null && echo "CODEX_OK" || echo "CODEX_NOT_FOUND"
 which qwen 2>/dev/null && echo "QWEN_OK" || echo "QWEN_NOT_FOUND"
 which opencode 2>/dev/null && echo "OPENCODE_OK" || echo "OPENCODE_NOT_FOUND"
+which harness-factory 2>/dev/null && echo "HARNESS_OK" || echo "HARNESS_NOT_FOUND"
 
 echo "=== Service ==="
 curl -s --max-time 3 http://127.0.0.1:18010/health 2>/dev/null || echo "BRIDGE_NOT_RUNNING"
