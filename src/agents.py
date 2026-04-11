@@ -84,8 +84,11 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
                 elif event["type"] == "message.thinking":
                     yield MessagePart(content=event["content"], content_type="text/plain", name="thought")
                 elif event["type"] in ("tool.start", "tool.done"):
+                    detail = event.get('status', '')
+                    if event.get('status') == 'error' and event.get('output'):
+                        detail = event['output']
                     yield MessagePart(
-                        content=f"[{event['type']}] {event.get('title', '')} ({event.get('status', '')})\n",
+                        content=f"[{event['type']}] {event.get('title', '')} ({detail})\n",
                         content_type="text/plain")
                 elif event["type"] == "status":
                     yield MessagePart(content=f"[status] {event['text']}\n", content_type="text/plain")

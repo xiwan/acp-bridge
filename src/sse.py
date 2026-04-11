@@ -13,7 +13,7 @@ def transform_notification(notification: dict) -> dict | None:
         if kind == "tool.start":
             return {"type": "tool.start", "toolCallId": data.get("toolCallId", ""), "title": data.get("name", ""), "status": "pending"}
         if kind == "tool.done":
-            return {"type": "tool.done", "toolCallId": data.get("toolCallId", ""), "title": data.get("name", ""), "status": data.get("status", "")}
+            return {"type": "tool.done", "toolCallId": data.get("toolCallId", ""), "title": data.get("name", ""), "status": data.get("status", ""), "output": data.get("output", "")}
         if kind == "thinking":
             return {"type": "message.thinking", "content": data.get("content", "")}
         return None
