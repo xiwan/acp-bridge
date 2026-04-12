@@ -1,0 +1,7 @@
+name: summarize
+description: "Summarize text concisely"
+agent: kiro
+prompt: |
+  Summarize the following text in {{style}} style. Keep it under {{max_words}} words.
+
+  {{text}}

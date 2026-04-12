@@ -1,0 +1,13 @@
+name: code-review
+description: "Review code for bugs, security issues, and style"
+agent: kiro
+prompt: |
+  Review the following code. Focus on bugs, security vulnerabilities, and style issues.
+  Provide specific line-level feedback.
+
+  Language: {{language}}
+  Context: {{context}}
+
+  ```
+  {{code}}
+  ```

@@ -1,0 +1,8 @@
+name: translate
+description: "Translate text between languages"
+agent: kiro
+prompt: |
+  Translate the following text from {{from}} to {{to}}.
+  Preserve formatting and tone.
+
+  {{text}}

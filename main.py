@@ -35,7 +35,7 @@ from src.agents import make_acp_agent_handler, make_pty_agent_handler
 from src.jobs import JobManager
 from src.security import SecurityMiddleware
 from src.stats import StatsCollector
-from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes, stats as stats_routes
+from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes, stats as stats_routes, templates as templates_routes
 
 try:
     from acp_sdk.models.models import Metadata
@@ -190,6 +190,9 @@ def main():
     stats_routes.register(app, stats_collector)
     import src.agents as _agents_mod
     _agents_mod._stats = stats_collector
+
+    # --- Templates ---
+    templates_routes.register(app)
 
     # --- Pipeline manager ---
     from src.pipeline import PipelineManager

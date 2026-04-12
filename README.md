@@ -31,6 +31,19 @@
 
 A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI Codex](https://github.com/openai/codex), etc.) via [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) over HTTP, with async job support and Discord push notifications.
 
+## When to Use ACP Bridge
+
+> You have powerful CLI agents on a dev machine. You want the rest of your team — or your bots — to use them too.
+
+| Scenario | How ACP Bridge Helps |
+|----------|---------------------|
+| **Team AI gateway** | One EC2 runs Kiro + Claude + Codex; everyone calls them via HTTP — no local install needed |
+| **IM-driven development** | Send a Discord/Feishu message → agent executes → result pushed back to chat |
+| **Async code tasks** | Submit a refactor or review job, go grab coffee, get notified when it's done |
+| **Multi-agent orchestration** | Chain agents in sequence, race them in parallel, or let them debate in conversation mode |
+| **Prompt-as-a-service** | Define reusable prompt templates; non-technical users pick a template and fill in variables |
+| **Agent marketplace** | Same `harness-factory` binary + different profiles = code reviewer, DevOps helper, translator — all behind one API |
+
 ## Architecture
 
 ```
@@ -80,7 +93,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.1
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.2
 
 ## Project Structure
 
@@ -448,6 +461,8 @@ POST /jobs → Bridge executes in background → On completion POST to OpenClaw 
 | GET | `/health` | Health check | No |
 | GET | `/health/agents` | Agent status | Yes |
 | GET | `/stats` | Agent call statistics | Yes |
+| GET | `/templates` | List prompt templates | Yes |
+| POST | `/templates/render` | Render a template with variables | Yes |
 | GET | `/ui` | Web UI chat interface (if enabled) | No |
 | DELETE | `/sessions/{agent}/{session_id}` | Close session | Yes |
 
