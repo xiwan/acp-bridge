@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -12,8 +13,12 @@ from acp_sdk.server import Context, RunYield, RunYieldResume
 
 from .acp_client import AcpConnection, AcpError, AcpProcessPool, PoolExhaustedError
 from .sse import transform_notification
+from .stats import StatsCollector
 
 log = logging.getLogger("acp-bridge.agents")
+
+# Module-level stats collector, set by main.py
+_stats: StatsCollector | None = None
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
 
@@ -46,10 +51,14 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
             conn = await pool.get_or_create(agent_name, session_id, cwd=cwd, profile=profile)
         except PoolExhaustedError as e:
             log.error("pool_exhausted: agent=%s: %s", agent_name, e)
+            if _stats:
+                _stats.record(agent_name, session_id, False, 0)
             yield Message(parts=[MessagePart(content=f"[error] pool_exhausted: {e}", content_type="text/plain")])
             return
         except AcpError as e:
             log.error("agent_error: agent=%s: %s", agent_name, e)
+            if _stats:
+                _stats.record(agent_name, session_id, False, 0)
             yield Message(parts=[MessagePart(content=f"[error] {e}", content_type="text/plain")])
             return
 
@@ -61,12 +70,17 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
         try:
             last_yield_time = asyncio.get_event_loop().time()
             heartbeat_interval = 15
+            _t0 = time.time()
+            _tools_used = []
+            _success = True
 
             async for notification in conn.session_prompt(prompt):
                 if "_prompt_result" in notification:
                     log.info("acp_done: agent=%s session=%s stop=%s",
                              agent_name, session_id,
                              notification["_prompt_result"].get("result", {}).get("stopReason", "?"))
+                    if "error" in notification["_prompt_result"]:
+                        _success = False
                     continue
 
                 event = transform_notification(notification)
@@ -87,15 +101,22 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
                     detail = event.get('status', '')
                     if event.get('status') == 'error' and event.get('output'):
                         detail = event['output']
+                    if event["type"] == "tool.done" and event.get("title"):
+                        _tools_used.append(event["title"])
                     yield MessagePart(
                         content=f"[{event['type']}] {event.get('title', '')} ({detail})\n",
                         content_type="text/plain")
                 elif event["type"] == "status":
                     yield MessagePart(content=f"[status] {event['text']}\n", content_type="text/plain")
 
+            if _stats:
+                _stats.record(agent_name, session_id, _success, time.time() - _t0, _tools_used)
+
         except Exception as e:
             log.error("agent_crashed: agent=%s session=%s error=%s", agent_name, session_id, e)
             pool.remove(agent_name, session_id)
+            if _stats:
+                _stats.record(agent_name, session_id, False, time.time() - _t0, _tools_used)
             yield Message(parts=[MessagePart(content=f"[error] agent_crashed: {e}", content_type="text/plain")])
 
     return handler
@@ -114,6 +135,7 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
         session_id = str(context.session.id) if context.session else "default"
 
         log.info("pty_start: cmd=%s session=%s", command, session_id)
+        _t0 = time.time()
 
         env = os.environ.copy()
         env.update({"TERM": "dumb", "NO_COLOR": "1", "LANG": "en_US.UTF-8"})
@@ -140,6 +162,8 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
                     log.warning("pty_timeout: cmd=%s session=%s idle=%ds", command, session_id, idle_timeout)
                     proc.kill()
                     await proc.wait()
+                    if _stats:
+                        _stats.record(command, session_id, False, time.time() - _t0)
                     yield MessagePart(content=f"[error] agent timeout (idle {idle_timeout}s)\n", content_type="text/plain")
                     return
                 if not line:
@@ -152,7 +176,11 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
         except Exception:
             proc.kill()
             await proc.wait()
+            if _stats:
+                _stats.record(command, session_id, False, time.time() - _t0)
             raise
+        if _stats:
+            _stats.record(command, session_id, proc.returncode == 0, time.time() - _t0)
         log.info("pty_done: cmd=%s session=%s exit=%s", command, session_id, proc.returncode)
 
     return handler

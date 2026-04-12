@@ -80,7 +80,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.0
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.1
 
 ## Project Structure
 
@@ -447,6 +447,7 @@ POST /jobs → Bridge executes in background → On completion POST to OpenClaw 
 | DELETE | `/files/{filename}` | Delete an uploaded file | Yes |
 | GET | `/health` | Health check | No |
 | GET | `/health/agents` | Agent status | Yes |
+| GET | `/stats` | Agent call statistics | Yes |
 | GET | `/ui` | Web UI chat interface (if enabled) | No |
 | DELETE | `/sessions/{agent}/{session_id}` | Close session | Yes |
 

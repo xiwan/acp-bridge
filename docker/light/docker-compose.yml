@@ -52,4 +52,7 @@ services:
       - /home/ec2-user/.local/share/opencode:/home/app/.local/share/opencode
       - /home/ec2-user/.local/state:/home/app/.local/state
 
+      ## --- Harness Factory (native binary) ---
+      - /home/ec2-user/projects/ACP-Harness-Factory/harness-factory:/usr/local/bin/harness-factory:ro
+
     restart: unless-stopped

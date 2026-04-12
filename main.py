@@ -34,7 +34,8 @@ from src.acp_client import AcpProcessPool
 from src.agents import make_acp_agent_handler, make_pty_agent_handler
 from src.jobs import JobManager
 from src.security import SecurityMiddleware
-from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes
+from src.stats import StatsCollector
+from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes, stats as stats_routes
 
 try:
     from acp_sdk.models.models import Metadata
@@ -184,6 +185,12 @@ def main():
     upload_dir = srv_cfg.get("upload_dir", "/tmp/acp-uploads")
     files_routes.register(app, upload_dir)
 
+    # --- Stats ---
+    stats_collector = StatsCollector()
+    stats_routes.register(app, stats_collector)
+    import src.agents as _agents_mod
+    _agents_mod._stats = stats_collector
+
     # --- Pipeline manager ---
     from src.pipeline import PipelineManager
     conv_workdir = srv_cfg.get("public_workdir", srv_cfg.get("conversation_workdir", "/tmp/acp-pipelines"))
@@ -209,6 +216,7 @@ def main():
                 pool.cleanup_ghosts()
             if job_mgr:
                 job_mgr.cleanup()
+            stats_collector.delete_old()
 
     _original_lifespan = app.router.lifespan_context
 
