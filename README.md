@@ -24,7 +24,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/xiwan/acp-bridge?style=social)](https://github.com/xiwan/acp-bridge/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/xiwan/acp-bridge?style=social)](https://github.com/xiwan/acp-bridge/network/members)
 [![GitHub Discussions](https://img.shields.io/github/discussions/xiwan/acp-bridge?logo=github&label=Discussions)](https://github.com/xiwan/acp-bridge/discussions)
-[![License: MIT-0](https://img.shields.io/badge/License-MIT--0-green.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 [![Agent Guide](https://img.shields.io/badge/Agent_Guide-for_AI_Agents-blue?logo=robot)](AGENT.md)
 [![AWS Blog](https://img.shields.io/badge/AWS_Blog-Published-orange?logo=amazonaws)](https://aws.amazon.com/cn/blogs/china/enable-kiro-and-claude-code-for-im-with-acp-bridge-async-ai-workflow/)
@@ -93,7 +93,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.2
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.3
 
 ## Project Structure
 
@@ -607,7 +607,7 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 
 ## License
 
-This library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) file.
+This library is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file.
 
 ## Architecture — Interaction Modes
 
