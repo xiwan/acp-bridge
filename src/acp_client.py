@@ -413,6 +413,8 @@ class AcpProcessPool:
             if not conn.alive:
                 dead.append(key)
                 continue
+            if conn._busy:
+                continue
             ok = await conn.ping()
             if not ok:
                 dead.append(key)
