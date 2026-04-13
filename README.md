@@ -93,7 +93,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.4
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.5
 
 ## Project Structure
 
@@ -458,6 +458,9 @@ POST /jobs → Bridge executes in background → On completion POST to OpenClaw 
 | POST | `/files` | Upload a file to Bridge | Yes |
 | GET | `/files` | List uploaded files | Yes |
 | DELETE | `/files/{filename}` | Delete an uploaded file | Yes |
+| POST | `/harness` | Create a dynamic harness agent | Yes |
+| GET | `/harness` | List dynamic harness agents | Yes |
+| DELETE | `/harness/{name}` | Delete a dynamic harness agent | Yes |
 | GET | `/health` | Health check | No |
 | GET | `/health/agents` | Agent status | Yes |
 | GET | `/stats` | Agent call statistics | Yes |

@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.11.4 — 通过 ACP Bridge HTTP API 调用远程 CLI agent，支持多 agent pipeline。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /chat ko (进入对话模式)"
+description: "v0.11.5 — 通过 ACP Bridge HTTP API 调用远程 CLI agent，支持多 agent pipeline。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /chat ko (进入对话模式)"
 disable-model-invocation: true
 ---
 
@@ -84,6 +84,44 @@ Quick recognition:
 | "谁快用谁" | `race` |
 | "随便找一个" | `random` |
 | "让 X 和 Y 讨论..." | `conversation` |
+
+## Dynamic Harness
+
+When user asks to create a specialized agent, use `POST /harness` with a preset name.
+
+### Preset → Intent Mapping
+
+| User intent | Preset |
+|-------------|--------|
+| 读文件、看代码 | `reader` |
+| 跑命令、查系统 | `executor` |
+| 查网页、搜资料 | `scout` |
+| 审代码、看 diff | `reviewer` |
+| 分析数据、统计 | `analyst` |
+| 调研、查资料写总结 | `researcher` |
+| 写代码、跑测试 | `developer` |
+| 写文档、查参考 | `writer` |
+| 运维、部署、查网络 | `operator` |
+| 全权限、什么都能干 | `admin` |
+
+### Usage
+
+```bash
+# Create with preset name (harness-factory handles the rest)
+curl -X POST "$ACP_BRIDGE_URL/harness" \
+  -H "Authorization: Bearer $ACP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"profile": "operator", "system_prompt": "帮用户写查天气的 skill"}'
+
+# Call it
+$ACP_CLIENT -a <returned_agent_name> "<prompt>"
+
+# List available presets
+curl "$ACP_BRIDGE_URL/harness/presets" -H "Authorization: Bearer $ACP_TOKEN"
+
+# Delete when done
+curl -X DELETE "$ACP_BRIDGE_URL/harness/<name>" -H "Authorization: Bearer $ACP_TOKEN"
+```
 
 ## References
 

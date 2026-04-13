@@ -256,15 +256,31 @@ class AcpProcessPool:
         self._connections: dict[tuple[str, str], AcpConnection] = {}
         self._memory_limit_pct: float = 80.0
 
+    @staticmethod
+    def _agent_group(agent: str) -> str:
+        """Map agent name to its group for shared limits.
+        All harness-* agents share the 'harness' group."""
+        if agent.startswith("harness") :
+            return "harness"
+        return agent
+
     def _count_agent(self, agent: str) -> int:
-        return sum(1 for (a, _) in self._connections if a == agent)
+        group = self._agent_group(agent)
+        return sum(1 for (a, _) in self._connections if self._agent_group(a) == group)
 
     def _lru_idle(self, agent: str | None = None) -> tuple[str, str] | None:
-        """Return key of least-recently-used idle connection, optionally filtered by agent."""
-        candidates = [
-            (k, c) for k, c in self._connections.items()
-            if not c._busy and c.alive and (agent is None or k[0] == agent)
-        ]
+        """Return key of least-recently-used idle connection, optionally filtered by agent group."""
+        if agent is not None:
+            group = self._agent_group(agent)
+            candidates = [
+                (k, c) for k, c in self._connections.items()
+                if not c._busy and c.alive and self._agent_group(k[0]) == group
+            ]
+        else:
+            candidates = [
+                (k, c) for k, c in self._connections.items()
+                if not c._busy and c.alive
+            ]
         if not candidates:
             return None
         return min(candidates, key=lambda x: x[1].last_active)[0]

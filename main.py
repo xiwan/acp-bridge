@@ -35,7 +35,7 @@ from src.agents import make_acp_agent_handler, make_pty_agent_handler
 from src.jobs import JobManager
 from src.security import SecurityMiddleware
 from src.stats import StatsCollector
-from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes, stats as stats_routes, templates as templates_routes
+from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes, stats as stats_routes, templates as templates_routes, harness as harness_routes
 
 try:
     from acp_sdk.models.models import Metadata
@@ -156,6 +156,22 @@ def main():
 
     # --- App + middleware ---
     app = create_app(*server.agents)
+
+    # Extract the SDK's internal agents dict for dynamic registration
+    for route in app.routes:
+        if hasattr(route, 'name') and route.name == 'list_agents':
+            for cell in route.endpoint.__closure__:
+                try:
+                    val = cell.cell_contents
+                    if isinstance(val, dict) and all(
+                        hasattr(v, 'name') for v in val.values()
+                    ):
+                        app.state.acp_agents = val
+                        break
+                except ValueError:
+                    pass
+            break
+
     app.add_middleware(SecurityMiddleware,
                        allowed_ips=sec_cfg.get("allowed_ips", []),
                        auth_token=sec_cfg.get("auth_token", ""),
@@ -193,6 +209,9 @@ def main():
 
     # --- Templates ---
     templates_routes.register(app)
+
+    # --- Dynamic harness ---
+    harness_routes.register(app, pool, agents_cfg, litellm_cfg)
 
     # --- Pipeline manager ---
     from src.pipeline import PipelineManager
