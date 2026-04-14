@@ -89,6 +89,16 @@ Quick recognition:
 
 When user asks to create a specialized agent, use `POST /harness` with a preset name.
 
+### Model Selection (harness-factory 0.6.0+)
+
+| Value | Behavior |
+|-------|----------|
+| `"auto"` or omit | Random model from 8 built-in (claude, deepseek, kimi, qwen, glm, minimax, gemma, opus) |
+| alias e.g. `"claude-sonnet"` | Specific model by alias |
+| full ID e.g. `"bedrock/..."` | Exact model ID |
+
+Auto mode includes fallback: if a model fails, harness-factory automatically tries the next one.
+
 ### Preset → Intent Mapping
 
 | User intent | Preset |

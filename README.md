@@ -280,6 +280,9 @@ litellm:
   env:
     LITELLM_API_KEY: "${LITELLM_API_KEY}"
 
+harness:
+  binary: ""                                    # absolute path to harness-factory; empty = use PATH
+
 agents:
   kiro:
     enabled: true
@@ -335,7 +338,7 @@ agents:
         timeout: 300s
         max_turns: 20
       agent:
-        model: "bedrock/anthropic.claude-sonnet-4-6"
+        model: "auto"
         system_prompt: "You are a code reviewer."
         temperature: 0.3
 ```

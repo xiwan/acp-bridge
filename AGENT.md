@@ -3,6 +3,7 @@
 > You are the executing agent. Human docs → [README.md](README.md)
 
 ACP Bridge exposes local CLI agents (Kiro/Claude/Codex/Qwen/OpenCode/Harness Factory) via HTTP with async job support.
+Harness Factory 0.6.0+ has a built-in model registry (8 models, 7 providers) with `"auto"` random selection and error fallback.
 
 ```
 CLI Agents (kiro/claude/codex/qwen/harness-factory/...) ↕ stdio JSON-RPC → ACP Bridge :18010 ↕ HTTP → OpenClaw / Web UI / HTTP API
