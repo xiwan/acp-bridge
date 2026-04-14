@@ -317,13 +317,14 @@ agents:
     working_dir: "/tmp"
     description: "OpenCode agent (open source, multi-provider)"
   # harness-factory: same binary, different profiles → different agents
-  pr-reviewer:
+  # name is arbitrary — use "harness", "pr-reviewer", "translator", etc.
+  harness:
     enabled: true
     mode: "acp"
     command: "harness-factory"
     acp_args: []
     working_dir: "/tmp"
-    description: "Code review agent (harness-factory)"
+    description: "Harness Factory lite agent (profile-driven)"
     profile:
       tools:
         fs: { permissions: [read, list] }
