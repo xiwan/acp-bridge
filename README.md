@@ -93,7 +93,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.5
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.6
 
 ## Project Structure
 

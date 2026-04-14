@@ -194,9 +194,9 @@ if $CARD; then
     retry | _sse_data_lines | \
         jq --unbuffered -r '
             if .type == "message.part" then
-                ["part", (.part.name // ""), (.part.content // "")] | @tsv
+                ["part", (.part.name // "_"), (.part.content // "")] | @tsv
             elif .type == "run.failed" then
-                ["error", "", ((.run.error.code // "error") + ": " + (.run.error.message // "unknown error"))] | @tsv
+                ["error", "_", ((.run.error.code // "error") + ": " + (.run.error.message // "unknown error"))] | @tsv
             else empty end' | \
     while IFS=$'\t' read -t "$IDLE_TIMEOUT" -r etype name content; do
         case "$etype" in

@@ -2,6 +2,15 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.11.6 | 2026-04-14 | Fix dynamic harness cross-agent process reuse; fix card mode empty output (bash read merging tabs) |
+| v0.11.5 | 2026-04-13 | Dynamic Harness API: runtime creation of harness-factory agents via HTTP (POST/GET/DELETE /harness) |
+| v0.11.4 | 2026-04-13 | Fix health_check killing busy agent connections |
+| v0.11.3 | 2026-04-12 | Prompt templates: reusable prompt definitions with variable rendering |
+| v0.11.2 | 2026-04-12 | Agent call statistics API (GET /stats) |
+| v0.11.1 | 2026-04-13 | Harness Factory integration: profile-driven lightweight agents |
+| v0.11.0 | 2026-04-11 | Harness Factory support: profile-driven ACP agents via harness-factory binary |
+| v0.10.13 | 2026-04-11 | Session close API (DELETE /sessions/{agent}/{session_id}) |
+| v0.10.12 | 2026-04-09 | Pipeline conversation mode improvements |
 | v0.10.11 | 2026-04-03 | OOM protection: memory-aware pool eviction，内存超 80% 自动驱逐空闲连接，降低默认池上限 |
 | v0.10.10 | 2026-04-03 | Shared workspace for all pipeline modes: sequence/parallel/race/random 共享工作目录，agent 间文件可见 |
 | v0.10.8 | 2026-04-02 | Conversation 修复增强：中文自动检测、每个 agent 首轮注入 topic、prompt 文件化管理、共享工作目录、transcript 空输出 fallback、webhook 完整内容分段推送 |

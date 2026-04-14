@@ -285,6 +285,16 @@ class AcpProcessPool:
             return None
         return min(candidates, key=lambda x: x[1].last_active)[0]
 
+    def _lru_idle_exact(self, agent: str) -> tuple[str, str] | None:
+        """Return LRU idle connection for the exact agent name (no group matching)."""
+        candidates = [
+            (k, c) for k, c in self._connections.items()
+            if not c._busy and c.alive and k[0] == agent
+        ]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda x: x[1].last_active)[0]
+
     async def _evict(self, key: tuple[str, str]) -> None:
         """Kill and remove a connection from the pool."""
         conn = self._connections.pop(key, None)
@@ -313,6 +323,10 @@ class AcpProcessPool:
         if conn and conn.alive:
             return conn
 
+        # Resolve profile: explicit param > agent config
+        if profile is None:
+            profile = self._config.get(agent, {}).get("profile")
+
         is_rebuild = conn is not None
         if conn:
             log.warning("stale connection: agent=%s session=%s, rebuilding", agent, session_id)
@@ -327,7 +341,7 @@ class AcpProcessPool:
 
         # global limit: prefer reusing same-agent process, else evict globally LRU
         if len(self._connections) >= self._max:
-            lru_same = self._lru_idle(agent=agent)
+            lru_same = self._lru_idle_exact(agent)
             if lru_same:
                 return await self._reuse(lru_same, key, cwd, profile=profile)
             lru = self._lru_idle()

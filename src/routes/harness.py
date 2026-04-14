@@ -30,11 +30,20 @@ PRESETS = {
 }
 
 
-def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg: dict):
+def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg: dict, harness_binary: str = ""):
+
+    # Resolve harness-factory binary: explicit config > static agent > bare name
+    _binary = harness_binary
+    if not _binary:
+        for cfg in static_agents.values():
+            if cfg.get("command", "").endswith("harness-factory"):
+                _binary = cfg["command"]
+                break
+    _binary = _binary or "harness-factory"
 
     harness_base_cfg = None
     for cfg in static_agents.values():
-        if cfg.get("command") == "harness-factory":
+        if cfg.get("command", "").endswith("harness-factory"):
             harness_base_cfg = cfg
             break
 
@@ -46,8 +55,6 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
     async def create_harness(request: Request):
         if not pool:
             return JSONResponse({"error": "no ACP process pool"}, status_code=503)
-        if not harness_base_cfg:
-            return JSONResponse({"error": "no harness-factory agent configured as base"}, status_code=503)
 
         body = await request.json()
         raw_profile = body.get("profile")
@@ -64,9 +71,14 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
                 return JSONResponse(
                     {"error": f"unknown preset '{raw_profile}'. Available: {', '.join(sorted(PRESETS))}"},
                     status_code=400)
-            # Preset mode: pass --profile flag to harness-factory, minimal profile JSON
+            # Preset mode: pass --profile flag to harness-factory
+            # Inherit agent config (model, temperature) from static harness so LLM calls work
             preset_name = raw_profile
+            base_profile = harness_base_cfg.get("profile", {}) if harness_base_cfg else {}
             profile = {}
+            if base_profile.get("agent"):
+                profile["agent"] = {k: v for k, v in base_profile["agent"].items()
+                                    if k in ("model", "temperature")}
             extra_acp_args = ["--profile", preset_name]
             description = body.get("description", PRESETS[preset_name])
         elif isinstance(raw_profile, dict):
@@ -89,9 +101,9 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
             profile["agent"]["system_prompt"] = body["system_prompt"]
 
         # Build agent config
-        base_args = harness_base_cfg.get("acp_args", [])
+        base_args = harness_base_cfg.get("acp_args", []) if harness_base_cfg else []
         agent_cfg = {
-            "command": harness_base_cfg["command"],
+            "command": _binary,
             "acp_args": base_args + extra_acp_args,
             "working_dir": f"/tmp/{name}",
             "mode": "acp",

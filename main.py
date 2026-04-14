@@ -82,6 +82,14 @@ def main():
         log.error("No enabled agents in config")
         sys.exit(1)
 
+    # Harness binary resolution
+    harness_cfg = config.get("harness", {})
+    harness_binary = harness_cfg.get("binary", "")
+    if harness_binary:
+        for cfg in agents_cfg.values():
+            if cfg.get("command") == "harness-factory":
+                cfg["command"] = harness_binary
+
     # LiteLLM dependency check
     litellm_cfg = config.get("litellm", {})
     litellm_url = litellm_cfg.get("url", "")
@@ -211,7 +219,7 @@ def main():
     templates_routes.register(app)
 
     # --- Dynamic harness ---
-    harness_routes.register(app, pool, agents_cfg, litellm_cfg)
+    harness_routes.register(app, pool, agents_cfg, litellm_cfg, harness_binary=harness_binary)
 
     # --- Pipeline manager ---
     from src.pipeline import PipelineManager

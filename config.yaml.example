@@ -11,6 +11,9 @@ pool:
   max_processes: 20
   max_per_agent: 10
 
+harness:
+  binary: ""                                    # absolute path to harness-factory binary; empty = disabled
+
 security:
   auth_token: "${ACP_BRIDGE_TOKEN}"             # or paste token string directly
   allowed_ips:
