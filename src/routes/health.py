@@ -19,6 +19,8 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
         stats = pool.stats if pool else {"by_agent": {}}
         agent_list = []
         for name, cfg in agents_cfg.items():
+            if not isinstance(cfg, dict):
+                continue
             alive = stats["by_agent"].get(name, 0)
             sessions = []
             if pool:
