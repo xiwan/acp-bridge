@@ -231,7 +231,9 @@ _install_agent() {
         claude)
             _need_node "Claude Code" || return 1
             info "Installing Claude Code ACP adapter..."
-            npm i -g @agentclientprotocol/claude-agent-acp 2>/dev/null
+            npm i -g @agentclientprotocol/claude-agent-acp
+            # Refresh PATH for npm global bin
+            export PATH="$(npm prefix -g 2>/dev/null)/bin:$PATH"
             if command -v claude-agent-acp &>/dev/null; then
                 ok "claude-agent-acp installed"
             else
@@ -242,7 +244,8 @@ _install_agent() {
         codex)
             _need_node "Codex" || return 1
             info "Installing OpenAI Codex CLI..."
-            npm i -g @openai/codex 2>/dev/null
+            npm i -g @openai/codex
+            export PATH="$(npm prefix -g 2>/dev/null)/bin:$PATH"
             if command -v codex &>/dev/null; then
                 ok "codex installed"
             else
@@ -253,7 +256,8 @@ _install_agent() {
         qwen)
             _need_node "Qwen Code" || return 1
             info "Installing Qwen Code..."
-            npm i -g @anthropic-ai/qwen-code 2>/dev/null
+            npm i -g @anthropic-ai/qwen-code
+            export PATH="$(npm prefix -g 2>/dev/null)/bin:$PATH"
             if command -v qwen &>/dev/null; then
                 ok "qwen installed"
             else
