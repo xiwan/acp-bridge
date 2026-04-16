@@ -39,9 +39,51 @@ echo "╚═══════════════════════�
 echo ""
 
 # ============================================================
+# Step 0: State detection (first run vs update)
+# ============================================================
+info "Step 0: Detecting current state..."
+
+BRIDGE_RUNNING=false
+CONFIG_EXISTS=false
+IS_UPDATE=false
+EXISTING_AGENTS=()
+
+# Check if Bridge is already running
+if curl -s --max-time 2 http://127.0.0.1:18010/health &>/dev/null; then
+    BRIDGE_RUNNING=true
+    ok "ACP Bridge is running"
+fi
+
+# Check if config.yaml exists (indicates previous install)
+if [ -f "$INSTALL_DIR/config.yaml" ]; then
+    CONFIG_EXISTS=true
+    IS_UPDATE=true
+    ok "Existing installation found at $INSTALL_DIR"
+    # Parse which agents are already configured
+    for name in kiro claude codex qwen opencode harness; do
+        if grep -q "^  ${name}:" "$INSTALL_DIR/config.yaml" 2>/dev/null; then
+            EXISTING_AGENTS+=("$name")
+        fi
+    done
+    if [ ${#EXISTING_AGENTS[@]} -gt 0 ]; then
+        ok "Configured agents: ${EXISTING_AGENTS[*]}"
+    fi
+elif [ -d "$INSTALL_DIR/.git" ] || [ -f "$INSTALL_DIR/main.py" ]; then
+    IS_UPDATE=true
+    ok "ACP Bridge code found (no config.yaml)"
+fi
+
+if $IS_UPDATE; then
+    info "Running in UPDATE mode — will preserve existing config"
+else
+    info "Running in FRESH INSTALL mode"
+fi
+echo ""
+
+# ============================================================
 # Step 1: Prerequisites
 # ============================================================
-info "Step 1/5: Checking prerequisites..."
+info "Step 1/6: Checking prerequisites..."
 
 # Python — uv manages its own Python, so just check uv can provide >= 3.12
 if command -v python3 &>/dev/null; then
@@ -64,6 +106,13 @@ else
     ok "uv installed"
 fi
 
+# Node.js (needed for claude/codex/qwen)
+HAS_NODE=false
+if command -v node &>/dev/null; then
+    HAS_NODE=true
+    ok "Node.js $(node --version 2>/dev/null)"
+fi
+
 # git (optional — fallback to tarball download)
 HAS_GIT=false
 command -v git &>/dev/null && HAS_GIT=true
@@ -73,7 +122,7 @@ echo ""
 # ============================================================
 # Step 2: Clone / update
 # ============================================================
-info "Step 2/5: Installing ACP Bridge..."
+info "Step 2/6: Installing ACP Bridge..."
 
 if [ -d "$INSTALL_DIR/.git" ] && $HAS_GIT; then
     info "Updating existing installation at $INSTALL_DIR..."
@@ -143,9 +192,101 @@ _install_harness() {
 }
 
 # ============================================================
-# Step 3: Agent selection
+# Agent install helpers
 # ============================================================
-info "Step 3/5: Agent setup"
+_need_node() {
+    if ! $HAS_NODE; then
+        warn "$1 requires Node.js (npm)."
+        ask "Install Node.js via nvm? [Y/n]"
+        read_input INSTALL_NODE "y"
+        if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
+            curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            nvm install --lts 2>/dev/null || nvm install node
+            HAS_NODE=true
+            ok "Node.js installed: $(node --version)"
+        else
+            warn "Skipping $1 (no Node.js)"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+_install_agent() {
+    local name="$1"
+    case "$name" in
+        kiro)
+            info "Installing Kiro CLI..."
+            curl -fsSL https://cli.kiro.dev/install | bash 2>/dev/null
+            if command -v kiro-cli &>/dev/null; then
+                ok "kiro-cli installed"
+                info "Run 'kiro-cli login' to authenticate (requires Kiro Pro)"
+            else
+                warn "kiro-cli install failed"
+                return 1
+            fi
+            ;;
+        claude)
+            _need_node "Claude Code" || return 1
+            info "Installing Claude Code ACP adapter..."
+            npm i -g @agentclientprotocol/claude-agent-acp 2>/dev/null
+            if command -v claude-agent-acp &>/dev/null; then
+                ok "claude-agent-acp installed"
+            else
+                warn "claude-agent-acp install failed"
+                return 1
+            fi
+            ;;
+        codex)
+            _need_node "Codex" || return 1
+            info "Installing OpenAI Codex CLI..."
+            npm i -g @openai/codex 2>/dev/null
+            if command -v codex &>/dev/null; then
+                ok "codex installed"
+            else
+                warn "codex install failed"
+                return 1
+            fi
+            ;;
+        qwen)
+            _need_node "Qwen Code" || return 1
+            info "Installing Qwen Code..."
+            npm i -g @anthropic-ai/qwen-code 2>/dev/null
+            if command -v qwen &>/dev/null; then
+                ok "qwen installed"
+            else
+                warn "qwen install failed"
+                return 1
+            fi
+            ;;
+        opencode)
+            info "Installing OpenCode..."
+            if command -v go &>/dev/null; then
+                go install github.com/opencode-ai/opencode@latest 2>/dev/null
+            else
+                # Try binary download
+                curl -fsSL https://opencode.ai/install.sh | bash 2>/dev/null
+            fi
+            if command -v opencode &>/dev/null; then
+                ok "opencode installed"
+            else
+                warn "opencode install failed — see https://github.com/opencode-ai/opencode"
+                return 1
+            fi
+            ;;
+        harness)
+            _install_harness
+            ;;
+    esac
+    return 0
+}
+
+# ============================================================
+# Step 3: Agent setup
+# ============================================================
+info "Step 3/6: Agent setup"
 echo ""
 
 # Detect what's available
@@ -180,13 +321,19 @@ done
 
 ENABLED=()
 
+# Show found agents
 if [ ${#FOUND[@]} -gt 0 ]; then
     info "Found ${#FOUND[@]} agent CLI(s) in PATH:"
     echo ""
     for name in "${FOUND[@]}"; do
         cmd="${AGENT_CMDS[$name]}"
         path=$(command -v "$cmd")
-        echo "    ✅ ${AGENT_DESCS[$name]}  ($path)"
+        # Mark if already in config
+        in_config=""
+        for ea in "${EXISTING_AGENTS[@]}"; do
+            [[ "$ea" == "$name" ]] && in_config=" [in config]"
+        done
+        echo "    ✅ ${AGENT_DESCS[$name]}  ($path)${in_config}"
     done
     echo ""
     ask "Enable all detected agents? [Y/n]"
@@ -198,6 +345,25 @@ if [ ${#FOUND[@]} -gt 0 ]; then
             ask "  Enable ${AGENT_DESCS[$name]}? [Y/n]"
             read_input ENABLE_ONE "y"
             [[ "$ENABLE_ONE" =~ ^[Yy]$ ]] && ENABLED+=("$name")
+        done
+    fi
+    echo ""
+fi
+
+# Offer to install missing agents
+if [ ${#NOT_FOUND[@]} -gt 0 ]; then
+    info "Not installed: ${NOT_FOUND[*]}"
+    ask "Install any missing agents? [y/N]"
+    read_input INSTALL_MISSING "n"
+    if [[ "$INSTALL_MISSING" =~ ^[Yy]$ ]]; then
+        for name in "${NOT_FOUND[@]}"; do
+            ask "  Install ${AGENT_DESCS[$name]}? [y/N]"
+            read_input INSTALL_ONE "n"
+            if [[ "$INSTALL_ONE" =~ ^[Yy]$ ]]; then
+                if _install_agent "$name"; then
+                    ENABLED+=("$name")
+                fi
+            fi
         done
     fi
     echo ""
@@ -227,7 +393,7 @@ echo ""
 # ============================================================
 # Step 4: Token configuration
 # ============================================================
-info "Step 4/5: Token configuration"
+info "Step 4/6: Token configuration"
 echo ""
 
 # ACP Bridge token
@@ -315,211 +481,242 @@ echo ""
 # ============================================================
 # Step 5: Generate config and .env
 # ============================================================
-info "Step 5/5: Generating configuration..."
+info "Step 5/6: Generating configuration..."
 
-# Check for existing config
+# Determine which agents are NEW (not already in config)
+NEW_AGENTS=()
+for name in "${ENABLED[@]}"; do
+    is_existing=false
+    for ea in "${EXISTING_AGENTS[@]}"; do
+        [[ "$ea" == "$name" ]] && is_existing=true
+    done
+    $is_existing || NEW_AGENTS+=("$name")
+done
+
+# Check for existing config — incremental update vs fresh generate
 CONFIG_FILE="$INSTALL_DIR/config.yaml"
-if [ -f "$CONFIG_FILE" ]; then
-    warn "config.yaml already exists."
-    ask "Overwrite with new config? [y/N]"
-    read_input OVERWRITE "n"
-    if [[ ! "$OVERWRITE" =~ ^[Yy]$ ]]; then
-        ok "Keeping existing config.yaml"
-        echo ""
-        echo "╔══════════════════════════════════════════════════════════════╗"
-        echo "║  ✅ ACP Bridge is ready!                                    ║"
-        echo "╚══════════════════════════════════════════════════════════════╝"
-        echo ""
-        echo "  Start now:"
-        echo "    cd $INSTALL_DIR && bash start.sh"
-        echo ""
-        ask "Start ACP Bridge now? [Y/n]"
-        read_input START_NOW "y"
-        if [[ "$START_NOW" =~ ^[Yy]$ ]]; then
-            echo ""
-            exec bash "$INSTALL_DIR/start.sh"
+if $CONFIG_EXISTS; then
+    if [ ${#NEW_AGENTS[@]} -eq 0 ]; then
+        ok "config.yaml up to date — no new agents to add"
+    else
+        info "Adding ${#NEW_AGENTS[@]} new agent(s) to config.yaml: ${NEW_AGENTS[*]}"
+        # Append new agent blocks to existing config.yaml
+        _gen_agent_block() {
+            local name="$1"
+            local desc="${AGENT_DESCS[$name]}"
+            case "$name" in
+                kiro)
+                    echo '  kiro:'
+                    echo '    enabled: true'
+                    echo '    mode: "acp"'
+                    echo '    command: "kiro-cli"'
+                    echo '    acp_args: ["acp", "--trust-all-tools"]'
+                    echo '    working_dir: "/tmp"'
+                    echo "    description: \"$desc\""
+                    ;;
+                claude)
+                    echo '  claude:'
+                    echo '    enabled: true'
+                    echo '    mode: "acp"'
+                    echo '    command: "claude-agent-acp"'
+                    echo '    acp_args: []'
+                    echo '    working_dir: "/tmp"'
+                    echo "    description: \"$desc\""
+                    ;;
+                codex)
+                    echo '  codex:'
+                    echo '    enabled: true'
+                    echo '    mode: "pty"'
+                    echo '    command: "codex"'
+                    echo '    args: ["exec", "--full-auto", "--skip-git-repo-check"]'
+                    echo '    working_dir: "/tmp"'
+                    echo "    description: \"$desc\""
+                    ;;
+                qwen)
+                    echo '  qwen:'
+                    echo '    enabled: true'
+                    echo '    mode: "acp"'
+                    echo '    command: "qwen"'
+                    echo '    acp_args: ["--acp"]'
+                    echo '    working_dir: "/tmp"'
+                    echo "    description: \"$desc\""
+                    ;;
+                opencode)
+                    echo '  opencode:'
+                    echo '    enabled: true'
+                    echo '    mode: "acp"'
+                    echo '    command: "opencode"'
+                    echo '    acp_args: ["acp"]'
+                    echo '    working_dir: "/tmp"'
+                    echo "    description: \"$desc\""
+                    ;;
+                harness)
+                    echo '  harness:'
+                    echo '    enabled: true'
+                    echo '    mode: "acp"'
+                    echo '    command: "harness-factory"'
+                    echo '    acp_args: []'
+                    echo '    working_dir: "/tmp"'
+                    echo "    description: \"$desc\""
+                    echo '    profile:'
+                    echo '      tools:'
+                    echo '        fs: { permissions: [read, write, list, search] }'
+                    echo '        git: { permissions: [diff, log, show] }'
+                    echo '        shell: { allowlist: [ls, cat, grep, find, wc] }'
+                    echo '        web: { permissions: [fetch] }'
+                    echo '      orchestration: free'
+                    echo '      resources:'
+                    echo '        timeout: 300s'
+                    echo '        max_turns: 20'
+                    echo '      agent:'
+                    echo '        model: "auto"'
+                    echo '        temperature: 0.3'
+                    ;;
+            esac
+        }
+        # Ensure agents: section exists
+        if ! grep -q '^agents:' "$CONFIG_FILE" 2>/dev/null; then
+            echo '' >> "$CONFIG_FILE"
+            echo 'agents:' >> "$CONFIG_FILE"
         fi
-        exit 0
+        for name in "${NEW_AGENTS[@]}"; do
+            _gen_agent_block "$name" >> "$CONFIG_FILE"
+        done
+        ok "Appended ${#NEW_AGENTS[@]} agent(s) to config.yaml"
     fi
-fi
+    # Update .env with any new tokens
+    ENV_FILE="$INSTALL_DIR/.env"
+    if [ -f "$ENV_FILE" ]; then
+        grep -q "ACP_BRIDGE_TOKEN" "$ENV_FILE" || echo "ACP_BRIDGE_TOKEN=$BRIDGE_TOKEN" >> "$ENV_FILE"
+        if [ -n "$LITELLM_KEY" ]; then
+            grep -q "LITELLM_API_KEY" "$ENV_FILE" || echo "LITELLM_API_KEY=$LITELLM_KEY" >> "$ENV_FILE"
+        fi
+        if [ -n "$WEBHOOK_TOKEN" ]; then
+            grep -q "OPENCLAW_TOKEN" "$ENV_FILE" || echo "OPENCLAW_TOKEN=$WEBHOOK_TOKEN" >> "$ENV_FILE"
+        fi
+        ok "Updated .env (preserved existing values)"
+    else
+        {
+            echo "# Generated by install.sh — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "ACP_BRIDGE_TOKEN=$BRIDGE_TOKEN"
+            echo "CLAUDE_CODE_USE_BEDROCK=1"
+            echo "ANTHROPIC_MODEL=global.anthropic.claude-sonnet-4-6"
+            [ -n "$LITELLM_KEY" ] && echo "LITELLM_API_KEY=$LITELLM_KEY"
+            [ -n "$WEBHOOK_TOKEN" ] && echo "OPENCLAW_TOKEN=$WEBHOOK_TOKEN"
+        } > "$ENV_FILE"
+        ok "Created .env"
+    fi
+else
+    # --- Fresh install: generate everything ---
 
-# --- .env ---
-ENV_FILE="$INSTALL_DIR/.env"
-{
-    echo "# Generated by install.sh — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "ACP_BRIDGE_TOKEN=$BRIDGE_TOKEN"
-    echo "CLAUDE_CODE_USE_BEDROCK=1"
-    echo "ANTHROPIC_MODEL=global.anthropic.claude-sonnet-4-6"
-    [ -n "$LITELLM_KEY" ] && echo "LITELLM_API_KEY=$LITELLM_KEY"
-    [ -n "$WEBHOOK_TOKEN" ] && echo "OPENCLAW_TOKEN=$WEBHOOK_TOKEN"
-} > "$ENV_FILE"
-ok "Created .env"
-
-# --- litellm-config.yaml ---
-if $NEEDS_LITELLM; then
-    LITELLM_CFG="$INSTALL_DIR/litellm-config.yaml"
+    # --- .env ---
+    ENV_FILE="$INSTALL_DIR/.env"
     {
         echo "# Generated by install.sh — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        echo 'model_list:'
-        echo '  - model_name: "bedrock/anthropic.claude-sonnet-4-6"'
-        echo '    litellm_params:'
-        echo '      model: "bedrock/anthropic.claude-sonnet-4-6"'
-        echo '  - model_name: "bedrock/anthropic.claude-opus-4-6-v1"'
-        echo '    litellm_params:'
-        echo '      model: "bedrock/anthropic.claude-opus-4-6-v1"'
-        echo '  - model_name: "bedrock/converse/moonshotai.kimi-k2.5"'
-        echo '    litellm_params:'
-        echo '      model: "bedrock/converse/moonshotai.kimi-k2.5"'
-        echo '  - model_name: "bedrock/deepseek.v3.2"'
-        echo '    litellm_params:'
-        echo '      model: "bedrock/deepseek.v3.2"'
-        echo '  - model_name: "bedrock/converse/qwen.qwen3-235b-a22b-2507-v1:0"'
-        echo '    litellm_params:'
-        echo '      model: "bedrock/converse/qwen.qwen3-235b-a22b-2507-v1:0"'
-        echo '  - model_name: "bedrock/converse/minimax.minimax-m2.5"'
-        echo '    litellm_params:'
-        echo '      model: "bedrock/converse/minimax.minimax-m2.5"'
-        echo '  - model_name: "bedrock/converse/google.gemma-3-12b-it"'
-        echo '    litellm_params:'
-        echo '      model: "bedrock/converse/google.gemma-3-12b-it"'
-        echo '  - model_name: "bedrock/converse/zai.glm-5"'
-        echo '    litellm_params:'
-        echo '      model: "bedrock/converse/zai.glm-5"'
+        echo "ACP_BRIDGE_TOKEN=$BRIDGE_TOKEN"
+        echo "CLAUDE_CODE_USE_BEDROCK=1"
+        echo "ANTHROPIC_MODEL=global.anthropic.claude-sonnet-4-6"
+        [ -n "$LITELLM_KEY" ] && echo "LITELLM_API_KEY=$LITELLM_KEY"
+        [ -n "$WEBHOOK_TOKEN" ] && echo "OPENCLAW_TOKEN=$WEBHOOK_TOKEN"
+    } > "$ENV_FILE"
+    ok "Created .env"
+
+    # --- litellm-config.yaml ---
+    if $NEEDS_LITELLM; then
+        LITELLM_CFG="$INSTALL_DIR/litellm-config.yaml"
+        {
+            echo "# Generated by install.sh — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo 'model_list:'
+            echo '  - model_name: "bedrock/anthropic.claude-sonnet-4-6"'
+            echo '    litellm_params:'
+            echo '      model: "bedrock/anthropic.claude-sonnet-4-6"'
+            echo '  - model_name: "bedrock/anthropic.claude-opus-4-6-v1"'
+            echo '    litellm_params:'
+            echo '      model: "bedrock/anthropic.claude-opus-4-6-v1"'
+            echo '  - model_name: "bedrock/converse/moonshotai.kimi-k2.5"'
+            echo '    litellm_params:'
+            echo '      model: "bedrock/converse/moonshotai.kimi-k2.5"'
+            echo '  - model_name: "bedrock/deepseek.v3.2"'
+            echo '    litellm_params:'
+            echo '      model: "bedrock/deepseek.v3.2"'
+            echo '  - model_name: "bedrock/converse/qwen.qwen3-235b-a22b-2507-v1:0"'
+            echo '    litellm_params:'
+            echo '      model: "bedrock/converse/qwen.qwen3-235b-a22b-2507-v1:0"'
+            echo '  - model_name: "bedrock/converse/minimax.minimax-m2.5"'
+            echo '    litellm_params:'
+            echo '      model: "bedrock/converse/minimax.minimax-m2.5"'
+            echo '  - model_name: "bedrock/converse/google.gemma-3-12b-it"'
+            echo '    litellm_params:'
+            echo '      model: "bedrock/converse/google.gemma-3-12b-it"'
+            echo '  - model_name: "bedrock/converse/zai.glm-5"'
+            echo '    litellm_params:'
+            echo '      model: "bedrock/converse/zai.glm-5"'
+            echo ''
+            echo 'general_settings:'
+            echo "  master_key: \"$LITELLM_KEY\""
+            echo ''
+            echo 'litellm_settings:'
+            echo '  drop_params: true'
+        } > "$LITELLM_CFG"
+        ok "Created litellm-config.yaml"
+    fi
+
+    # --- config.yaml ---
+    _gen_config() {
+        echo "# Generated by install.sh — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo 'server:'
+        echo '  host: "0.0.0.0"'
+        echo '  port: 18010'
+        echo '  session_ttl_hours: 24'
+        echo '  shutdown_timeout: 30'
         echo ''
-        echo 'general_settings:'
-        echo "  master_key: \"$LITELLM_KEY\""
+        echo 'pool:'
+        echo '  max_processes: 8'
+        echo '  max_per_agent: 4'
         echo ''
-        echo 'litellm_settings:'
-        echo '  drop_params: true'
-    } > "$LITELLM_CFG"
-    ok "Created litellm-config.yaml"
+        echo 'security:'
+        echo '  auth_token: "${ACP_BRIDGE_TOKEN}"'
+        echo '  allowed_ips:'
+        IFS=',' read -ra IP_ARRAY <<< "$ALLOWED_IPS"
+        for ip in "${IP_ARRAY[@]}"; do
+            ip=$(echo "$ip" | xargs)
+            [ -n "$ip" ] && echo "    - \"$ip\""
+        done
+
+        if $NEEDS_LITELLM && [ -n "$LITELLM_URL" ]; then
+            LITELLM_REQUIRED=()
+            for name in "${ENABLED[@]}"; do
+                [[ "$name" == "codex" || "$name" == "qwen" ]] && LITELLM_REQUIRED+=("$name")
+            done
+            echo ''
+            echo 'litellm:'
+            echo "  url: \"$LITELLM_URL\""
+            echo "  required_by: [$(printf '"%s", ' "${LITELLM_REQUIRED[@]}" | sed 's/, $//')]"
+            echo '  env:'
+            echo '    LITELLM_API_KEY: "${LITELLM_API_KEY}"'
+        fi
+
+        if [ -n "$WEBHOOK_URL" ]; then
+            echo ''
+            echo 'webhook:'
+            echo "  url: \"$WEBHOOK_URL\""
+            echo '  token: "${OPENCLAW_TOKEN}"'
+            echo "  account_id: \"$WEBHOOK_ACCOUNT\""
+            echo "  target: \"$WEBHOOK_TARGET\""
+        fi
+
+        echo ''
+        echo 'agents:'
+        for name in "${ENABLED[@]}"; do
+            _gen_agent_block "$name"
+        done
+    }
+    _gen_config > "$CONFIG_FILE"
+    ok "Created config.yaml"
 fi
 
-# --- config.yaml ---
-CONFIG_FILE="$INSTALL_DIR/config.yaml"
-_gen_config() {
-    echo "# Generated by install.sh — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo 'server:'
-    echo '  host: "0.0.0.0"'
-    echo '  port: 18010'
-    echo '  session_ttl_hours: 24'
-    echo '  shutdown_timeout: 30'
-    echo ''
-    echo 'pool:'
-    echo '  max_processes: 8'
-    echo '  max_per_agent: 4'
-    echo ''
-    echo 'security:'
-    echo '  auth_token: "${ACP_BRIDGE_TOKEN}"'
-    echo '  allowed_ips:'
-    IFS=',' read -ra IP_ARRAY <<< "$ALLOWED_IPS"
-    for ip in "${IP_ARRAY[@]}"; do
-        ip=$(echo "$ip" | xargs)
-        [ -n "$ip" ] && echo "    - \"$ip\""
-    done
-
-    if $NEEDS_LITELLM && [ -n "$LITELLM_URL" ]; then
-        LITELLM_REQUIRED=()
-        for name in "${ENABLED[@]}"; do
-            [[ "$name" == "codex" || "$name" == "qwen" ]] && LITELLM_REQUIRED+=("$name")
-        done
-        echo ''
-        echo 'litellm:'
-        echo "  url: \"$LITELLM_URL\""
-        echo "  required_by: [$(printf '"%s", ' "${LITELLM_REQUIRED[@]}" | sed 's/, $//')]"
-        echo '  env:'
-        echo '    LITELLM_API_KEY: "${LITELLM_API_KEY}"'
-    fi
-
-    if [ -n "$WEBHOOK_URL" ]; then
-        echo ''
-        echo 'webhook:'
-        echo "  url: \"$WEBHOOK_URL\""
-        echo '  token: "${OPENCLAW_TOKEN}"'
-        echo "  account_id: \"$WEBHOOK_ACCOUNT\""
-        echo "  target: \"$WEBHOOK_TARGET\""
-    fi
-
-    echo ''
-    echo 'agents:'
-    for name in "${ENABLED[@]}"; do
-        desc="${AGENT_DESCS[$name]}"
-        case "$name" in
-            kiro)
-                echo '  kiro:'
-                echo '    enabled: true'
-                echo '    mode: "acp"'
-                echo '    command: "kiro-cli"'
-                echo '    acp_args: ["acp", "--trust-all-tools"]'
-                echo '    working_dir: "/tmp"'
-                echo "    description: \"$desc\""
-                ;;
-            claude)
-                echo '  claude:'
-                echo '    enabled: true'
-                echo '    mode: "acp"'
-                echo '    command: "claude-agent-acp"'
-                echo '    acp_args: []'
-                echo '    working_dir: "/tmp"'
-                echo "    description: \"$desc\""
-                ;;
-            codex)
-                echo '  codex:'
-                echo '    enabled: true'
-                echo '    mode: "pty"'
-                echo '    command: "codex"'
-                echo '    args: ["exec", "--full-auto", "--skip-git-repo-check"]'
-                echo '    working_dir: "/tmp"'
-                echo "    description: \"$desc\""
-                ;;
-            qwen)
-                echo '  qwen:'
-                echo '    enabled: true'
-                echo '    mode: "acp"'
-                echo '    command: "qwen"'
-                echo '    acp_args: ["--acp"]'
-                echo '    working_dir: "/tmp"'
-                echo "    description: \"$desc\""
-                ;;
-            opencode)
-                echo '  opencode:'
-                echo '    enabled: true'
-                echo '    mode: "acp"'
-                echo '    command: "opencode"'
-                echo '    acp_args: ["acp"]'
-                echo '    working_dir: "/tmp"'
-                echo "    description: \"$desc\""
-                ;;
-            harness)
-                echo '  harness:'
-                echo '    enabled: true'
-                echo '    mode: "acp"'
-                echo '    command: "harness-factory"'
-                echo '    acp_args: []'
-                echo '    working_dir: "/tmp"'
-                echo "    description: \"$desc\""
-                echo '    profile:'
-                echo '      tools:'
-                echo '        fs: { permissions: [read, write, list, search] }'
-                echo '        git: { permissions: [diff, log, show] }'
-                echo '        shell: { allowlist: [ls, cat, grep, find, wc] }'
-                echo '        web: { permissions: [fetch] }'
-                echo '      orchestration: free'
-                echo '      resources:'
-                echo '        timeout: 300s'
-                echo '        max_turns: 20'
-                echo '      agent:'
-                echo '        model: "auto"'
-                echo '        temperature: 0.3'
-                ;;
-        esac
-    done
-}
-_gen_config > "$CONFIG_FILE"
-ok "Created config.yaml"
-
 # ============================================================
-# Done
+# Step 6: Done
 # ============================================================
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -529,6 +726,9 @@ echo ""
 echo "  Agents:  ${ENABLED[*]}"
 echo "  Token:   ${BRIDGE_TOKEN:0:12}..."
 echo "  Config:  $CONFIG_FILE"
+if $IS_UPDATE && [ ${#NEW_AGENTS[@]} -gt 0 ]; then
+    echo "  Added:   ${NEW_AGENTS[*]}"
+fi
 echo ""
 echo "  Start now:"
 echo "    cd $INSTALL_DIR && bash start.sh"

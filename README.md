@@ -100,7 +100,7 @@ Interactive installer: auto-detects agent CLIs, configures tokens, generates `co
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.12.1
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.12.2
 
 ## Project Structure
 
@@ -451,6 +451,8 @@ curl http://<bridge>:18010/jobs/<job_id> \
 POST /jobs → Bridge executes in background → On completion POST to OpenClaw /tools/invoke
   → OpenClaw sends to Discord/Feishu/... via message tool → User receives result
 ```
+
+> **Note:** Async job push currently requires [OpenClaw](https://github.com/NousResearch/hermes-agent) (formerly OpenClaw Gateway) or a direct Discord webhook as the callback target. [Hermes Agent](https://github.com/NousResearch/hermes-agent) does not yet expose a "send message" HTTP API — its webhook endpoint (`/webhooks/{route}`) triggers a full agent run rather than relaying messages directly. Hermes support is planned for a future release.
 
 ### target Format
 
