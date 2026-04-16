@@ -495,19 +495,15 @@ done
 
 # Check for existing config — incremental update vs fresh generate
 CONFIG_FILE="$INSTALL_DIR/config.yaml"
-if $CONFIG_EXISTS; then
-    if [ ${#NEW_AGENTS[@]} -eq 0 ]; then
-        ok "config.yaml up to date — no new agents to add"
-    else
-        info "Adding ${#NEW_AGENTS[@]} new agent(s) to config.yaml: ${NEW_AGENTS[*]}"
-        # Append new agent blocks to existing config.yaml
-        _gen_agent_block() {
-            local name="$1"
-            local desc="${AGENT_DESCS[$name]}"
-            case "$name" in
-                kiro)
-                    echo '  kiro:'
-                    echo '    enabled: true'
+
+# Agent block generator — used by both incremental and fresh paths
+_gen_agent_block() {
+    local name="$1"
+    local desc="${AGENT_DESCS[$name]}"
+    case "$name" in
+        kiro)
+            echo '  kiro:'
+            echo '    enabled: true'
                     echo '    mode: "acp"'
                     echo '    command: "kiro-cli"'
                     echo '    acp_args: ["acp", "--trust-all-tools"]'
@@ -571,9 +567,15 @@ if $CONFIG_EXISTS; then
                     echo '      agent:'
                     echo '        model: "auto"'
                     echo '        temperature: 0.3'
-                    ;;
-            esac
-        }
+            ;;
+    esac
+}
+
+if $CONFIG_EXISTS; then
+    if [ ${#NEW_AGENTS[@]} -eq 0 ]; then
+        ok "config.yaml up to date — no new agents to add"
+    else
+        info "Adding ${#NEW_AGENTS[@]} new agent(s) to config.yaml: ${NEW_AGENTS[*]}"
         # Ensure agents: section exists
         if ! grep -q '^agents:' "$CONFIG_FILE" 2>/dev/null; then
             echo '' >> "$CONFIG_FILE"
