@@ -106,13 +106,6 @@ else
     ok "uv installed"
 fi
 
-# Node.js (needed for claude/codex/qwen)
-HAS_NODE=false
-if command -v node &>/dev/null; then
-    HAS_NODE=true
-    ok "Node.js $(node --version 2>/dev/null)"
-fi
-
 # git (optional — fallback to tarball download)
 HAS_GIT=false
 command -v git &>/dev/null && HAS_GIT=true
@@ -192,99 +185,16 @@ _install_harness() {
 }
 
 # ============================================================
-# Agent install helpers
+# Agent install reference (shown to user)
 # ============================================================
-_need_node() {
-    if ! $HAS_NODE; then
-        warn "$1 requires Node.js (npm)."
-        ask "Install Node.js via nvm? [Y/n]"
-        read_input INSTALL_NODE "y"
-        if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
-            curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-            nvm install --lts 2>/dev/null || nvm install node
-            HAS_NODE=true
-            ok "Node.js installed: $(node --version)"
-        else
-            warn "Skipping $1 (no Node.js)"
-            return 1
-        fi
-    fi
-    return 0
-}
-
-_install_agent() {
-    local name="$1"
-    case "$name" in
-        kiro)
-            info "Installing Kiro CLI..."
-            curl -fsSL https://cli.kiro.dev/install | bash 2>/dev/null
-            if command -v kiro-cli &>/dev/null; then
-                ok "kiro-cli installed"
-                info "Run 'kiro-cli login' to authenticate (requires Kiro Pro)"
-            else
-                warn "kiro-cli install failed"
-                return 1
-            fi
-            ;;
-        claude)
-            _need_node "Claude Code" || return 1
-            info "Installing Claude Code + ACP adapter..."
-            npm i -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp
-            export PATH="$(npm prefix -g 2>/dev/null)/bin:$PATH"
-            if command -v claude-agent-acp &>/dev/null; then
-                ok "claude-agent-acp installed"
-            else
-                warn "claude-agent-acp install failed"
-                return 1
-            fi
-            ;;
-        codex)
-            _need_node "Codex" || return 1
-            info "Installing OpenAI Codex CLI..."
-            npm i -g @openai/codex
-            export PATH="$(npm prefix -g 2>/dev/null)/bin:$PATH"
-            if command -v codex &>/dev/null; then
-                ok "codex installed"
-            else
-                warn "codex install failed"
-                return 1
-            fi
-            ;;
-        qwen)
-            _need_node "Qwen Code" || return 1
-            info "Installing Qwen Code..."
-            npm i -g @anthropic-ai/qwen-code
-            export PATH="$(npm prefix -g 2>/dev/null)/bin:$PATH"
-            if command -v qwen &>/dev/null; then
-                ok "qwen installed"
-            else
-                warn "qwen install failed"
-                return 1
-            fi
-            ;;
-        opencode)
-            info "Installing OpenCode..."
-            if command -v go &>/dev/null; then
-                go install github.com/opencode-ai/opencode@latest 2>/dev/null
-            else
-                # Try binary download
-                curl -fsSL https://opencode.ai/install.sh | bash 2>/dev/null
-            fi
-            if command -v opencode &>/dev/null; then
-                ok "opencode installed"
-            else
-                warn "opencode install failed — see https://github.com/opencode-ai/opencode"
-                return 1
-            fi
-            ;;
-        harness)
-            _install_harness
-            ;;
-    esac
-    return 0
-}
+declare -A AGENT_INSTALL_HINTS=(
+    [kiro]="curl -fsSL https://cli.kiro.dev/install | bash && kiro-cli login"
+    [claude]="npm i -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp"
+    [codex]="npm i -g @openai/codex"
+    [qwen]="npm i -g @anthropic-ai/qwen-code"
+    [opencode]="See https://github.com/opencode-ai/opencode"
+    [harness]="(auto-installed by this script)"
+)
 
 # ============================================================
 # Step 3: Agent setup
@@ -353,22 +263,18 @@ if [ ${#FOUND[@]} -gt 0 ]; then
     echo ""
 fi
 
-# Offer to install missing agents
-if [ ${#NOT_FOUND[@]} -gt 0 ]; then
-    info "Not installed: ${NOT_FOUND[*]}"
-    ask "Install any missing agents? [y/N]"
-    read_input INSTALL_MISSING "n"
-    if [[ "$INSTALL_MISSING" =~ ^[Yy]$ ]]; then
-        for name in "${NOT_FOUND[@]}"; do
-            ask "  Install ${AGENT_DESCS[$name]}? [y/N]"
-            read_input INSTALL_ONE "n"
-            if [[ "$INSTALL_ONE" =~ ^[Yy]$ ]]; then
-                if _install_agent "$name"; then
-                    ENABLED+=("$name")
-                fi
-            fi
-        done
-    fi
+# Show not-installed agents with install hints
+NOT_FOUND_NO_HARNESS=()
+for name in "${NOT_FOUND[@]}"; do
+    [[ "$name" != "harness" ]] && NOT_FOUND_NO_HARNESS+=("$name")
+done
+if [ ${#NOT_FOUND_NO_HARNESS[@]} -gt 0 ]; then
+    info "Not installed (install manually if needed):"
+    echo ""
+    for name in "${NOT_FOUND_NO_HARNESS[@]}"; do
+        echo "    ❌ ${AGENT_DESCS[$name]}"
+        echo "       ${AGENT_INSTALL_HINTS[$name]}"
+    done
     echo ""
 fi
 
