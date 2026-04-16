@@ -74,7 +74,22 @@ def main():
     args = parser.parse_args()
 
     setup_logging(args.verbose)
-    config = load_config(args.config)
+
+    auto_mode = False
+    if os.path.exists(args.config):
+        config = load_config(args.config)
+    else:
+        from src.auto_detect import build_config
+        config = build_config()
+        auto_mode = True
+        agents = config.get("agents", {})
+        if not agents:
+            log.error("No config.yaml found and no agent CLIs detected in PATH")
+            sys.exit(1)
+        token = config["security"]["auth_token"]
+        print(f"\n⚡ Zero-config mode: detected {len(agents)} agent(s): {', '.join(agents)}")
+        print(f"🔑 Auth token: {token}")
+        print(f"   (set ACP_BRIDGE_TOKEN env to use a fixed token)\n")
 
     # --- Agents ---
     agents_cfg = {k: v for k, v in config.get("agents", {}).items() if v.get("enabled")}

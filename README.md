@@ -92,7 +92,7 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.11.6
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.12.0
 
 ## Project Structure
 
@@ -140,6 +140,24 @@ acp-bridge/
 - For Codex: [Node.js](https://nodejs.org/) (npm), [LiteLLM](https://github.com/BerriAI/litellm) (if using non-OpenAI models via proxy)
 
 ## Quick Start
+
+### One-line install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xiwan/acp-bridge/main/install.sh | bash
+```
+
+### Zero-config (auto-detect agents in PATH)
+
+```bash
+cd acp-bridge
+uv sync
+uv run main.py
+# No config.yaml needed — auto-detects installed agent CLIs
+# Prints auth token on startup; set ACP_BRIDGE_TOKEN env for a fixed token
+```
+
+### With config file
 
 ```bash
 cd acp-bridge
