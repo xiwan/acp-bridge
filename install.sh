@@ -230,9 +230,15 @@ _install_agent() {
             ;;
         claude)
             _need_node "Claude Code" || return 1
+            # Claude Code (the agent itself)
+            if ! command -v claude &>/dev/null; then
+                info "Installing Claude Code..."
+                npm i -g @anthropic-ai/claude-code
+                export PATH="$(npm prefix -g 2>/dev/null)/bin:$PATH"
+            fi
+            # ACP adapter (wraps Claude Code for ACP protocol)
             info "Installing Claude Code ACP adapter..."
             npm i -g @agentclientprotocol/claude-agent-acp
-            # Refresh PATH for npm global bin
             export PATH="$(npm prefix -g 2>/dev/null)/bin:$PATH"
             if command -v claude-agent-acp &>/dev/null; then
                 ok "claude-agent-acp installed"
