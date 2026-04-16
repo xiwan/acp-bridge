@@ -14,7 +14,7 @@ config.yaml
 data/*.db
 
 # Local scripts
-start.sh
+# start.sh — not ignored, needed for install
 OPERATIONS.md
 INSTRUCTION.md
 versions/

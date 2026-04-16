@@ -30,6 +30,14 @@
 
 A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI Codex](https://github.com/openai/codex), etc.) via [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) over HTTP, with async job support and Discord push notifications.
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xiwan/acp-bridge/main/install.sh | bash
+```
+
+Interactive installer: auto-detects agent CLIs, configures tokens, generates `config.yaml`, and starts the server. See [Quick Start](#quick-start) for manual setup.
+
 ## When to Use ACP Bridge
 
 > You have powerful CLI agents on a dev machine. You want the rest of your team — or your bots — to use them too.
@@ -92,16 +100,19 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.12.0
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.12.1
 
 ## Project Structure
 
 ```
 acp-bridge/
 ├── main.py              # Entry: process pool, handler registration, job/health endpoints
+├── install.sh           # Interactive one-line installer (agent detection, token setup, config generation)
+├── start.sh             # Quick start: loads .env, starts LiteLLM + Bridge
 ├── src/
 │   ├── acp_client.py    # ACP process pool + JSON-RPC connection management
 │   ├── agents.py        # Agent handlers (ACP mode + PTY fallback)
+│   ├── auto_detect.py   # Zero-config: scan PATH for agent CLIs, generate config
 │   ├── jobs.py          # Async job manager (submit, monitor, webhook callback)
 │   ├── pipeline.py      # Multi-agent pipeline (sequence, parallel, race, random, conversation) + shared workspace
 │   ├── sse.py           # ACP session/update → SSE event conversion
@@ -126,7 +137,7 @@ acp-bridge/
 │   ├── test_opencode.sh           # OpenCode agent tests
 │   └── reports/                   # Test reports
 ├── AGENT_SPEC.md        # ACP agent integration specification
-├── config.yaml          # Service configuration
+├── config.yaml          # Service configuration (auto-generated or manual)
 ├── pyproject.toml
 └── uv.lock
 ```

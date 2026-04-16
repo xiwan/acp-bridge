@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.12.1 | 2026-04-16 | Interactive install.sh: agent selection, harness-factory fallback, token setup, config generation |
 | v0.12.0 | 2026-04-16 | Zero-config auto-detect mode: no config.yaml needed, auto-discovers agent CLIs in PATH; one-line install.sh |
 | v0.11.6 | 2026-04-14 | Fix dynamic harness cross-agent process reuse; fix card mode empty output (bash read merging tabs) |
 | v0.11.5 | 2026-04-13 | Dynamic Harness API: runtime creation of harness-factory agents via HTTP (POST/GET/DELETE /harness) |
