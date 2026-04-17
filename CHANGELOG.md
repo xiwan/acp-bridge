@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.13.2 | 2026-04-17 | Planner rules: enforce async for >60s tasks, add duration estimation guide; require full job_id/pipeline_id in response relay |
 | v0.13.1 | 2026-04-17 | Planner enhancements (agent sourcing + decision-rich plan card) + skill dir reorg: scripts/ and references/ subdirs, removed stale archive |
 | v0.13.0 | 2026-04-17 | Skill-side planner workflow: classify intent → fetch /agents → show plan table → `yes` to execute; adds clarification heuristics and common intent lookup |
 | v0.12.3 | 2026-04-17 | Fix test_kiro.sh async-submit assertion to match client output (Submitted/已提交/job:) |
