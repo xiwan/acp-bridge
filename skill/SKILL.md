@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.13.6 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.13.7 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -259,18 +259,23 @@ Auto mode includes fallback: if a model fails, harness-factory automatically tri
 
 ### Preset → Intent Mapping
 
-| User intent | Preset |
-|-------------|--------|
-| Read files, look at code | `reader` |
-| Run commands, inspect system | `executor` |
-| Fetch web pages, search | `scout` |
-| Review code, inspect diffs | `reviewer` |
-| Analyze data, statistics | `analyst` |
-| Research, gather info and summarize | `researcher` |
-| Write code, run tests | `developer` |
-| Write docs, look up references | `writer` |
-| Ops, deploy, network | `operator` |
-| Full permissions, do anything | `admin` |
+| User intent | Preset | Write? | Recommended model |
+|-------------|--------|--------|-------------------|
+| Read files, look at code | `reader` | no | `auto` |
+| Run commands, inspect system | `executor` | no (shell only) | `claude-sonnet` |
+| Fetch web pages, search | `scout` | no | `kimi-k2` |
+| Review code, inspect diffs | `reviewer` ⚠️ | **no** — output via text reply, not file | `claude-sonnet` |
+| Analyze data, statistics | `analyst` | no (shell only) | `deepseek-v3` or `qwen3` |
+| Research, gather info and summarize | `researcher` | no | `kimi-k2` |
+| Write code, run tests, commit | `developer` | **yes** | `claude-sonnet` |
+| Write docs, look up references | `writer` | **yes** | `claude-opus` (or `claude-sonnet`) |
+| Ops, deploy, network | `operator` | **yes** | `glm-5` or `minimax-m2` |
+| Full permissions, do anything | `admin` | **yes** | `claude-opus` |
+
+Legend:
+- **Write?** — whether the preset has `fs_write`. If `no`, the agent **must** return its output as a text reply; do **not** instruct it to "save a report" (it will loop on `fs_read` and hit the tool-call ceiling — real incident logged in pipeline `be8e1d8c…`, step 3 `qa-reviewer`).
+- **Recommended model** — sensible binding; `auto` (random + fallback) is always a valid choice. Override via `"model": "<alias>"` in the `POST /harness` body, or leave `model: "auto"` (default).
+- For a review+report pipeline, pair a `reviewer` (analyze) with a `writer` or `developer` (persist report) — **or just use a static `claude` agent**, which has fs_write out of the box.
 
 ### Usage
 

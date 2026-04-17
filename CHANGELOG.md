@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.13.7 | 2026-04-17 | Enrich SKILL.md preset table with `Write?` column (authoritative from `harness-factory -dry-run`) and `Recommended model` binding; warn `reviewer` must output via text reply (real incident: pipeline be8e1d8c hit `[loop detected: fs_read]` with no write target) |
 | v0.13.6 | 2026-04-17 | New `skill/references/orchestration-patterns.md`: 10 preset templates for 2/3/4-5 agent orchestration (relay, dual-view, debate-2, race-2, review-write-test, fan-out-merge, roundtable-3, staged-pipeline, parallel-then-judge, dual-debate-then-judge). SKILL.md Step 5 points at it; >5 agents left to host LLM |
 | v0.13.5 | 2026-04-17 | Skill doc hardening: dedupe pipeline content (single source = `pipeline.md`); add 3 real-bug troubleshooting rows (permission schema, PTY idle timeout, harness spawn vs. call); Planner Step 4.1 fallback guidance on failures; `CLAUDE_SKILL_DIR` host-injection note + fallback expansion |
 | v0.13.4 | 2026-04-17 | Translate `skill/SKILL.md` Planner Workflow (Step 1–7), decision-summary card, duration estimation guide, preset-intent mapping, and frontmatter description to English. No behavior change; 2 intentional CJK confirmation aliases kept. |
