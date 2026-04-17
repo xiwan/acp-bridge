@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.12.3 | 2026-04-17 | Fix test_kiro.sh async-submit assertion to match client output (Submitted/已提交/job:) |
 | v0.12.2 | 2026-04-16 | Smart install.sh: state detection (first run vs update), install missing agent CLIs, incremental config.yaml update, Node.js detection |
 | v0.12.1 | 2026-04-16 | Interactive install.sh: agent selection, harness-factory fallback, token setup, config generation |
 | v0.12.0 | 2026-04-16 | Zero-config auto-detect mode: no config.yaml needed, auto-discovers agent CLIs in PATH; one-line install.sh |

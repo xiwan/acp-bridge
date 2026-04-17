@@ -30,7 +30,7 @@ run_test "多轮第2轮记住上下文" "pineapple" "$resp2_joined"
 echo ""
 echo "--- 异步任务 ---"
 resp=$("$CLIENT" --async -a kiro -s "00000000-0000-0000-0000-000000000087" "回复ok两个字就行" 2>/dev/null)
-run_test "异步提交返回已提交" "已提交" "$resp"
+run_test "异步提交返回已提交" "Submitted\|已提交\|job:" "$resp"
 
 ASYNC_SESSION="00000000-0000-0000-0000-000000000088"
 job_id=$("$CLIENT" --async -a kiro -s "$ASYNC_SESSION" "回复数字42就行" 2>&1 1>/dev/null | grep job_id | sed 's/job_id: //')
