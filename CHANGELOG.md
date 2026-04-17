@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.14.1 | 2026-04-17 | SKILL.md Step 4 rules: (1) harness-creation echo must include `preset` + `model`; (2) pipeline/conversation results must append a duration breakdown (per-agent + total) with `stop_reason` for conversation mode |
 | v0.14.0 | 2026-04-17 | SKILL.md structural rewrite for token efficiency: front-load Planning Workflow (hot path now in first ~90 lines vs. mid-doc previously); Preset capability matrix moved adjacent to Planning; compress Commands (17→1 line), Harness usage (17→5 lines), Output Rules (20→4 lines). 307 → 228 lines, no semantic changes |
 | v0.13.7 | 2026-04-17 | Enrich SKILL.md preset table with `Write?` column (authoritative from `harness-factory -dry-run`) and `Recommended model` binding; warn `reviewer` must output via text reply (real incident: pipeline be8e1d8c hit `[loop detected: fs_read]` with no write target) |
 | v0.13.6 | 2026-04-17 | New `skill/references/orchestration-patterns.md`: 10 preset templates for 2/3/4-5 agent orchestration (relay, dual-view, debate-2, race-2, review-write-test, fan-out-merge, roundtable-3, staged-pipeline, parallel-then-judge, dual-debate-then-judge). SKILL.md Step 5 points at it; >5 agents left to host LLM |

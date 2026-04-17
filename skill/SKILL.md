@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.14.0 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.14.1 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -115,13 +115,25 @@ Rules:
 
 Every execution response must echo the **full** ID (do not truncate to 8 chars):
 
-| Task | Required field | Example |
-|------|---------------|---------|
+| Task | Required fields | Example |
+|------|----------------|---------|
 | Async job | `job_id` | `✅ job_id: abc123-def4-... ; GET /jobs/<id>` |
 | Pipeline | `pipeline_id` | `🔗 pipeline_id: xyz789-... ; GET /pipelines/<id>` |
-| Dynamic harness creation | returned `name` | `🏭 agent name: researcher-abc1` |
+| Dynamic harness creation | returned `name`, `preset`, `model` | `🏭 agent: researcher-abc1 · preset: researcher · model: auto (random per session)` |
 | Sync `/cli` | none | Show agent output directly |
 | Chat | none (session_id in chat-state.json) | — |
+
+For **harness creation**: `preset` comes from the `POST /harness` response; `model` is the value **you posted** (echo it back — `auto` if you didn't specify one). For a concrete randomly-picked model per session, harness-factory must expose it (not yet available — tracked for a future minor).
+
+For **pipeline / conversation completion**, always append a **duration breakdown** before any commentary:
+
+```
+⏱️  kiro 5.3s · claude 8.5s · poet-C 0.7s · total 31.9s   (6 turns, stop: MAX_TURNS)
+```
+
+- Pull from `steps[].duration` (sequence/parallel/race/random) or `transcript[].duration` (conversation)
+- Mark failed steps inline: `claude 12.4s (failed)`
+- Include `stop_reason` for conversation mode
 
 ### Step 4.1 — On failure, suggest a fallback
 

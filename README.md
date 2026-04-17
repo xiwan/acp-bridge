@@ -100,7 +100,7 @@ Interactive installer: auto-detects agent CLIs, configures tokens, generates `co
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.14.0
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.14.1
 
 ## Project Structure
 
