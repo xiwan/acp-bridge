@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.14.4 | 2026-04-17 | SKILL planner: Step 2 gains a **capability–task gate** — presets with `Write? = no` must not be paired with persistence verbs (write/save/produce doc/create md/...); Step 3 makes this gate a hard stop before showing the plan card. Troubleshooting gains the recurring 0-byte-artifact symptom (incident `493987b9` PM/QA text-stranded PRD + report) |
 | v0.14.3 | 2026-04-17 | SKILL planner: dependency-first mode selection. New mandatory `Task dependency` row in Step 3 decision summary (sequential / independent / shared); Step 5 cheatsheet prepended with a decision tree driven by dependency instead of user phrasing. Orchestration templates gain a `Dep.` column. Anti-pattern noted: don't pick `sequence` just because user said "先…再…" when tasks are actually independent |
 | v0.14.2 | 2026-04-17 | Capture harness-factory 0.8.0's `activated.resolvedModel` on `session/new`; `GET /harness` response now includes `resolved_model` (the actual model picked, populated after first call). Backward compatible with older harness-factory and non-harness ACP agents |
 | v0.14.1 | 2026-04-17 | SKILL.md Step 4 rules: (1) harness-creation echo must include `preset` + `model`; (2) pipeline/conversation results must append a duration breakdown (per-agent + total) with `stop_reason` for conversation mode |

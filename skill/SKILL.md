@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.14.3 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.14.4 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -70,6 +70,18 @@ curl -s -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/agents" | jq '.ag
 
 For harness capability & model binding, see the **Preset capability matrix** below.
 
+**Capability–task gate (run before proceeding to Step 3):**
+
+For every step that involves persisting artifacts (PRD, code, docs, reports, review written to file), verify the chosen preset has `Write? = yes` in the matrix. If `Write? = no`, either:
+- Swap to a write-capable preset (`developer` / `writer` / `operator` / `admin`) or static `claude`, or
+- Rewrite the task to "return the content in your reply; no file writes" and accept the consequence (downstream step must consume from previous step's `result`, not from disk)
+
+Task verbs that imply persistence: *write · save · produce a …doc · create …md · output …file · generate a PRD / report / code file*. If any such verb exists on a no-write preset → **STOP and revise** before showing the plan.
+
+Recent incidents (all same root cause — read-only preset + persistence verb):
+- `be8e1d8c` qa-reviewer hit `[loop detected: fs_read called 5 times]`
+- `493987b9` PM/Dev/QA three-stage pipeline completed but shared_cwd held only a 0-byte `sudoku.html`; all real artifacts stranded in text replies
+
 ### Step 3 — Present the plan (don't execute yet)
 
 The plan card must expose every key decision, not just the steps:
@@ -111,6 +123,7 @@ Rules:
 - If orchestration needs 2–5 agents, **pick a preset template** from [references/orchestration-patterns.md](references/orchestration-patterns.md) first, then fill in agents; >5 agents = ad-hoc
 - **Sync/async hard rule**: estimated >60s → mode field is `async`. If user insists on long sync, warn "will block client" and reconfirm
 - Confirmation keyword: **`yes` only** (case-insensitive; also `go / 执行 / 确认 / 是`). Any other reply = revision feedback → regenerate plan
+- **Capability gate (must pass before showing plan)**: for every step whose task verb implies persistence, the chosen preset must have `Write? = yes`. If mismatched → do NOT emit the plan; revise agent choice or task phrasing first (see Step 2 "Capability–task gate")
 
 ### Step 4 — On `yes`, execute and relay the ID
 
