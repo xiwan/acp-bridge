@@ -1,33 +1,6 @@
-# ACP Bridge — Reference
+# Async Jobs
 
-## Parameters
-
-| Parameter | Default | Required | Description |
-|-----------|---------|----------|-------------|
-| bridge_url | — | Yes (first call) | Bridge address, e.g. `http://172.31.15.10:18010` |
-| token | — | Yes (first call) | Auth token for Bearer authentication |
-| agent | — | No | Agent name (`-l` to list) |
-| session_id | Auto-generated | No | UUID-format session ID |
-| prompt | — | Yes | Prompt to send |
-
-## Chat State File
-
-`chat-state.json` in the skill directory:
-
-```json
-{
-  "active_agent": "kiro",
-  "session_id": "00000000-0000-0000-0000-000000000001",
-  "cwd": "/home/ec2-user/projects/acp-bridge",
-  "started_at": "2025-01-15T10:30:00Z"
-}
-```
-
-## Async Job Mode
-
-For long-running tasks, submit asynchronously via `/jobs` endpoint (not `acp-client.sh`).
-
-### Submit
+## Submit
 
 ```bash
 curl -X POST "$ACP_BRIDGE_URL/jobs" \
@@ -65,28 +38,24 @@ curl -X POST "$ACP_BRIDGE_URL/jobs" \
 
 Add `"cwd": "/path/to/project"` to the JSON body.
 
-### Query
+## Query
 
 ```bash
 curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/jobs/<job_id>"
 ```
 
-### Monitor
+## Monitor
 
 ```bash
-# Job status
+# Job list + status stats
 curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/jobs"
 
 # Pool stats (per-agent sessions, busy count)
 curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/health/agents"
 ```
 
-Jobs stuck >10 minutes are auto-marked failed.
-
-Pool monitoring (every 60s automatic):
-- Ping idle connections, kill unresponsive ones
-- Clean up sessions past TTL (default 24h)
-- Kill orphaned processes from previous runs
+Jobs stuck >10 minutes are auto-marked failed. Pool health check runs every 60s
+(ping idle connections, kill unresponsive, clean up past-TTL sessions, kill orphans).
 
 ## Target Format
 
@@ -106,14 +75,3 @@ Pool monitoring (every 60s automatic):
 | `callback_meta.account_id` | Bot account | `default` for Discord, `main` for Feishu |
 
 Missing `target` → job runs but no push. Missing `account_id` → OpenClaw returns 500.
-
-## Pipeline Mode
-
-Multi-agent orchestration (sequence / parallel / race / random / conversation)
-lives in a dedicated reference — see [pipeline.md](pipeline.md).
-
-## Security
-
-- Pass token only via `ACP_TOKEN` env var
-- Never display token in output, logs, or replies
-- `discord_target` is deprecated, use `target`

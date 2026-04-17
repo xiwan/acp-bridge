@@ -78,9 +78,17 @@ For every step that involves persisting artifacts (PRD, code, docs, reports, rev
 
 Task verbs that imply persistence: *write · save · produce a …doc · create …md · output …file · generate a PRD / report / code file*. If any such verb exists on a no-write preset → **STOP and revise** before showing the plan.
 
-Recent incidents (all same root cause — read-only preset + persistence verb):
-- `be8e1d8c` qa-reviewer hit `[loop detected: fs_read called 5 times]`
-- `493987b9` PM/Dev/QA three-stage pipeline completed but shared_cwd held only a 0-byte `sudoku.html`; all real artifacts stranded in text replies
+**Agent selection rule for pipelines:**
+
+| Task type | Best agent | Why |
+|-----------|-----------|-----|
+| Write files, run commands, generate code | static `kiro` / `claude` | Reliable tool use, no sandbox restriction |
+| Read / review / analyze within shared_cwd | harness (`reviewer` / `analyst` / `reader`) | Sandboxed, read-only, cost-effective |
+| QA / verify artifacts | harness (read-only) or static agent | Depends on whether source is inside shared_cwd |
+
+**Typical pipeline pattern**: static agent produces artifacts → harness agent reviews them.
+
+Harness agents are sandboxed to `shared_cwd` and model compatibility varies (some models emit tool-call formats that harness-factory doesn't recognize → no actual execution). For any step that **must** write to disk or run shell commands, **always prefer static agents**. See [references/pipeline.md](references/pipeline.md) § Best Practices for prompt-level details.
 
 ### Step 3 — Present the plan (don't execute yet)
 
@@ -151,18 +159,14 @@ For **pipeline / conversation completion**, always append a **duration breakdown
 
 ### Step 4.1 — On failure, suggest a fallback
 
-Surface the error verbatim **and** add one line of guidance:
+Surface the error verbatim **and** add one line of guidance. See [references/troubleshooting.md](references/troubleshooting.md) for the full diagnosis table.
 
-| Failure signal | Suggest |
-|----------------|---------|
-| `agent timeout (idle 300s)` on codex (PTY) | Use ACP agent (kiro/claude) for that step, or split the prompt |
-| Step `completed` but output empty / "User refused permission" | Bridge permission-reply schema mismatch — needs Bridge ≥ v0.13.3 |
-| Pipeline failed; later step could not read shared_cwd file | Prior step likely didn't actually write — rerun that step in `/cli` to verify |
-| `pool_exhausted` | Wait 30s or reduce parallelism |
-| Harness spawn 200 but first call errors | Check `/harness/presets`; verify `harness.binary` in `config.yaml` |
-| Harness returns `[loop detected: fs_read called N times]` | Preset has no `fs_write` — rewrite prompt to reply in text (not save file); see Preset matrix below |
-
-"Retry" with no new direction → re-run the **same plan** once; if it fails identically, stop and ask.
+Key rules:
+- `agent timeout` on PTY → swap to ACP agent (kiro/claude)
+- `[loop detected]` on harness → preset can't write; use static agent or rewrite prompt
+- Pipeline step can't read file → prior step didn't write; rerun in `/cli`
+- Harness completes instantly with raw XML/markdown tool calls → model incompatible; specify `deepseek-v3` or `claude-sonnet`
+- "Retry" with no new direction → re-run **once**; if identical failure, stop and ask
 
 ### Step 5 — Mode cheatsheet
 
@@ -195,13 +199,14 @@ Phrase → mode tie-breaker (after dependency is already judged):
 
 | Intent | Suggested plan |
 |--------|----------------|
-| "review this code" | Single `/cli ko` |
-| "review then write tests" | sequence: kiro review → claude tests |
+| "review this code" | Single `/cli ko` or `/cli cc` |
+| "review then write tests" | sequence: harness(`reviewer`) → claude writes tests |
 | "compare kiro's and claude's" | parallel: kiro + claude |
 | "have X and Y discuss" | conversation, 2 participants |
 | "build a weather-query agent" | `POST /harness` with `operator` preset |
-| "reviewer + test runner collaborate" | 2 harnesses (`reviewer` + `developer`) in sequence |
-| "analyze this log" | Single call to `analyst` harness or kiro |
+| "write PRD then implement" | sequence: claude writes PRD → claude implements |
+| "write code then QA review" | sequence: claude writes → harness(`reviewer`) reviews |
+| "analyze this log" | Single call to harness(`analyst`) or kiro |
 
 ### Step 7 — Clarification heuristics
 
@@ -231,14 +236,16 @@ Pick a preset from intent **and** check its `Write?` column before crafting the 
 |--------|--------|--------|-------------------|
 | Read files, look at code | `reader` | no | `auto` |
 | Run commands, inspect system | `executor` | no (shell only) | `claude-sonnet` |
-| Fetch web pages, search | `scout` | no | `kimi-k2` |
-| Review code, inspect diffs | `reviewer` ⚠️ | **no** — output as text reply, not file | `claude-sonnet` |
+| Fetch web pages, search | `scout` | no | `deepseek-v3` |
+| Review code, inspect diffs | `reviewer` ⚠️ | **no** — output as text reply, not file | `claude-sonnet` / `deepseek-v3` |
 | Analyze data, statistics | `analyst` | no (shell only) | `deepseek-v3` / `qwen3` |
-| Research, gather info and summarize | `researcher` | no | `kimi-k2` |
+| Research, gather info and summarize | `researcher` | no | `deepseek-v3` |
 | Write code, run tests, commit | `developer` | **yes** | `claude-sonnet` |
-| Write docs, look up references | `writer` | **yes** | `claude-opus` (or `claude-sonnet`) |
-| Ops, deploy, network | `operator` | **yes** | `glm-5` / `minimax-m2` |
-| Full permissions | `admin` | **yes** | `claude-opus` |
+| Write docs, look up references | `writer` | **yes** | `claude-sonnet` / `deepseek-v3` |
+| Ops, deploy, network | `operator` | **yes** | `claude-sonnet` / `deepseek-v3` |
+| Full permissions | `admin` | **yes** | `claude-sonnet` |
+
+⚠️ **Model compatibility**: `auto` may resolve to models whose tool-call format harness-factory doesn't recognize (e.g. minimax, kimi). For write steps or complex tool use, always specify `claude-sonnet` or `deepseek-v3`.
 
 Rule: if `Write? = no`, do **not** instruct the agent to "save a report" — it will loop on `fs_read` until the harness cuts it off (real incident: pipeline `be8e1d8c…`). For review + persisted report, pair a `reviewer` with a `writer` or `developer`, or just use static `claude`.
 
