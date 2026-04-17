@@ -146,10 +146,18 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
         harnesses = []
         for name, info in _registry.items():
             sessions = sum(1 for (a, _) in pool._connections if a == name) if pool else 0
+            # Pick any live connection's resolved_model (harness-factory 0.8.0+ reports it on session/new)
+            model = None
+            if pool:
+                for (a, _), conn in pool._connections.items():
+                    if a == name and getattr(conn, "resolved_model", None):
+                        model = conn.resolved_model
+                        break
             harnesses.append({
                 "agent_name": name,
                 "description": info["description"],
                 "preset": info.get("preset"),
+                "resolved_model": model,
                 "created_at": info["created_at"],
                 "active_sessions": sessions,
             })

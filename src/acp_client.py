@@ -35,6 +35,7 @@ class AcpConnection:
     _stderr_task: asyncio.Task | None = field(default=None, init=False)
     _notification_queues: dict[int, asyncio.Queue] = field(default_factory=dict, init=False)
     acp_session_id: str | None = field(default=None, init=False)
+    resolved_model: str | None = field(default=None, init=False)
     last_active: float = field(default_factory=time.time, init=False)
     session_reset: bool = field(default=False, init=False)
     _busy: bool = field(default=False, init=False)
@@ -155,7 +156,13 @@ class AcpConnection:
                 params["profile"] = profile
             result = await self._send_request("session/new", params)
             self.acp_session_id = result["sessionId"]
-            log.info("session created: acp_session=%s", self.acp_session_id)
+            # harness-factory 0.8.0+: resolvedModel inside result.activated
+            activated = result.get("activated") if isinstance(result, dict) else None
+            if isinstance(activated, dict) and activated.get("resolvedModel"):
+                self.resolved_model = activated["resolvedModel"]
+            log.info("session created: acp_session=%s%s",
+                     self.acp_session_id,
+                     f" model={self.resolved_model}" if getattr(self, "resolved_model", None) else "")
             return self.acp_session_id
         finally:
             self._unsubscribe(sub_id)

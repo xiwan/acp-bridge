@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.14.1 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.14.2 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -119,11 +119,11 @@ Every execution response must echo the **full** ID (do not truncate to 8 chars):
 |------|----------------|---------|
 | Async job | `job_id` | `✅ job_id: abc123-def4-... ; GET /jobs/<id>` |
 | Pipeline | `pipeline_id` | `🔗 pipeline_id: xyz789-... ; GET /pipelines/<id>` |
-| Dynamic harness creation | returned `name`, `preset`, `model` | `🏭 agent: researcher-abc1 · preset: researcher · model: auto (random per session)` |
+| Dynamic harness creation | returned `name`, `preset`, `model` | `🏭 agent: researcher-abc1 · preset: researcher · model: auto → resolved after first call (GET /harness.resolved_model)` |
 | Sync `/cli` | none | Show agent output directly |
 | Chat | none (session_id in chat-state.json) | — |
 
-For **harness creation**: `preset` comes from the `POST /harness` response; `model` is the value **you posted** (echo it back — `auto` if you didn't specify one). For a concrete randomly-picked model per session, harness-factory must expose it (not yet available — tracked for a future minor).
+For **harness creation**: `preset` comes from the `POST /harness` response; `model` is the value **you posted** (echo it back — `auto` if you didn't specify one). When Bridge runs harness-factory 0.8.0+, the actually-resolved model surfaces via `GET /harness.resolved_model` (populated after the first session/new) — quote it in any follow-up status message for full attribution.
 
 For **pipeline / conversation completion**, always append a **duration breakdown** before any commentary:
 
