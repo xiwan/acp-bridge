@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.14.2 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.14.3 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -80,6 +80,7 @@ The plan card must expose every key decision, not just the steps:
 **Decision summary**
 - Execution mode: sync / async (async = IM push; **>60s must be async**)
 - Agent count: single / multiple (N)
+- Task dependency: sequential (B needs A's output) / independent (parallel-safe) / shared (read common workspace, no strict chain) — decide this **before** mode
 - Orchestration mode: sequence | parallel | race | random | conversation | —
 - Max turns: N (conversation only; else —)
 - Timeout: N seconds (default 600)
@@ -102,7 +103,7 @@ Reply `yes` to execute. Otherwise state what to change.
 ```
 
 Rules:
-- **All 6 decision-summary lines are mandatory** — write `—` when n/a
+- **All 7 decision-summary lines are mandatory** — write `—` when n/a
 - **Always** show plan for pipeline / harness creation / async job / single-agent tasks estimated >30s
 - **Never** show plan for a `/cli` single call or `/chat` forward — execute immediately
 - `Output var` column: write `output_as` name when context is chained, else `—`
@@ -152,7 +153,22 @@ Surface the error verbatim **and** add one line of guidance:
 
 ### Step 5 — Mode cheatsheet
 
+**Judge dependency first** (mode follows from it; user phrasing is a tie-breaker, not the primary signal):
+
+```
+Does task B need task A's output?
+ ├─ YES (strict chain)            → sequence  (or conversation if multi-turn dialog)
+ ├─ NO (independent, can diverge) → parallel / race / random  (pick by intent)
+ └─ PARTIAL (share workspace,
+     read each other's artifacts
+     but don't strictly chain)    → conversation  (or parallel + aggregate)
+```
+
+Anti-pattern: if tasks are **independent**, do NOT pick `sequence` just because the user said "first X, then Y" — that's speech habit, not a data constraint, and it wastes wall time. Confirm "are B's inputs from A, or just shared context?" before locking in sequence.
+
 For 2–5 agents, prefer a template from [references/orchestration-patterns.md](references/orchestration-patterns.md). Only go ad-hoc for >5.
+
+Phrase → mode tie-breaker (after dependency is already judged):
 
 | User says | Mode | Size |
 |-----------|------|------|

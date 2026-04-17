@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.14.3 | 2026-04-17 | SKILL planner: dependency-first mode selection. New mandatory `Task dependency` row in Step 3 decision summary (sequential / independent / shared); Step 5 cheatsheet prepended with a decision tree driven by dependency instead of user phrasing. Orchestration templates gain a `Dep.` column. Anti-pattern noted: don't pick `sequence` just because user said "先…再…" when tasks are actually independent |
 | v0.14.2 | 2026-04-17 | Capture harness-factory 0.8.0's `activated.resolvedModel` on `session/new`; `GET /harness` response now includes `resolved_model` (the actual model picked, populated after first call). Backward compatible with older harness-factory and non-harness ACP agents |
 | v0.14.1 | 2026-04-17 | SKILL.md Step 4 rules: (1) harness-creation echo must include `preset` + `model`; (2) pipeline/conversation results must append a duration breakdown (per-agent + total) with `stop_reason` for conversation mode |
 | v0.14.0 | 2026-04-17 | SKILL.md structural rewrite for token efficiency: front-load Planning Workflow (hot path now in first ~90 lines vs. mid-doc previously); Preset capability matrix moved adjacent to Planning; compress Commands (17→1 line), Harness usage (17→5 lines), Output Rules (20→4 lines). 307 → 228 lines, no semantic changes |
