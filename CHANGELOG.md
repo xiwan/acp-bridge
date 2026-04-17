@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.13.5 | 2026-04-17 | Skill doc hardening: dedupe pipeline content (single source = `pipeline.md`); add 3 real-bug troubleshooting rows (permission schema, PTY idle timeout, harness spawn vs. call); Planner Step 4.1 fallback guidance on failures; `CLAUDE_SKILL_DIR` host-injection note + fallback expansion |
 | v0.13.4 | 2026-04-17 | Translate `skill/SKILL.md` Planner Workflow (Step 1–7), decision-summary card, duration estimation guide, preset-intent mapping, and frontmatter description to English. No behavior change; 2 intentional CJK confirmation aliases kept. |
 | v0.13.3 | 2026-04-17 | Fix auto-allow permission response shape to match ACP 1.0 RequestPermissionOutcome schema (wrap in `outcome: {outcome: "selected", optionId}`); previously claude-agent-acp 0.20+ treated the old flat form as reject. Also: `start.sh` gains `--stop` / `--foreground` / `--restart` and default background mode with `/health` readiness wait |
 | v0.13.2 | 2026-04-17 | Planner rules: enforce async for >60s tasks, add duration estimation guide; require full job_id/pipeline_id in response relay |

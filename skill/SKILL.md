@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.13.4 — Remote CLI agent caller via ACP Bridge HTTP API. Supports natural-language plan decomposition (static agents + dynamically spawned harness agents) and multi-agent pipelines. Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /chat ko (enter chat mode)"
+description: "v0.13.5 — Remote CLI agent caller via ACP Bridge HTTP API. Supports natural-language plan decomposition (static agents + dynamically spawned harness agents) and multi-agent pipelines. Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /chat ko (enter chat mode)"
 disable-model-invocation: true
 ---
 
@@ -9,7 +9,10 @@ disable-model-invocation: true
 Call remote CLI agents via ACP Bridge HTTP API.
 
 ```bash
-ACP_CLIENT="${CLAUDE_SKILL_DIR}/scripts/acp-client.sh"
+# CLAUDE_SKILL_DIR is injected by the host (Claude Code / Kiro CLI) and points
+# to this skill's installed directory. For other hosts, set it manually or
+# replace with the absolute path to scripts/acp-client.sh.
+ACP_CLIENT="${CLAUDE_SKILL_DIR:-$(dirname "$0")}/scripts/acp-client.sh"
 chmod +x "$ACP_CLIENT"
 ```
 
@@ -186,6 +189,20 @@ Only `yes` (case-insensitive; also "go / 执行 / 确认 / 是" counts) triggers
 | Chat | No ID needed (session_id is already in chat-state.json) | — |
 
 The ID in the response **must be the full value** (do not truncate to the first 8 chars); users need it intact to query. If Bridge does not return the expected field, treat it as a failure and surface the error.
+
+### Step 4.1 — On failure, suggest a fallback (don't just report)
+
+When a pipeline / job returns `failed` or a step errors, surface the error verbatim **and** add a one-line fallback suggestion. Do not silently retry — let the user decide.
+
+| Failure signal | Suggest |
+|----------------|---------|
+| Step `failed: agent timeout (idle 300s)` on codex (PTY) | "Retry with ACP agent (kiro/claude) for this step, or split the prompt into smaller parts" |
+| Step `completed` but output empty / contains "User refused permission" | "Bridge permission-reply schema mismatch — check Bridge version ≥ v0.13.3 (see troubleshooting)" |
+| Pipeline status `failed`, first step worked, later step couldn't read shared_cwd file | "Previous step likely didn't actually write the file — re-run that step alone in `/cli` to verify, then resume" |
+| `pool_exhausted` | "Too many concurrent sessions — wait 30s and retry, or reduce parallelism" |
+| Harness spawn 200 but first call errors | "Check `/harness/presets`; preset name may be invalid or harness-factory binary missing (see troubleshooting)" |
+
+If the user says "retry" without new direction, re-run **the same plan** once; if it fails the same way, stop and ask before a third attempt.
 
 ### Step 5 — Mode recognition cheatsheet
 

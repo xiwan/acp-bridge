@@ -109,73 +109,8 @@ Missing `target` → job runs but no push. Missing `account_id` → OpenClaw ret
 
 ## Pipeline Mode
 
-Multi-agent collaboration: sequence, parallel, or race execution.
-
-Supports both ACP agents (Kiro, Claude, Qwen, OpenCode) and PTY agents (Codex) — mix freely in any mode.
-
-### Submit
-
-```bash
-curl -X POST "$ACP_BRIDGE_URL/pipelines" \
-  -H "Authorization: Bearer $ACP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "sequence",
-    "steps": [
-      {"agent": "kiro", "prompt": "Analyze the code", "output_as": "analysis"},
-      {"agent": "claude", "prompt": "Review: {{analysis}}"}
-    ]
-  }'
-```
-
-### Modes
-
-| Mode | Behavior |
-|------|----------|
-| `sequence` | Steps run in order; `{{output_as}}` passes output to next step |
-| `parallel` | All steps run concurrently; results merged |
-| `race` | All steps run concurrently; first to complete wins |
-| `random` | Randomly pick one step to execute; others skipped |
-| `conversation` | Multi-turn dialog between agents; Bridge relays messages |
-
-### Conversation Mode
-
-```bash
-curl -X POST "$ACP_BRIDGE_URL/pipelines" \
-  -H "Authorization: Bearer $ACP_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "conversation",
-    "participants": ["kiro", "claude"],
-    "topic": "Review the auth module",
-    "config": {"max_turns": 8, "stop_conditions": ["DONE", "CONSENSUS"]}
-  }'
-```
-
-- Bridge only relays "what the last agent said" — agents maintain their own context
-- Agents can use `@agent_name` to direct messages; Bridge routes accordingly
-- Stops on `STATUS: DONE`, `STATUS: CONSENSUS`, consecutive `PASS`, or max turns
-- Full transcript stored in SQLite, returned via `GET /pipelines/<id>`
-
-### Query Conversation
-
-```bash
-curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/pipelines/<id>"
-```
-
-Returns: `pipeline_id`, `mode`, `status`, `participants`, `topic`, `initial_context`, `config`, `turns`, `stop_reason`, `shared_cwd`, `duration`, and full `transcript` (array of `{turn, agent, content, duration}`).
-
-### Query
-
-```bash
-curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/pipelines/<id>"
-```
-
-### List
-
-```bash
-curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/pipelines"
-```
+Multi-agent orchestration (sequence / parallel / race / random / conversation)
+lives in a dedicated reference — see [pipeline.md](pipeline.md).
 
 ## Security
 
