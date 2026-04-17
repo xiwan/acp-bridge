@@ -2,7 +2,7 @@
 # 测试公共库 — 断言函数 + 环境初始化
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLIENT="$SCRIPT_DIR/skill/acp-client.sh"
+CLIENT="$SCRIPT_DIR/skill/scripts/acp-client.sh"
 TOOLS_CLIENT="$SCRIPT_DIR/tools/tools-client.sh"
 
 export ACP_BRIDGE_URL="${ACP_BRIDGE_URL:-http://127.0.0.1:18010}"

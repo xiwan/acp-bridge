@@ -286,7 +286,7 @@ Auth: `Authorization: Bearer <token>` + IP in `security.allowed_ips`.
 | `src/store.py` | SQLite job persistence |
 | `src/routes/*.py` | Route registration (jobs, tools, health, chat) |
 | `examples/echo-agent.py` | Minimal ACP agent (~100 lines) |
-| `skill/acp-client.sh` | Client usage examples |
+| `skill/scripts/acp-client.sh` | Client usage examples |
 | `test/test.sh` | Full test suite |
 
 ### Troubleshooting

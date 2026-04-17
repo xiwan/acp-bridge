@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.13.1 | 2026-04-17 | Planner enhancements (agent sourcing + decision-rich plan card) + skill dir reorg: scripts/ and references/ subdirs, removed stale archive |
 | v0.13.0 | 2026-04-17 | Skill-side planner workflow: classify intent → fetch /agents → show plan table → `yes` to execute; adds clarification heuristics and common intent lookup |
 | v0.12.3 | 2026-04-17 | Fix test_kiro.sh async-submit assertion to match client output (Submitted/已提交/job:) |
 | v0.12.2 | 2026-04-16 | Smart install.sh: state detection (first run vs update), install missing agent CLIs, incremental config.yaml update, Node.js detection |
