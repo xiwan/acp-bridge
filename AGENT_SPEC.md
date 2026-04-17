@@ -203,7 +203,7 @@ Bridge 能识别的 `update` 类型：
 
 ```json
 {"jsonrpc":"2.0","id":99,"method":"session/request_permission","params":{...}}
-→ {"jsonrpc":"2.0","id":99,"result":{"optionId":"allow_always"}}
+→ {"jsonrpc":"2.0","id":99,"result":{"outcome":{"outcome":"selected","optionId":"allow_always"}}}
 ```
 
 ---

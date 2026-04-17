@@ -105,7 +105,8 @@ class AcpConnection:
                         log.info("auto-allow permission: %s",
                                  msg.get("params", {}).get("toolCall", {}).get("title", "?"))
                         reply = {"jsonrpc": "2.0", "id": msg_id,
-                                 "result": {"optionId": "allow_always"}}
+                                 "result": {"outcome": {"outcome": "selected",
+                                                        "optionId": "allow_always"}}}
                         data = json.dumps(reply) + "\n"
                         self.proc.stdin.write(data.encode())
                         asyncio.ensure_future(self.proc.stdin.drain())

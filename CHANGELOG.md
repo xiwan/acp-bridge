@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.13.3 | 2026-04-17 | Fix auto-allow permission response shape to match ACP 1.0 RequestPermissionOutcome schema (wrap in `outcome: {outcome: "selected", optionId}`); previously claude-agent-acp 0.20+ treated the old flat form as reject. Also: `start.sh` gains `--stop` / `--foreground` / `--restart` and default background mode with `/health` readiness wait |
 | v0.13.2 | 2026-04-17 | Planner rules: enforce async for >60s tasks, add duration estimation guide; require full job_id/pipeline_id in response relay |
 | v0.13.1 | 2026-04-17 | Planner enhancements (agent sourcing + decision-rich plan card) + skill dir reorg: scripts/ and references/ subdirs, removed stale archive |
 | v0.13.0 | 2026-04-17 | Skill-side planner workflow: classify intent → fetch /agents → show plan table → `yes` to execute; adds clarification heuristics and common intent lookup |
