@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.13.3 — 通过 ACP Bridge HTTP API 调用远程 CLI agent，支持自然语言编排拆解（静态 agent + harness 动态生产） + 多 agent pipeline。Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /chat ko (进入对话模式)"
+description: "v0.13.4 — Remote CLI agent caller via ACP Bridge HTTP API. Supports natural-language plan decomposition (static agents + dynamically spawned harness agents) and multi-agent pipelines. Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /chat ko (enter chat mode)"
 disable-model-invocation: true
 ---
 
@@ -79,140 +79,135 @@ When the user describes a task in natural language, decide between **single call
 
 | Signal | Route |
 |--------|-------|
-| 单个动词、明确一个 agent、一问一答、**预估 ≤60s** | **Single call** — `/cli xx "..."` 直接跑，不需要确认 |
-| 多动词 / 多 agent / "先 X 再 Y" / "让 A 和 B 讨论" | **Pipeline** — 走 Step 2 出 plan |
-| 持续开发、要记住上下文 | **Chat** — `/chat ko` 进入会话模式 |
-| **预估 >60s** / 长任务 / 要推送到 IM / 用户说"跑完通知我" | **Async job** — `POST /jobs`（见 [references/async-jobs.md](references/async-jobs.md)），plan 卡片标注"执行方式：异步" |
+| Single verb, specific agent, one-shot Q&A, **estimated ≤60s** | **Single call** — run `/cli xx "..."` directly, no confirmation needed |
+| Multiple verbs / multiple agents / "first X then Y" / "have A and B discuss" | **Pipeline** — proceed to Step 2 to produce a plan |
+| Ongoing development, needs context retention | **Chat** — `/chat ko` to enter session mode |
+| **Estimated >60s** / long task / needs IM push / user says "notify me when done" | **Async job** — `POST /jobs` (see [references/async-jobs.md](references/async-jobs.md)); plan card must mark execution as "async" |
 
-**时长预估指引**（估不准时向上取整，就高不就低）：
+**Duration estimation guide** (when uncertain, round up — err on the high side):
 
-| 任务特征 | 预估 |
-|---------|------|
-| 一句话问答、单文件读/写 | <30s |
-| 单 agent review 大文件、写一段中等代码 | 30–60s |
-| 多 agent pipeline（任何模式） | **>60s，强制异步** |
-| conversation 模式（2+ agent 多轮） | **>60s，强制异步** |
-| 涉及 shell 执行、grep 大量文件、跑测试 | **>60s，强制异步** |
-| 用户明确说"等结果"/"马上要" + 简单任务 | 保持同步 |
+| Task characteristic | Estimate |
+|---------------------|----------|
+| One-liner Q&A, single-file read/write | <30s |
+| Single-agent review of a large file, writing a medium-sized snippet | 30–60s |
+| Multi-agent pipeline (any mode) | **>60s, must be async** |
+| Conversation mode (2+ agents, multi-turn) | **>60s, must be async** |
+| Involves shell execution, grep across many files, running tests | **>60s, must be async** |
+| User explicitly says "wait for the result" / "need it now" + trivial task | Keep sync |
 
 ### Step 2 — Pick agents (static + on-demand)
 
-Bridge 的 agent 来自两个来源，**编排前都要考虑**：
+Bridge agents come from two sources; **consider both before orchestrating**:
 
-| 来源 | 特点 | 何时用 |
-|------|------|--------|
-| **静态 agent**（kiro/claude/codex/qwen/opencode/harness…） | 配置文件注册，长期常驻 | 通用任务、已知擅长领域、快速响应 |
-| **Harness factory 动态 agent** | `POST /harness` 按 preset 即时生成，可批量 | 需要特定权限集、专业角色、或同时要多个不同 preset 协作时 |
+| Source | Characteristics | When to use |
+|--------|-----------------|-------------|
+| **Static agents** (kiro/claude/codex/qwen/opencode/harness…) | Registered in config, long-lived | General tasks, known strengths, fast response |
+| **Harness-factory dynamic agents** | `POST /harness` spawns one from a preset on demand; can be batched | Need a specific permission set, specialized role, or several distinct presets collaborating at once |
 
-拉实时列表（可能包含用户之前建的动态 harness）：
+Fetch the live list (it may include dynamic harnesses the user created earlier):
 
 ```bash
 curl -s -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/agents" | jq '.agents[].name'
 ```
 
-选型指引：
-- 单一通用任务（review / 翻译 / 总结） → 直接用静态 agent
-- 需要精细权限（只读文件、只跑特定命令） → 用 harness preset（`reader`/`executor`/`reviewer`…）
-- 编排中**多角色分工**（审 + 跑 + 写） → 为每个角色造一个 harness，再串/并
-- 一次性任务、不需要复用 → 用完 `DELETE /harness/<name>` 清理
+Selection guidance:
+- Single general task (review / translate / summarize) → use a static agent directly
+- Need fine-grained permissions (read-only file access, restricted shell) → use a harness preset (`reader` / `executor` / `reviewer` …)
+- Orchestration with **distinct roles** (review + run + write) → spawn one harness per role, then chain/parallelize
+- One-off task, no reuse → clean up with `DELETE /harness/<name>` when done
 
-批量造 harness 示例（pipeline 前一步）：
+Batch-spawn example (run this before building the pipeline):
 
 ```bash
-# 造三个角色
+# Spawn three specialized roles
 for preset in reviewer executor writer; do
   curl -sS -X POST "$ACP_BRIDGE_URL/harness" -H "Authorization: Bearer $ACP_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"profile\":\"$preset\"}" | jq -r '.name'
 done
-# 返回的 name 填入 pipeline steps 的 agent 字段
+# Use the returned names in the `agent` field of pipeline steps
 ```
 
-原因：写死的 7 个别名只是示例。实际可用 = 静态 agent + 用户之前建的动态 harness + 你即将为本次任务新建的 harness。
+Rationale: the seven hardcoded aliases above are only samples. Actual available agents = static agents + dynamic harnesses the user spawned previously + harnesses you are about to spawn for this task.
 
 ### Step 3 — Present the plan (don't execute yet)
 
-Plan 卡片必须让用户看懂所有**关键决策**，不只是步骤。固定格式如下：
+The plan card must expose every **key decision** to the user, not just the steps. Use this fixed format:
 
 ```
-📋 执行计划
+📋 Execution plan
 
-**决策摘要**
-- 执行方式：同步 / 异步（async job 推送到 IM；**>60s 必须异步**）
-- Agent 数：单 / 多（N 个）
-- 编排模式：sequence | parallel | race | random | conversation | —
-- 最大轮数：N 轮（conversation 专用，其他留 —）
-- 超时上限：N 秒（默认 600）
-- 推送目标：Discord channel / Feishu user / —（异步任务才需要）
+**Decision summary**
+- Execution mode: sync / async (async job pushes result to IM; **>60s must be async**)
+- Agent count: single / multiple (N)
+- Orchestration mode: sequence | parallel | race | random | conversation | —
+- Max turns: N turns (conversation only; other modes leave as —)
+- Timeout: N seconds (default 600)
+- Push target: Discord channel / Feishu user / — (only needed for async)
 
-**步骤**
+**Steps**
 
-| # | Agent | 任务 | 输出变量 |
-|---|-------|------|---------|
+| # | Agent | Task | Output var |
+|---|-------|------|-----------|
 | 1 | kiro | Review src/agents.py for bugs | review |
 | 2 | claude | Based on {{review}}, write pytest tests | — |
 
-**需要新建的 Harness**（如无则省略本节）
+**Harnesses to create** (omit this section if none)
 
-| Name | Preset | 用途 |
-|------|--------|------|
-| reviewer-log42 | reviewer | 只读审代码 |
+| Name | Preset | Purpose |
+|------|--------|---------|
+| reviewer-log42 | reviewer | Read-only code review |
 
-回复 `yes` 执行。否则说明要改哪里（换 agent / 改模式 / 改轮数 / 转异步…）。
+Reply `yes` to execute. Otherwise say what to change (swap agent / change mode / change turns / switch to async…).
 ```
 
-规则：
-- **决策摘要 6 行必填**（不适用的字段写 `—`）
-- **Always** show plan for pipeline / harness creation / async job / 超过 30s 的单 agent 任务
-- **Never** show plan for `/cli` 单 call 或 `/chat` 转发 — 直接执行
-- Plan 表 `输出变量` 列若有上下文传递则写 `output_as` 变量名，否则 `—`
-- `最大轮数` 仅 `conversation` 模式填（建议默认 6，最多 12）；其他模式用"步数"代替（就是表格行数）
-- 若计划要临时造 harness，必须单独列"需要新建的 Harness"表
-- **同步/异步强约束**：预估耗时 >60s 时，"执行方式"字段**只能**写"异步"。pipeline 和
-  conversation 默认就是 >60s；如果用户强行要求同步长任务，提示"预计超过 1 分钟，建议走
-  异步，否则客户端会等待阻塞"并再次确认。
-- 末尾确认关键词**只认 `yes`**（大小写无关，中文"是 / 执行 / 确认 / go"同样接受）；其他回复当作修订意见回 Step 3 重出
+Rules:
+- **All 6 decision-summary lines are mandatory** (write `—` for fields that don't apply)
+- **Always** show the plan for pipeline / harness creation / async job / single-agent tasks estimated to exceed 30s
+- **Never** show a plan for a `/cli` single call or `/chat` forward — execute immediately
+- In the steps table, fill in the `Output var` column with the `output_as` variable name when context is passed forward; otherwise use `—`
+- `Max turns` is only populated for `conversation` mode (default 6, up to 12); for other modes use the step count (just the number of rows)
+- If the plan needs temporary harnesses, list them in the separate "Harnesses to create" table
+- **Sync/async hard constraint**: when estimated duration is >60s, the "Execution mode" field **must** be "async". Pipelines and conversation mode are >60s by default. If the user insists on running a long task synchronously, warn "This is expected to take over a minute; async is recommended, otherwise the client will block" and confirm again.
+- The final confirmation keyword is **`yes` only** (case-insensitive; Chinese equivalents "是 / 执行 / 确认 / go" also accepted). Any other reply is treated as revision feedback — go back to Step 3 and regenerate the plan.
 
 ### Step 4 — On `yes`, execute and relay the ID
 
-Only `yes`（大小写无关，或直接说 "go / 执行 / 确认" 也算）才执行。其他回复当作修订意见，回到 Step 3 重出 plan。
+Only `yes` (case-insensitive; also "go / 执行 / 确认 / 是" counts) triggers execution. Any other reply is treated as revision feedback — go back to Step 3 and regenerate the plan.
 
-**执行后必须回显 id**（让用户后续能查询 / 推送跟踪）：
+**Every execution response must echo the ID** (so the user can follow up / track pushes):
 
-| 任务类型 | 必含字段 | 示例 |
-|---------|---------|------|
-| Async job | `job_id` | `✅ 已提交 async job，job_id: abc123-def4-...`，附 `GET /jobs/<id>` 查询方法 |
-| Pipeline | `pipeline_id` | `🔗 Pipeline 已启动，pipeline_id: xyz789-...`，附 `GET /pipelines/<id>` 查询方法 |
-| Dynamic harness 创建 | 返回的 `name` | `🏭 已创建 harness，agent name: researcher-abc1` |
-| 同步 `/cli` 单 call | 不需要 id | 直接展示 agent 输出 |
-| Chat | 不需要 id（session_id 已在 chat-state.json） | —  |
+| Task type | Required field | Example |
+|-----------|---------------|---------|
+| Async job | `job_id` | `✅ Async job submitted, job_id: abc123-def4-...` + `GET /jobs/<id>` for status |
+| Pipeline | `pipeline_id` | `🔗 Pipeline started, pipeline_id: xyz789-...` + `GET /pipelines/<id>` for status |
+| Dynamic harness creation | returned `name` | `🏭 Harness created, agent name: researcher-abc1` |
+| Synchronous `/cli` single call | No ID needed | Show the agent output directly |
+| Chat | No ID needed (session_id is already in chat-state.json) | — |
 
-响应里的 id **必须用完整值**（不要截短成前 8 位），方便用户复制查询。如果 Bridge 返回里没
-有对应字段，说明调用失败，按错误处理。
+The ID in the response **must be the full value** (do not truncate to the first 8 chars); users need it intact to query. If Bridge does not return the expected field, treat it as a failure and surface the error.
 
 ### Step 5 — Mode recognition cheatsheet
 
-| User says | Mode |
-|-----------|------|
-| User says | Mode | 典型规模 |
-|-----------|------|---------|
-| "先让 X 做...再让 Y 做..." | `sequence` | 2–5 步 |
-| "同时问 X 和 Y" / "并行" / "多视角" | `parallel` | 2–4 个 |
-| "谁快用谁" / "竞速" | `race` | 2–4 个 |
-| "随便找一个" / "随机" | `random` | 2–N 候选 |
-| "让 X 和 Y 讨论..." / "辩论" | `conversation` | 默认 6 轮，最多 12 |
+| User says | Mode | Typical size |
+|-----------|------|--------------|
+| "first have X do... then have Y do..." | `sequence` | 2–5 steps |
+| "ask X and Y at the same time" / "in parallel" / "multiple perspectives" | `parallel` | 2–4 agents |
+| "whoever is fastest" / "race" | `race` | 2–4 agents |
+| "just pick one" / "random" | `random` | 2–N candidates |
+| "have X and Y discuss..." / "debate" | `conversation` | default 6 turns, max 12 |
 
 ### Step 6 — Common intent → plan quick lookup
 
 | User intent | Suggested plan |
-|-------------|---------------|
-| "review 这段代码" | Single `/cli ko` — 无需 pipeline |
-| "review 后再写单测" | sequence: kiro review → claude tests |
-| "对比 kiro 和 claude 的方案" | parallel: kiro + claude，人工对比输出 |
-| "让它们讨论一下这个设计" | conversation, 2 participants, topic = 设计主题 |
-| "帮我搞个查天气的 agent" | `POST /harness` with `operator` preset |
-| "让一个审代码的和一个跑测试的配合" | 批量造 2 个 harness（`reviewer` + `developer`），再 sequence 串 |
-| "分析这份日志" | Single call to `analyst` harness 或 kiro |
+|-------------|----------------|
+| "review this code" | Single `/cli ko` — no pipeline needed |
+| "review then write tests" | sequence: kiro review → claude tests |
+| "compare kiro's and claude's approaches" | parallel: kiro + claude, compare outputs manually |
+| "let them discuss this design" | conversation, 2 participants, topic = the design in question |
+| "build me a weather-query agent" | `POST /harness` with the `operator` preset |
+| "have a code reviewer work with a test runner" | Batch-spawn 2 harnesses (`reviewer` + `developer`), then `sequence` them |
+| "analyze this log" | Single call to the `analyst` harness or kiro |
 
 ### Step 7 — Clarification heuristics
 
@@ -220,10 +215,10 @@ When intent is ambiguous, ask **one** short question, not a list. Prefer default
 
 | Missing info | Default action |
 |--------------|---------------|
-| 没指定 agent | 问一句："用哪个？kiro 擅长 coding，claude 擅长 review" |
-| 没指定协作方式（两个 agent 但不明方向） | 问："串行接力（前者输出喂后者）还是并行汇总？" |
-| 动词模糊（"处理一下" / "搞定这个"） | 问："具体是 review、重构、还是写测试？" |
-| 其他细节（cwd、参数） | **不要问**，用默认值 `/tmp` 或让 agent 自己判断 |
+| No agent specified | Ask: "Which one? kiro is strong at coding, claude at review" |
+| No collaboration mode (two agents but direction unclear) | Ask: "Sequential relay (former feeds the latter) or parallel + aggregate?" |
+| Vague verb ("deal with this" / "handle it") | Ask: "Specifically — review, refactor, or write tests?" |
+| Other details (cwd, arguments) | **Do not ask**; use default `/tmp` or let the agent decide |
 
 ## Pipeline
 
@@ -247,16 +242,16 @@ Auto mode includes fallback: if a model fails, harness-factory automatically tri
 
 | User intent | Preset |
 |-------------|--------|
-| 读文件、看代码 | `reader` |
-| 跑命令、查系统 | `executor` |
-| 查网页、搜资料 | `scout` |
-| 审代码、看 diff | `reviewer` |
-| 分析数据、统计 | `analyst` |
-| 调研、查资料写总结 | `researcher` |
-| 写代码、跑测试 | `developer` |
-| 写文档、查参考 | `writer` |
-| 运维、部署、查网络 | `operator` |
-| 全权限、什么都能干 | `admin` |
+| Read files, look at code | `reader` |
+| Run commands, inspect system | `executor` |
+| Fetch web pages, search | `scout` |
+| Review code, inspect diffs | `reviewer` |
+| Analyze data, statistics | `analyst` |
+| Research, gather info and summarize | `researcher` |
+| Write code, run tests | `developer` |
+| Write docs, look up references | `writer` |
+| Ops, deploy, network | `operator` |
+| Full permissions, do anything | `admin` |
 
 ### Usage
 
@@ -265,7 +260,7 @@ Auto mode includes fallback: if a model fails, harness-factory automatically tri
 curl -X POST "$ACP_BRIDGE_URL/harness" \
   -H "Authorization: Bearer $ACP_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"profile": "operator", "system_prompt": "帮用户写查天气的 skill"}'
+  -d '{"profile": "operator", "system_prompt": "Help the user build a weather-query skill"}'
 
 # Call it
 $ACP_CLIENT -a <returned_agent_name> "<prompt>"
