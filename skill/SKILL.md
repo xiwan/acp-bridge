@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.13.5 — Remote CLI agent caller via ACP Bridge HTTP API. Supports natural-language plan decomposition (static agents + dynamically spawned harness agents) and multi-agent pipelines. Usage: /cli <prompt> | /cli ko <prompt> (kiro) | /cli cc <prompt> (claude) | /chat ko (enter chat mode)"
+description: "v0.13.6 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -206,6 +206,8 @@ If the user says "retry" without new direction, re-run **the same plan** once; i
 
 ### Step 5 — Mode recognition cheatsheet
 
+For 2–5 agents, prefer a preset template from [references/orchestration-patterns.md](references/orchestration-patterns.md) — pick a template name first, then fill in agents and prompts. Only fall back to ad-hoc planning for >5 agents or when no template fits.
+
 | User says | Mode | Typical size |
 |-----------|------|--------------|
 | "first have X do... then have Y do..." | `sequence` | 2–5 steps |
@@ -293,6 +295,7 @@ curl -X DELETE "$ACP_BRIDGE_URL/harness/<name>" -H "Authorization: Bearer $ACP_T
 
 - [references/chat.md](references/chat.md) — Chat mode lifecycle, session ID, state file
 - [references/pipeline.md](references/pipeline.md) — Pipeline API, modes, conversation config
+- [references/orchestration-patterns.md](references/orchestration-patterns.md) — Preset templates for 2–5 agent orchestration
 - [references/async-jobs.md](references/async-jobs.md) — Async jobs, target format, callback, monitoring
 - [references/troubleshooting.md](references/troubleshooting.md) — Error diagnosis
 - [scripts/acp-client.sh](scripts/acp-client.sh) — Bash client used by `/cli` and `/chat`
