@@ -23,6 +23,7 @@ AGENT_ICONS = {"kiro": "🟢", "claude": "🟣", "codex": "🔵", "qwen": "🟠"
 _SEPARATOR = get_template("components", "separator", "━━━━━━━━━━━━━━━━━━━━")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
 MENTION_RE = re.compile(r"@(\w+)")
+_VAR_RE = re.compile(r"\{\{(\w+)\}\}")
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
@@ -608,6 +609,4 @@ class PipelineManager:
 
     @staticmethod
     def _render(template: str, context: dict) -> str:
-        for key, val in context.items():
-            template = template.replace("{{" + key + "}}", str(val))
-        return template
+        return _VAR_RE.sub(lambda m: str(context.get(m.group(1), m.group(0))), template)
