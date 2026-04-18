@@ -33,3 +33,4 @@ test/scratch/
 # OS
 .DS_Store
 docs/
+test/reports/
