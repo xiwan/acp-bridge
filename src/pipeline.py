@@ -13,13 +13,14 @@ from pathlib import Path
 import httpx
 
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
+from .formatters import PipelineFormatter, get_template
 from .sse import transform_notification
 from .store import PipelineStore
 
 log = logging.getLogger("acp-bridge.pipeline")
 
 AGENT_ICONS = {"kiro": "🟢", "claude": "🟣", "codex": "🔵", "qwen": "🟠", "opencode": "⚪"}
-_SEPARATOR = "━━━━━━━━━━━━━━━━━━━━"
+_SEPARATOR = get_template("components", "separator", "━━━━━━━━━━━━━━━━━━━━")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
 MENTION_RE = re.compile(r"@(\w+)")
 
@@ -173,6 +174,7 @@ class PipelineManager:
         try:
             shared_cwd = self._make_shared_cwd(pl)
             log.info("pipeline_cwd: id=%s mode=%s cwd=%s", pl.pipeline_id, pl.mode, shared_cwd)
+            await self._webhook_start(pl)
             if pl.mode == "sequence":
                 await self._run_sequence(pl)
             elif pl.mode == "parallel":
@@ -228,31 +230,37 @@ class PipelineManager:
         except Exception as e:
             log.error("pipeline_webhook_failed: id=%s error=%s", pl.pipeline_id, e)
 
+    async def _webhook_start(self, pl: Pipeline):
+        """Push a notification when pipeline starts."""
+        if not self._webhook_url or not pl.webhook_meta.get("target"):
+            return
+        agents = [s.agent for s in pl.steps]
+        if pl.mode == "conversation":
+            agents = pl.context.get("participants", agents)
+        msg = PipelineFormatter.format_start(pl.pipeline_id, pl.mode, agents)
+        await self._send_webhook(pl, msg)
+
     async def _webhook_step(self, pl: Pipeline, step: PipelineStep):
         """Push a single step result immediately after it completes."""
         if not self._webhook_url or not pl.webhook_meta.get("target"):
             return
+        idx = pl.steps.index(step) + 1
         dur = round(step.completed_at - step.started_at, 1)
-        icon = "✅" if step.status == "completed" else "❌"
-        lines = [f"🔗 **Pipeline** `{pl.pipeline_id[:8]}` — **{step.agent}** {icon}"]
-        if step.status == "failed":
-            lines.append(f"> ❌ {step.error}")
-        else:
-            preview = step.result[:300] + "..." if len(step.result) > 300 else step.result
-            for ln in preview.splitlines():
-                lines.append(f"> {ln}")
-        lines.append(f"> ⏱️ {dur}s")
-        await self._send_webhook(pl, "\n".join(lines))
+        msg = PipelineFormatter.format_step(
+            pl.pipeline_id, idx, len(pl.steps), step.agent, dur,
+            step.status, result=step.result, error=step.error)
+        await self._send_webhook(pl, msg)
 
     async def _webhook(self, pl: Pipeline):
-        """Final summary push — overall status + total duration."""
+        """Final summary push — overall status + per-step duration breakdown."""
         if not self._webhook_url or not pl.webhook_meta.get("target"):
             return
         dur = round(pl.completed_at - pl.created_at, 1)
-        if pl.status == "failed":
-            msg = f"🔗 **Pipeline** `{pl.pipeline_id[:8]}` ❌ {pl.error} | 耗时 {dur}s"
-        else:
-            msg = f"🔗 **Pipeline** `{pl.pipeline_id[:8]}` ✅ 全部完成，耗时 {dur}s"
+        steps_data = [{"agent": s.agent, "status": s.status,
+                       "started_at": s.started_at, "completed_at": s.completed_at}
+                      for s in pl.steps]
+        msg = PipelineFormatter.format_done(
+            pl.pipeline_id, pl.status, dur, error=pl.error, steps=steps_data)
         await self._send_webhook(pl, msg)
 
     async def _run_sequence(self, pl: Pipeline):
@@ -509,18 +517,8 @@ class PipelineManager:
                                           agent: str, content: str, duration: float):
         if not self._webhook_url or not pl.webhook_meta.get("target"):
             return
-        icon = AGENT_ICONS.get(agent, "🤖")
-        header = f"{_SEPARATOR}\n💬 Turn {turn} · {icon} **{agent}** ({duration}s)\n{_SEPARATOR}"
-        max_content = 1700
-        if len(content) <= max_content:
-            await self._send_webhook(pl, f"{header}\n{content}")
-        else:
-            chunks = [content[i:i+max_content] for i in range(0, len(content), max_content)]
-            for idx, chunk in enumerate(chunks):
-                tag = f" ({idx+1}/{len(chunks)})" if len(chunks) > 1 else ""
-                await self._send_webhook(pl, f"{header}{tag}\n{chunk}")
-                if idx < len(chunks) - 1:
-                    await asyncio.sleep(0.5)
+        msg = PipelineFormatter.format_turn(pl.pipeline_id, turn, agent, content, duration)
+        await self._send_webhook(pl, msg)
 
     async def _exec_step(self, pl: Pipeline, step: PipelineStep, prompt: str):
         step.status = "running"

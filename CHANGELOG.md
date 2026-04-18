@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.15.0 | 2026-04-18 | Pluggable message template system: all webhook/status messages (pipeline, job, agent) defined in `src/templates/default_formatter.yml`. Change message format by editing YAML only — no code changes needed. `PipelineFormatter` + `fmt()` helper replace hardcoded strings in pipeline.py and agents.py |
 | v0.14.6 | 2026-04-18 | systemd lifecycle management + `bridge-ctl.sh` self-bootstrap script. Kiro agents inside Bridge can now safely restart Bridge via `./bridge-ctl.sh restart` (systemd-backed). OPERATIONS.md updated: Phase 0 gains bridge-ctl rules, Phase 6 uses systemd instead of Docker as primary restart method |
 | v0.14.5 | 2026-04-18 | Enhanced `GET /health`: three-state status (ok/degraded/unhealthy), process pool watermark, system memory usage, per-agent summary, async job queue summary, LiteLLM dependency status, human-readable uptime |
 | v0.14.4 | 2026-04-17 | SKILL planner: Step 2 gains a **capability–task gate** — presets with `Write? = no` must not be paired with persistence verbs (write/save/produce doc/create md/...); Step 3 makes this gate a hard stop before showing the plan card. Troubleshooting gains the recurring 0-byte-artifact symptom (incident `493987b9` PM/QA text-stranded PRD + report) |

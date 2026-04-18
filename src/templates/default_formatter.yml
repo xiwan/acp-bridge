@@ -1,0 +1,44 @@
+# ACP Bridge — Message Templates
+#
+# All webhook and status messages are defined here.
+# Edit this file to change message format, then restart Bridge.
+# Variables use {name} placeholders (Python str.format).
+#
+# ./bridge-ctl.sh restart
+
+# ── Pipeline ──────────────────────────────────────
+pipeline:
+  start: "🔗 **Pipeline** `{id}` started: {flow}"
+  step_ok: "🔗 `{id}` ✅ Step {idx}/{total}: **{agent}** ({dur}s) — {preview}"
+  step_fail: "🔗 `{id}` ❌ Step {idx}/{total}: **{agent}** ({dur}s) — {error}"
+  done_ok: "🔗 **Pipeline** `{id}` ✅ 全部完成，耗时 {dur}s"
+  done_fail: "🔗 **Pipeline** `{id}` ❌ {error} | 耗时 {dur}s"
+  detail_line: "> {icon} {idx}. {agent}: {dur}s"
+  turn: "🔗 `{id}` 💬 Turn {turn}: {icon} **{agent}** ({dur}s) — {preview}"
+
+# ── Job ───────────────────────────────────────────
+job:
+  summary_ok: "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s"
+  summary_fail: "📨 **{agent}** `{job_id}` ❌ {error}"
+  result_header: "📄 **Result** — {agent} `{job_id}`"
+  tools_line: "> ✅ `{tool}`"
+  footer: "⏱️ {dur}s"
+
+# ── Agent Status ──────────────────────────────────
+agent:
+  session_expired: "⚠️ 会话已过期，已自动创建新会话（之前的对话上下文已丢失）"
+  pool_exhausted: "🚫 {agent} 繁忙，请稍后重试 ({detail})"
+  agent_error: "❌ {agent} 错误: {error}"
+  agent_timeout: "⏰ {agent} 超时 (idle {timeout}s)"
+  agent_crashed: "💥 {agent} 崩溃: {error}"
+
+# ── Reusable Components ──────────────────────────
+components:
+  separator: "━━━━━━━━━━━━━━━━━━━━"
+  timestamp: "🕐 {time}"
+
+# ── Global Settings ──────────────────────────────
+settings:
+  preview_limit: 100
+  text_limit: 1900
+  chunk_overlap: 50

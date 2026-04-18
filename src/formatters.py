@@ -1,12 +1,134 @@
-"""IM channel formatters — format Job results for Discord / Feishu / fallback."""
+"""IM channel formatters — format Job/Pipeline results for Discord / Feishu / fallback."""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+import yaml
 
 if TYPE_CHECKING:
     from .jobs import Job
+
+log = logging.getLogger("acp-bridge.formatters")
+
+# ── Template Engine ──────────────────────────────────────
+
+_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+_cache: dict | None = None
+
+
+def _load_templates() -> dict:
+    global _cache
+    if _cache is not None:
+        return _cache
+    path = _TEMPLATES_DIR / "default_formatter.yml"
+    if path.exists():
+        _cache = yaml.safe_load(path.read_text()) or {}
+        log.info("loaded message templates from %s", path)
+    else:
+        _cache = {}
+        log.warning("no template file at %s, using hardcoded defaults", path)
+    return _cache
+
+
+def reload_templates() -> None:
+    """Force reload templates (e.g. after editing YAML)."""
+    global _cache
+    _cache = None
+    _load_templates()
+
+
+def get_template(section: str, key: str, default: str = "") -> str:
+    """Get a single template string by section.key."""
+    return _load_templates().get(section, {}).get(key, default)
+
+
+def get_setting(key: str, default=None):
+    """Get a value from the settings section."""
+    return _load_templates().get("settings", {}).get(key, default)
+
+
+def fmt(section: str, key: str, default: str = "", **kwargs) -> str:
+    """Get template and format with kwargs. Missing vars left as-is."""
+    tpl = get_template(section, key, default)
+    try:
+        return tpl.format(**kwargs)
+    except KeyError:
+        return tpl
+
+
+# ── Pipeline Formatter ───────────────────────────────────
+
+AGENT_ICONS = {"kiro": "🟢", "claude": "🟣", "codex": "🔵", "qwen": "🟠", "opencode": "⚪"}
+
+
+class PipelineFormatter:
+    """Format pipeline webhook messages from YAML templates."""
+
+    @staticmethod
+    def format_start(pipeline_id: str, mode: str, agents: list[str]) -> str:
+        flow = " → ".join(agents) if mode in ("sequence", "conversation") else " | ".join(agents)
+        return fmt("pipeline", "start",
+                    "🔗 **Pipeline** `{id}` started: {flow}",
+                    id=pipeline_id[:8], flow=flow)
+
+    @staticmethod
+    def format_step(pipeline_id: str, step_idx: int, total: int,
+                    agent: str, dur: float, status: str,
+                    result: str = "", error: str = "") -> str:
+        limit = get_setting("preview_limit", 100)
+        if status == "failed":
+            summary = error[:limit] + ("..." if len(error) > limit else "")
+            return fmt("pipeline", "step_fail",
+                       "🔗 `{id}` ❌ Step {idx}/{total}: **{agent}** ({dur}s) — {error}",
+                       id=pipeline_id[:8], idx=step_idx, total=total,
+                       agent=agent, dur=dur, error=summary)
+        preview = result[:limit] + ("..." if len(result) > limit else "")
+        return fmt("pipeline", "step_ok",
+                   "🔗 `{id}` ✅ Step {idx}/{total}: **{agent}** ({dur}s) — {preview}",
+                   id=pipeline_id[:8], idx=step_idx, total=total,
+                   agent=agent, dur=dur, preview=preview)
+
+    @staticmethod
+    def format_done(pipeline_id: str, status: str, dur: float,
+                    error: str = "", steps: list | None = None) -> str:
+        if status == "failed":
+            header = fmt("pipeline", "done_fail",
+                         "🔗 **Pipeline** `{id}` ❌ {error} | 耗时 {dur}s",
+                         id=pipeline_id[:8], error=error, dur=dur)
+        else:
+            header = fmt("pipeline", "done_ok",
+                         "🔗 **Pipeline** `{id}` ✅ 全部完成，耗时 {dur}s",
+                         id=pipeline_id[:8], dur=dur)
+        if steps:
+            details = []
+            for i, s in enumerate(steps, 1):
+                if s.get("completed_at") and s.get("started_at"):
+                    sd = round(s["completed_at"] - s["started_at"], 1)
+                    icon = "✅" if s["status"] == "completed" else "❌" if s["status"] == "failed" else "⏭️"
+                    details.append(fmt("pipeline", "detail_line",
+                                       "> {icon} {idx}. {agent}: {dur}s",
+                                       icon=icon, idx=i, agent=s["agent"], dur=sd))
+            if details:
+                header += "\n" + "\n".join(details)
+        return header
+
+    @staticmethod
+    def format_turn(pipeline_id: str, turn: int, agent: str,
+                    content: str, dur: float) -> str:
+        icon = AGENT_ICONS.get(agent, "🤖")
+        limit = get_setting("preview_limit", 100)
+        preview = content[:limit] + ("..." if len(content) > limit else "")
+        return fmt("pipeline", "turn",
+                   "🔗 `{id}` 💬 Turn {turn}: {icon} **{agent}** ({dur}s) — {preview}",
+                   id=pipeline_id[:8], turn=turn, icon=icon,
+                   agent=agent, dur=dur, preview=preview)
+
+
+# ── Job Formatters ───────────────────────────────────────
 
 
 def get_formatter(channel: str) -> JobFormatter:

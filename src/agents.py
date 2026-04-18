@@ -12,6 +12,7 @@ from acp_sdk.models import Message, MessagePart
 from acp_sdk.server import Context, RunYield, RunYieldResume
 
 from .acp_client import AcpConnection, AcpError, AcpProcessPool, PoolExhaustedError
+from .formatters import fmt
 from .sse import transform_notification
 from .stats import StatsCollector
 
@@ -53,18 +54,24 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
             log.error("pool_exhausted: agent=%s: %s", agent_name, e)
             if _stats:
                 _stats.record(agent_name, session_id, False, 0)
-            yield Message(parts=[MessagePart(content=f"[error] pool_exhausted: {e}", content_type="text/plain")])
+            yield Message(parts=[MessagePart(
+                content=fmt("agent", "pool_exhausted", "[error] pool_exhausted: {detail}", agent=agent_name, detail=str(e)),
+                content_type="text/plain")])
             return
         except AcpError as e:
             log.error("agent_error: agent=%s: %s", agent_name, e)
             if _stats:
                 _stats.record(agent_name, session_id, False, 0)
-            yield Message(parts=[MessagePart(content=f"[error] {e}", content_type="text/plain")])
+            yield Message(parts=[MessagePart(
+                content=fmt("agent", "agent_error", "[error] {error}", agent=agent_name, error=str(e)),
+                content_type="text/plain")])
             return
 
         if conn.session_reset:
-            yield MessagePart(content="[status] 会话已过期，已自动创建新会话（之前的对话上下文已丢失）\n",
-                              content_type="text/plain")
+            yield MessagePart(
+                content=fmt("agent", "session_expired",
+                            "⚠️ 会话已过期，已自动创建新会话（之前的对话上下文已丢失）") + "\n",
+                content_type="text/plain")
             conn.session_reset = False
 
         try:
@@ -117,7 +124,9 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
             pool.remove(agent_name, session_id)
             if _stats:
                 _stats.record(agent_name, session_id, False, time.time() - _t0, _tools_used)
-            yield Message(parts=[MessagePart(content=f"[error] agent_crashed: {e}", content_type="text/plain")])
+            yield Message(parts=[MessagePart(
+                content=fmt("agent", "agent_crashed", "[error] agent_crashed: {error}", agent=agent_name, error=str(e)),
+                content_type="text/plain")])
 
     return handler
 
@@ -164,7 +173,10 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
                     await proc.wait()
                     if _stats:
                         _stats.record(command, session_id, False, time.time() - _t0)
-                    yield MessagePart(content=f"[error] agent timeout (idle {idle_timeout}s)\n", content_type="text/plain")
+                    yield MessagePart(
+                        content=fmt("agent", "agent_timeout", "[error] agent timeout (idle {timeout}s)",
+                                    agent=command, timeout=idle_timeout) + "\n",
+                        content_type="text/plain")
                     return
                 if not line:
                     break
