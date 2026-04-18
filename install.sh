@@ -627,6 +627,91 @@ else
 fi
 
 # ============================================================
+# Step 5.5: systemd unit installation
+# ============================================================
+HAS_SYSTEMD=false
+if command -v systemctl &>/dev/null && systemctl --version &>/dev/null 2>&1; then
+    HAS_SYSTEMD=true
+fi
+
+SYSTEMD_INSTALLED=false
+if $HAS_SYSTEMD; then
+    CURRENT_USER=$(whoami)
+    UV_BIN=$(command -v uv)
+    LITELLM_BIN=$(command -v litellm 2>/dev/null || echo "")
+
+    # --- acp-bridge.service ---
+    if systemctl cat acp-bridge.service &>/dev/null 2>&1; then
+        ok "acp-bridge.service already installed"
+        SYSTEMD_INSTALLED=true
+    else
+        info "Installing systemd unit: acp-bridge.service"
+        UNIT_FILE="/etc/systemd/system/acp-bridge.service"
+        sudo tee "$UNIT_FILE" >/dev/null <<UNIT
+[Unit]
+Description=ACP Bridge — ACP protocol gateway for CLI agents
+After=network.target
+
+[Service]
+Type=simple
+User=$CURRENT_USER
+WorkingDirectory=$INSTALL_DIR
+EnvironmentFile=$INSTALL_DIR/.env
+ExecStart=$UV_BIN run main.py
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=35
+Restart=always
+RestartSec=3
+Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=$HOME
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+        sudo systemctl daemon-reload
+        sudo systemctl enable acp-bridge.service
+        ok "acp-bridge.service installed and enabled"
+        SYSTEMD_INSTALLED=true
+    fi
+
+    # --- litellm.service (if needed) ---
+    if $NEEDS_LITELLM && [ -n "$LITELLM_BIN" ]; then
+        if systemctl cat litellm.service &>/dev/null 2>&1; then
+            ok "litellm.service already installed"
+        else
+            LITELLM_CFG_PATH="$INSTALL_DIR/litellm-config.yaml"
+            LITELLM_ARGS="--port 4000"
+            [ -f "$LITELLM_CFG_PATH" ] && LITELLM_ARGS="--config $LITELLM_CFG_PATH --port 4000"
+            info "Installing systemd unit: litellm.service"
+            sudo tee /etc/systemd/system/litellm.service >/dev/null <<UNIT
+[Unit]
+Description=LiteLLM Proxy — OpenAI-compatible gateway to Bedrock
+After=network.target
+
+[Service]
+Type=simple
+User=$CURRENT_USER
+WorkingDirectory=$HOME
+EnvironmentFile=$INSTALL_DIR/.env
+Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=$HOME
+ExecStart=$LITELLM_BIN $LITELLM_ARGS
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+            sudo systemctl daemon-reload
+            sudo systemctl enable litellm.service
+            ok "litellm.service installed and enabled"
+        fi
+    fi
+fi
+
+# ============================================================
 # Step 6: Done
 # ============================================================
 echo ""
@@ -642,7 +727,11 @@ if $IS_UPDATE && [ ${#NEW_AGENTS[@]} -gt 0 ]; then
 fi
 echo ""
 echo "  Start now:"
-echo "    cd $INSTALL_DIR && bash start.sh"
+if $SYSTEMD_INSTALLED; then
+    echo "    ./bridge-ctl.sh restart      (systemd)"
+else
+    echo "    cd $INSTALL_DIR && bash start.sh"
+fi
 echo ""
 if [ -n "$WEBHOOK_URL" ]; then
     echo "  Async jobs will push results to: $WEBHOOK_URL"
@@ -696,5 +785,22 @@ if [[ "$START_NOW" =~ ^[Yy]$ ]]; then
         fi
     fi
 
-    exec bash "$INSTALL_DIR/start.sh"
+    if $SYSTEMD_INSTALLED; then
+        if $NEEDS_LITELLM; then
+            info "Starting LiteLLM + ACP Bridge via systemd..."
+            sudo systemctl start litellm.service 2>/dev/null || true
+            sleep 3
+        fi
+        sudo systemctl start acp-bridge.service
+        sleep 2
+        if curl -s --max-time 3 "http://127.0.0.1:$PORT/health" &>/dev/null; then
+            ok "ACP Bridge is running (systemd)"
+            echo "  Manage with: ./bridge-ctl.sh {status|restart|stop|logs|health}"
+        else
+            warn "Bridge started but /health not responsive yet"
+            echo "  Check logs: ./bridge-ctl.sh logs 50"
+        fi
+    else
+        exec bash "$INSTALL_DIR/start.sh"
+    fi
 fi

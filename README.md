@@ -115,7 +115,7 @@ Tell your OpenClaw bot to install the skill at the URL above, then set `ACP_TOKE
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.2
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.3
 
 ## Project Structure
 
