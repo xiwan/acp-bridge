@@ -100,6 +100,11 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
             profile.setdefault("agent", {})
             profile["agent"]["system_prompt"] = body["system_prompt"]
 
+        # Override model if provided at top level
+        if body.get("model"):
+            profile.setdefault("agent", {})
+            profile["agent"]["model"] = body["model"]
+
         # Build agent config
         base_args = harness_base_cfg.get("acp_args", []) if harness_base_cfg else []
         agent_cfg = {

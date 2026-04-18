@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.15.1 | 2026-04-18 | Session reuse per (agent, channel_id) to avoid spawning new CLI per Discord message; `POST /harness` supports `model` field to override auto model selection; Job formatters (Discord/Feishu/Fallback) now read from `default_formatter.yml` |
 | v0.15.0 | 2026-04-18 | Pluggable message template system: all webhook/status messages (pipeline, job, agent) defined in `src/templates/default_formatter.yml`. Change message format by editing YAML only — no code changes needed. `PipelineFormatter` + `fmt()` helper replace hardcoded strings in pipeline.py and agents.py |
 | v0.14.6 | 2026-04-18 | systemd lifecycle management + `bridge-ctl.sh` self-bootstrap script. Kiro agents inside Bridge can now safely restart Bridge via `./bridge-ctl.sh restart` (systemd-backed). OPERATIONS.md updated: Phase 0 gains bridge-ctl rules, Phase 6 uses systemd instead of Docker as primary restart method |
 | v0.14.5 | 2026-04-18 | Enhanced `GET /health`: three-state status (ok/degraded/unhealthy), process pool watermark, system memory usage, per-agent summary, async job queue summary, LiteLLM dependency status, human-readable uptime |
