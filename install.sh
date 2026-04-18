@@ -648,6 +648,33 @@ if [ -n "$WEBHOOK_URL" ]; then
     echo "  Async jobs will push results to: $WEBHOOK_URL"
     echo ""
 fi
+# --- OpenClaw skill setup hint (shown once) ---
+PORT=$(grep -E '^\s*port:' "$CONFIG_FILE" 2>/dev/null | head -1 | awk '{print $2}')
+PORT=${PORT:-18010}
+PRIVATE_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+PUBLIC_IP=$(curl -s --max-time 3 http://checkip.amazonaws.com 2>/dev/null || curl -s --max-time 3 http://ifconfig.me 2>/dev/null || echo "")
+
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│  🦞 OpenClaw Skill Setup                                     │"
+echo "│                                                              │"
+echo "│  Tell your OpenClaw bot to install the ACP Bridge skill:     │"
+echo "│                                                              │"
+echo "│  Skill URL:                                                  │"
+echo "│    https://github.com/xiwan/acp-bridge/tree/main/skill       │"
+echo "│                                                              │"
+echo "│  Then set these env vars in OpenClaw:                        │"
+echo "│                                                              │"
+printf "│    ACP_TOKEN=%s\n" "$BRIDGE_TOKEN"
+if [ -n "$PRIVATE_IP" ]; then
+printf "│    ACP_BRIDGE_URL=http://%s:%s  (private)\n" "$PRIVATE_IP" "$PORT"
+fi
+if [ -n "$PUBLIC_IP" ]; then
+printf "│    ACP_BRIDGE_URL=http://%s:%s  (public)\n" "$PUBLIC_IP" "$PORT"
+fi
+echo "│                                                              │"
+echo "└──────────────────────────────────────────────────────────────┘"
+echo ""
+
 ask "Start ACP Bridge now? [Y/n]"
 read_input START_NOW "y"
 if [[ "$START_NOW" =~ ^[Yy]$ ]]; then

@@ -36,7 +36,22 @@ A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI C
 curl -fsSL https://raw.githubusercontent.com/xiwan/acp-bridge/main/install.sh | bash
 ```
 
-Interactive installer: auto-detects agent CLIs, configures tokens, generates `config.yaml`, and starts the server. See [Quick Start](#quick-start) for manual setup.
+Interactive installer: auto-detects agent CLIs, configures tokens, generates `config.yaml`, and starts the server. On completion, the installer prints the **OpenClaw skill setup info** you need to connect your IM bot:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  🦞 OpenClaw Skill Setup                                     │
+│                                                              │
+│  Skill URL:                                                  │
+│    https://github.com/xiwan/acp-bridge/tree/main/skill       │
+│                                                              │
+│  Then set these env vars in OpenClaw:                        │
+│    ACP_TOKEN=<your-token>                                    │
+│    ACP_BRIDGE_URL=http://<your-ip>:18010                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Tell your OpenClaw bot to install the skill at the URL above, then set `ACP_TOKEN` and `ACP_BRIDGE_URL` so it can reach the Bridge. See [Quick Start](#quick-start) for manual setup.
 
 ## When to Use ACP Bridge
 
@@ -100,7 +115,7 @@ Interactive installer: auto-detects agent CLIs, configures tokens, generates `co
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.1
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.2
 
 ## Project Structure
 
