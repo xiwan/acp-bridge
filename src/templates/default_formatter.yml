@@ -19,9 +19,11 @@ pipeline:
 # ── Job ───────────────────────────────────────────
 job:
   summary_ok: "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s"
-  summary_fail: "📨 **{agent}** `{job_id}` ❌ {error}"
-  result_header: "📄 **Result** — {agent} `{job_id}`"
+  summary_fail: "📨 **{agent}** `{job_id}`\n> ❌ {error}"
+  tools_header: "🔧 **Tools**"
   tools_line: "> ✅ `{tool}`"
+  result_header: "📄 **Result** — {agent} `{job_id}`"
+  result_header_part: "📄 **Result** — {agent} `{job_id}` [{part}/{total}]"
   footer: "⏱️ {dur}s"
 
 # ── Agent Status ──────────────────────────────────

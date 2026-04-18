@@ -182,33 +182,38 @@ class DiscordFormatter(JobFormatter):
     """Discord: summary card + body chunks (2000 char limit)."""
 
     text_limit: int = 1900
-    chunk_threshold: int = 2
 
     def format(self, job: Job, target: str, base_url: str = "") -> list[dict]:
         dur = _duration(job)
         payloads = []
 
         # 1) Summary
-        summary = [f"📨 **ACP Bridge** — {job.agent} `{job.job_id}`"]
         if job.status == "failed":
-            summary.append(f"> ❌ {job.error}")
+            summary = fmt("job", "summary_fail", "📨 **{agent}** `{job_id}`\n> ❌ {error}",
+                          agent=job.agent, job_id=job.job_id, error=job.error)
         else:
-            summary.append(f"> ✅ Completed in {dur}s")
+            summary = fmt("job", "summary_ok", "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s",
+                          agent=job.agent, job_id=job.job_id, dur=dur)
         if job.tools:
-            summary.append(f">\n> 🔧 **Tools**")
-            for t in job.tools[:10]:
-                summary.append(f"> ✅ `{t}`")
-        summary.append(f">\n> ⏱️ {dur}s")
-        payloads.append(self._msg(target, "\n".join(summary)))
+            tools_hdr = fmt("job", "tools_header", "🔧 **Tools**")
+            tool_lines = "\n".join(
+                fmt("job", "tools_line", "> ✅ `{tool}`", tool=t) for t in job.tools[:10])
+            summary += f"\n> \n> {tools_hdr}\n{tool_lines}"
+        summary += f"\n> \n> {fmt('job', 'footer', '⏱️ {dur}s', dur=dur)}"
+        payloads.append(self._msg(target, summary))
 
         # 2) Body
         if job.status == "completed" and job.result.strip():
             chunks = _split(job.result, self.text_limit - 100)
             for i, chunk in enumerate(chunks):
-                header = f"📄 **Result** — {job.agent} `{job.job_id[:8]}`"
                 if len(chunks) > 1:
-                    header += f" [{i+1}/{len(chunks)}]"
-                body = "\n".join(f"> {line}" if line else ">" for line in chunk.splitlines())
+                    header = fmt("job", "result_header_part",
+                                 "📄 **Result** — {agent} `{job_id}` [{part}/{total}]",
+                                 agent=job.agent, job_id=job.job_id[:8], part=i+1, total=len(chunks))
+                else:
+                    header = fmt("job", "result_header", "📄 **Result** — {agent} `{job_id}`",
+                                 agent=job.agent, job_id=job.job_id[:8])
+                body = _quote(chunk)
                 payloads.append(self._msg(target, f"{header}\n{body}"))
 
         return payloads
@@ -228,20 +233,18 @@ class FeishuFormatter(JobFormatter):
         dur = _duration(job)
         payloads = []
 
-        # 1) Summary (use code fence to trigger card mode in OpenClaw)
-        lines = [f"**🤖 {job.agent}** — `{job.job_id}`", ""]
+        # 1) Summary
         if job.status == "failed":
-            lines.append(f"❌ {job.error}")
+            summary = fmt("job", "summary_fail", "📨 **{agent}** `{job_id}`\n> ❌ {error}",
+                          agent=job.agent, job_id=job.job_id, error=job.error)
         else:
-            lines.append(f"✅ Completed in {dur}s")
+            summary = fmt("job", "summary_ok", "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s",
+                          agent=job.agent, job_id=job.job_id, dur=dur)
         if job.tools:
-            lines.append("")
-            lines.append("🔧 **Tools**")
-            lines.append("```")
-            lines.extend(t for t in job.tools[:10])
-            lines.append("```")
-        lines.append(f"\n⏱️ {dur}s")
-        payloads.append(self._msg(target, "\n".join(lines)))
+            summary += f"\n\n{fmt('job', 'tools_header', '🔧 **Tools**')}"
+            summary += "\n```\n" + "\n".join(t for t in job.tools[:10]) + "\n```"
+        summary += f"\n\n{fmt('job', 'footer', '⏱️ {dur}s', dur=dur)}"
+        payloads.append(self._msg(target, summary))
 
         # 2) Body chunks
         if job.status == "completed" and job.result.strip():
@@ -259,42 +262,35 @@ class FeishuFormatter(JobFormatter):
 
 
 class FallbackFormatter(JobFormatter):
-    """Generic quote-block format (original behavior)."""
+    """Generic quote-block format."""
 
     def format(self, job: Job, target: str, base_url: str = "") -> list[dict]:
         dur = _duration(job)
-        header = f"📨 **ACP Bridge** — {job.agent} `{job.job_id}`\n>"
-
         if job.status == "failed":
-            body = f"> ❌ {job.error}"
+            header = fmt("job", "summary_fail", "📨 **{agent}** `{job_id}`\n> ❌ {error}",
+                         agent=job.agent, job_id=job.job_id, error=job.error)
         else:
-            lines = []
-            if job.tools:
-                for t in job.tools[:10]:
-                    lines.append(f"> 🔧 `{t}`")
-                lines.append(">")
-            for ln in job.result.split("\n"):
-                lines.append(f"> {ln}")
-            body = "\n".join(lines)
+            header = fmt("job", "summary_ok", "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s",
+                         agent=job.agent, job_id=job.job_id, dur=dur)
 
-        footer = f">\n📨 **Done** — {dur}s"
+        body = ""
+        if job.tools:
+            body += "\n".join(fmt("job", "tools_line", "> ✅ `{tool}`", tool=t) for t in job.tools[:10])
+            body += "\n>\n"
+        if job.result:
+            body += _quote(job.result)
 
-        chunks = _split(body, self.text_limit)
-        payloads = []
-        for i, chunk in enumerate(chunks):
-            parts = []
-            if i == 0:
-                parts.append(header)
-            if len(chunks) > 1:
-                parts.append(f"> **[{i+1}/{len(chunks)}]**")
-            parts.append(chunk)
-            if i == len(chunks) - 1:
-                parts.append(footer)
-            payloads.append({
-                "tool": "message", "action": "send",
-                "args": {"channel": "discord", "target": target, "message": "\n".join(parts)},
-            })
-        return payloads
+        footer = fmt("job", "footer", "⏱️ {dur}s", dur=dur)
+
+        full = header
+        if body:
+            full += "\n" + body
+        full += f"\n\n{footer}"
+
+        chunks = _split(full, self.text_limit)
+        return [{"tool": "message", "action": "send",
+                 "args": {"channel": "discord", "target": target, "message": c}}
+                for c in chunks]
 
 
 _FORMATTERS: dict[str, JobFormatter] = {

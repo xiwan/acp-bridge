@@ -35,18 +35,33 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
         input: list[Message], context: Context
     ) -> AsyncGenerator[RunYield, RunYieldResume]:
         prompt = "".join(part.content for msg in input for part in msg.parts if part.content)
-        session_id = str(context.session.id) if context.session else str(uuid.uuid5(uuid.NAMESPACE_DNS, agent_name))
-        # Extract cwd from first message part metadata
+        # Extract metadata: cwd, channel_id, explicit session_id
         cwd = ""
+        channel_id = ""
+        explicit_session = ""
         for msg in input:
             for part in msg.parts:
-                if part.metadata and part.metadata.get("cwd"):
-                    cwd = part.metadata["cwd"]
-                    break
-            if cwd:
-                break
+                if part.metadata:
+                    if not cwd and part.metadata.get("cwd"):
+                        cwd = part.metadata["cwd"]
+                    if not channel_id and part.metadata.get("channel_id"):
+                        channel_id = part.metadata["channel_id"]
+                    if not explicit_session and part.metadata.get("session_id"):
+                        explicit_session = part.metadata["session_id"]
 
-        log.info("acp_start: agent=%s session=%s len=%d cwd=%s", agent_name, session_id, len(prompt), cwd or "(default)")
+        # Session reuse strategy:
+        # 1. channel_id → per (agent, channel) — IM scenarios
+        # 2. explicit session_id in metadata → caller override
+        # 3. fallback → one process per agent
+        if channel_id:
+            session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{agent_name}:{channel_id}"))
+        elif explicit_session:
+            session_id = explicit_session
+        else:
+            session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, agent_name))
+
+        log.info("acp_start: agent=%s session=%s len=%d cwd=%s channel=%s",
+                 agent_name, session_id, len(prompt), cwd or "(default)", channel_id or "(none)")
 
         try:
             conn = await pool.get_or_create(agent_name, session_id, cwd=cwd, profile=profile)
