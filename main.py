@@ -218,7 +218,8 @@ def main():
     webhook_default_target = webhook_cfg.get("target", webhook_cfg.get("discord_target", ""))
     openclaw_url = webhook_cfg.get("url", "")
 
-    health_routes.register(app, _VERSION, start_time, agents_cfg, pool, ttl_hours)
+    health_routes.register(app, _VERSION, start_time, agents_cfg, pool, ttl_hours,
+                           job_mgr=job_mgr, litellm_cfg=litellm_cfg)
     jobs_routes.register(app, job_mgr, webhook_account_id, webhook_default_target)
     tools_routes.register(app, openclaw_url, webhook_cfg.get("token", ""), webhook_account_id)
     upload_dir = srv_cfg.get("upload_dir", "/tmp/acp-uploads")

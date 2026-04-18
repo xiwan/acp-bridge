@@ -2,6 +2,8 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.14.6 | 2026-04-18 | systemd lifecycle management + `bridge-ctl.sh` self-bootstrap script. Kiro agents inside Bridge can now safely restart Bridge via `./bridge-ctl.sh restart` (systemd-backed). OPERATIONS.md updated: Phase 0 gains bridge-ctl rules, Phase 6 uses systemd instead of Docker as primary restart method |
+| v0.14.5 | 2026-04-18 | Enhanced `GET /health`: three-state status (ok/degraded/unhealthy), process pool watermark, system memory usage, per-agent summary, async job queue summary, LiteLLM dependency status, human-readable uptime |
 | v0.14.4 | 2026-04-17 | SKILL planner: Step 2 gains a **capability–task gate** — presets with `Write? = no` must not be paired with persistence verbs (write/save/produce doc/create md/...); Step 3 makes this gate a hard stop before showing the plan card. Troubleshooting gains the recurring 0-byte-artifact symptom (incident `493987b9` PM/QA text-stranded PRD + report) |
 | v0.14.3 | 2026-04-17 | SKILL planner: dependency-first mode selection. New mandatory `Task dependency` row in Step 3 decision summary (sequential / independent / shared); Step 5 cheatsheet prepended with a decision tree driven by dependency instead of user phrasing. Orchestration templates gain a `Dep.` column. Anti-pattern noted: don't pick `sequence` just because user said "先…再…" when tasks are actually independent |
 | v0.14.2 | 2026-04-17 | Capture harness-factory 0.8.0's `activated.resolvedModel` on `session/new`; `GET /harness` response now includes `resolved_model` (the actual model picked, populated after first call). Backward compatible with older harness-factory and non-harness ACP agents |

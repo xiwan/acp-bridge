@@ -100,7 +100,7 @@ Interactive installer: auto-detects agent CLIs, configures tokens, generates `co
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.14.4
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.14.6
 
 ## Project Structure
 
@@ -109,6 +109,7 @@ acp-bridge/
 ├── main.py              # Entry: process pool, handler registration, job/health endpoints
 ├── install.sh           # Interactive one-line installer (agent detection, token setup, config generation)
 ├── start.sh             # Quick start: loads .env, starts LiteLLM + Bridge
+├── bridge-ctl.sh        # Lifecycle control: status/restart/stop/logs/health (systemd)
 ├── src/
 │   ├── acp_client.py    # ACP process pool + JSON-RPC connection management
 │   ├── agents.py        # Agent handlers (ACP mode + PTY fallback)
