@@ -13,7 +13,7 @@ from pathlib import Path
 import httpx
 
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
-from .formatters import PipelineFormatter, get_template
+from .formatters import PipelineFormatter, get_template, get_prompt_suffix
 from .sse import transform_notification
 from .store import PipelineStore
 
@@ -478,14 +478,14 @@ class PipelineManager:
         if cfg.get("mode") == "pty":
             step = PipelineStep(agent=agent, prompt_template="")
             pty_cfg = {**cfg, "working_dir": cwd} if cwd else cfg
-            await self._exec_step_pty(step, prompt, pty_cfg)
+            await self._exec_step_pty(step, prompt + get_prompt_suffix(), pty_cfg)
             return step.result
         # ACP mode
         parts = []
         prompt_result = None
         try:
             conn = await self._pool.get_or_create(agent, session_id, cwd=cwd)
-            async for notification in conn.session_prompt(prompt, idle_timeout=timeout):
+            async for notification in conn.session_prompt(prompt + get_prompt_suffix(), idle_timeout=timeout):
                 if "_prompt_result" in notification:
                     prompt_result = notification["_prompt_result"]
                     break
@@ -536,9 +536,9 @@ class PipelineManager:
         cfg = self._agents_cfg.get(step.agent, {})
         if cfg.get("mode") == "pty":
             pty_cfg = {**cfg, "working_dir": shared_cwd} if shared_cwd else cfg
-            await self._exec_step_pty(step, prompt, pty_cfg)
+            await self._exec_step_pty(step, prompt + get_prompt_suffix(), pty_cfg)
         else:
-            await self._exec_step_acp(step, prompt, session_id, cwd=shared_cwd)
+            await self._exec_step_acp(step, prompt + get_prompt_suffix(), session_id, cwd=shared_cwd)
         step.completed_at = time.time()
         log.info("step_done: pipeline=%s agent=%s status=%s duration=%.1fs",
                  pl.pipeline_id, step.agent, step.status,

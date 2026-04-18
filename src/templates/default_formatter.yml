@@ -9,12 +9,12 @@
 # ── Pipeline ──────────────────────────────────────
 pipeline:
   start: "🔗 **Pipeline** `{id}` started: {flow}"
-  step_ok: "🔗 `{id}` ✅ Step {idx}/{total}: **{agent}** ({dur}s) — {preview}"
-  step_fail: "🔗 `{id}` ❌ Step {idx}/{total}: **{agent}** ({dur}s) — {error}"
+  step_ok: "🔗 `{id}` ✅ Step {idx}/{total}: **{agent}** ({dur}s)\n{preview}"
+  step_fail: "🔗 `{id}` ❌ Step {idx}/{total}: **{agent}** ({dur}s)\n{error}"
   done_ok: "🔗 **Pipeline** `{id}` ✅ 全部完成，耗时 {dur}s"
-  done_fail: "🔗 **Pipeline** `{id}` ❌ {error} | 耗时 {dur}s"
+  done_fail: "🔗 **Pipeline** `{id}` ❌ 失败，耗时 {dur}s\n{error}"
   detail_line: "> {icon} {idx}. {agent}: {dur}s"
-  turn: "🔗 `{id}` 💬 Turn {turn}: {icon} **{agent}** ({dur}s) — {preview}"
+  turn: "🔗 `{id}` 💬 Turn {turn}: {icon} **{agent}** ({dur}s)\n{preview}"
 
 # ── Job ───────────────────────────────────────────
 job:
@@ -39,6 +39,10 @@ components:
 
 # ── Global Settings ──────────────────────────────
 settings:
-  preview_limit: 100
   text_limit: 1900
   chunk_overlap: 50
+
+# ── Prompt Suffix ────────────────────────────────
+# Appended to every agent prompt (pipeline steps, async jobs, etc.)
+# Controls output verbosity at the Bridge level — all agents see this.
+prompt_suffix: "\n\n[IMPORTANT: Be concise. Summarize your result in a few sentences. Do not output verbose logs, full file contents, or lengthy explanations. 请言简意赅地总结结果。]"

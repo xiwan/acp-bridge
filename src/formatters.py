@@ -51,6 +51,11 @@ def get_setting(key: str, default=None):
     return _load_templates().get("settings", {}).get(key, default)
 
 
+def get_prompt_suffix() -> str:
+    """Get the prompt suffix appended to all agent prompts."""
+    return _load_templates().get("prompt_suffix", "")
+
+
 def fmt(section: str, key: str, default: str = "", **kwargs) -> str:
     """Get template and format with kwargs. Missing vars left as-is."""
     tpl = get_template(section, key, default)
@@ -63,6 +68,16 @@ def fmt(section: str, key: str, default: str = "", **kwargs) -> str:
 # ── Pipeline Formatter ───────────────────────────────────
 
 AGENT_ICONS = {"kiro": "🟢", "claude": "🟣", "codex": "🔵", "qwen": "🟠", "opencode": "⚪"}
+
+
+def _quote(text: str) -> str:
+    """Prefix every line with '> ' for markdown quote blocks."""
+    return "\n".join(f"> {line}" for line in text.splitlines()) if text else ""
+
+
+def _preview(text: str) -> str:
+    """Quote multi-line text. No truncation — content brevity is controlled by agent prompts."""
+    return _quote(text.strip())
 
 
 class PipelineFormatter:
@@ -79,26 +94,23 @@ class PipelineFormatter:
     def format_step(pipeline_id: str, step_idx: int, total: int,
                     agent: str, dur: float, status: str,
                     result: str = "", error: str = "") -> str:
-        limit = get_setting("preview_limit", 100)
         if status == "failed":
-            summary = error[:limit] + ("..." if len(error) > limit else "")
             return fmt("pipeline", "step_fail",
-                       "🔗 `{id}` ❌ Step {idx}/{total}: **{agent}** ({dur}s) — {error}",
+                       "🔗 `{id}` ❌ Step {idx}/{total}: **{agent}** ({dur}s)\n{error}",
                        id=pipeline_id[:8], idx=step_idx, total=total,
-                       agent=agent, dur=dur, error=summary)
-        preview = result[:limit] + ("..." if len(result) > limit else "")
+                       agent=agent, dur=dur, error=_quote(error))
         return fmt("pipeline", "step_ok",
-                   "🔗 `{id}` ✅ Step {idx}/{total}: **{agent}** ({dur}s) — {preview}",
+                   "🔗 `{id}` ✅ Step {idx}/{total}: **{agent}** ({dur}s)\n{preview}",
                    id=pipeline_id[:8], idx=step_idx, total=total,
-                   agent=agent, dur=dur, preview=preview)
+                   agent=agent, dur=dur, preview=_preview(result))
 
     @staticmethod
     def format_done(pipeline_id: str, status: str, dur: float,
                     error: str = "", steps: list | None = None) -> str:
         if status == "failed":
             header = fmt("pipeline", "done_fail",
-                         "🔗 **Pipeline** `{id}` ❌ {error} | 耗时 {dur}s",
-                         id=pipeline_id[:8], error=error, dur=dur)
+                         "🔗 **Pipeline** `{id}` ❌ 失败，耗时 {dur}s\n{error}",
+                         id=pipeline_id[:8], error=_quote(error), dur=dur)
         else:
             header = fmt("pipeline", "done_ok",
                          "🔗 **Pipeline** `{id}` ✅ 全部完成，耗时 {dur}s",
@@ -120,12 +132,10 @@ class PipelineFormatter:
     def format_turn(pipeline_id: str, turn: int, agent: str,
                     content: str, dur: float) -> str:
         icon = AGENT_ICONS.get(agent, "🤖")
-        limit = get_setting("preview_limit", 100)
-        preview = content[:limit] + ("..." if len(content) > limit else "")
         return fmt("pipeline", "turn",
-                   "🔗 `{id}` 💬 Turn {turn}: {icon} **{agent}** ({dur}s) — {preview}",
+                   "🔗 `{id}` 💬 Turn {turn}: {icon} **{agent}** ({dur}s)\n{preview}",
                    id=pipeline_id[:8], turn=turn, icon=icon,
-                   agent=agent, dur=dur, preview=preview)
+                   agent=agent, dur=dur, preview=_preview(content))
 
 
 # ── Job Formatters ───────────────────────────────────────
