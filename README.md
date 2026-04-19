@@ -350,6 +350,7 @@ pool:
 webhook:
   url: "http://<openclaw-ip>:18789/tools/invoke"
   token: "${OPENCLAW_TOKEN}"
+  format: "openclaw"                            # "openclaw" (default) or "generic"
   account_id: "default"
   target: "channel:<default-channel-id>"        # also accepts feishu targets
 
@@ -457,11 +458,39 @@ export ACP_TOKEN=<your-token>
 ./skill/scripts/acp-client.sh -s 00000000-0000-0000-0000-000000000001 "continue"
 ```
 
-## Async Jobs + Discord Push
+## Async Jobs + IM Push
 
-Submit long-running tasks and get results pushed to Discord automatically.
+Submit long-running tasks and get results pushed to Discord/Feishu/Telegram automatically.
 
 ![Async Job Sample](statics/sample-aysnc-job.png)
+
+### Webhook Formats
+
+Bridge supports two webhook callback formats:
+
+| Format | Target | Payload |
+|--------|--------|---------|
+| `openclaw` (default) | OpenClaw Gateway `/tools/invoke` | `{"tool":"message","action":"send","args":{...}}` + OpenClaw headers |
+| `generic` | Any HTTP endpoint (Hermes, custom) | `{"message":"...","agent":"...","status":"...","job_id":"..."}` |
+
+Configure in `config.yaml`:
+
+```yaml
+# OpenClaw (default)
+webhook:
+  url: "http://<openclaw-ip>:18789/tools/invoke"
+  token: "${OPENCLAW_TOKEN}"
+  format: "openclaw"
+  account_id: "default"
+  target: "channel:<discord-channel-id>"
+
+# Hermes Agent (via webhook adapter)
+webhook:
+  url: "http://<hermes-ip>:8644/webhooks/<route-name>"
+  format: "generic"
+```
+
+With Hermes, configure a webhook route on the Hermes side to deliver results to any IM platform (Discord, Telegram, Feishu, Slack, etc.). See [Hermes Webhooks docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks) for route setup.
 
 ### Submit
 
@@ -504,11 +533,12 @@ curl http://<bridge>:18010/jobs/<job_id> \
 ### Callback Flow
 
 ```
-POST /jobs → Bridge executes in background → On completion POST to OpenClaw /tools/invoke
+POST /jobs → Bridge executes in background → On completion POST to webhook target
   → OpenClaw sends to Discord/Feishu/... via message tool → User receives result
+  → or Hermes delivers to Discord/Telegram/Slack/... via webhook route
 ```
 
-> **Note:** Async job push currently requires [OpenClaw](https://github.com/NousResearch/hermes-agent) (formerly OpenClaw Gateway) or a direct Discord webhook as the callback target. [Hermes Agent](https://github.com/NousResearch/hermes-agent) does not yet expose a "send message" HTTP API — its webhook endpoint (`/webhooks/{route}`) triggers a full agent run rather than relaying messages directly. Hermes support is planned for a future release.
+> **Note:** Async job push currently requires [OpenClaw](https://github.com/NousResearch/hermes-agent) (formerly OpenClaw Gateway) or a direct Discord webhook as the callback target. [Hermes Agent](https://github.com/NousResearch/hermes-agent) is also supported via its webhook adapter (`format: "generic"` + Hermes webhook route with `deliver` targeting any IM platform).
 
 ### target Format
 

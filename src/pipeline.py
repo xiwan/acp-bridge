@@ -227,6 +227,8 @@ class PipelineManager:
                  pl.pipeline_id, pl.status, pl.completed_at - pl.created_at)
         await self._webhook(pl)
 
+    _CHUNK_SIZE = 1800
+
     async def _send_webhook(self, pl: Pipeline, message: str):
         """Send a single message payload via webhook."""
         url = self._webhook_url
@@ -237,30 +239,36 @@ class PipelineManager:
         account_id = pl.webhook_meta.get("account_id", "")
         fmt = pl.webhook_meta.get("format", self._webhook_format)
 
-        if fmt == "generic":
-            payload = {"pipeline_id": pl.pipeline_id, "mode": pl.mode,
-                       "status": pl.status, "message": message}
-        else:
-            payload = {"tool": "message", "action": "send",
-                       "args": {"channel": channel, "target": target, "message": message}}
-
         headers = {"Content-Type": "application/json"}
         if self._webhook_token:
             headers["Authorization"] = f"Bearer {self._webhook_token}"
         if fmt != "generic" and account_id:
             headers["x-openclaw-account-id"] = account_id
             headers["x-openclaw-message-channel"] = channel
+
+        if fmt == "generic":
+            parts = [message[i:i+self._CHUNK_SIZE] for i in range(0, len(message), self._CHUNK_SIZE)] or [""]
+            payloads = [{"pipeline_id": pl.pipeline_id, "mode": pl.mode,
+                         "status": pl.status, "message": p,
+                         "part": i+1, "total_parts": len(parts)}
+                        for i, p in enumerate(parts)]
+        else:
+            payloads = [{"tool": "message", "action": "send",
+                         "args": {"channel": channel, "target": target, "message": message}}]
+
         try:
             if not self._http or self._http.is_closed:
                 self._http = httpx.AsyncClient(timeout=10)
-            resp = await self._http.post(url, json=payload, headers=headers)
-            log.info("pipeline_webhook: id=%s status=%d", pl.pipeline_id, resp.status_code)
-            if resp.status_code == 401:
-                log.warning("pipeline_webhook_unauthorized: id=%s — token may be missing or wrong",
-                            pl.pipeline_id)
-            elif resp.status_code != 200:
-                log.warning("pipeline_webhook_rejected: id=%s body=%s",
-                            pl.pipeline_id, resp.text[:300])
+            for idx, payload in enumerate(payloads):
+                resp = await self._http.post(url, json=payload, headers=headers)
+                log.info("pipeline_webhook: id=%s status=%d part=%d/%d",
+                         pl.pipeline_id, resp.status_code, idx+1, len(payloads))
+                if resp.status_code != 200:
+                    log.warning("pipeline_webhook_rejected: id=%s body=%s",
+                                pl.pipeline_id, resp.text[:300])
+                    return
+                if len(payloads) > 1:
+                    await asyncio.sleep(0.5)
         except Exception as e:
             log.error("pipeline_webhook_failed: id=%s error=%s", pl.pipeline_id, e)
 

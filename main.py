@@ -303,7 +303,7 @@ def main():
     if job_mgr:
         log.info("jobs: monitor=60s stuck_timeout=600s webhook=%s", webhook_cfg.get("url", "(none)"))
     webhook_token = webhook_cfg.get("token", "")
-    if webhook_cfg.get("url") and not webhook_token:
+    if webhook_cfg.get("url") and not webhook_token and webhook_cfg.get("format", "openclaw") != "generic":
         log.warning("webhook: url is set but token is empty — webhook calls will fail with 401. "
                     "Set OPENCLAW_TOKEN env var or check config.yaml")
     if openclaw_url:

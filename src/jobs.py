@@ -266,6 +266,8 @@ class JobManager:
 
     MAX_WEBHOOK_RETRIES = 5
 
+    _CHUNK_SIZE = 1800  # safe for Discord 2000-char limit after JSON overhead
+
     async def _webhook(self, job: Job):
         url = job.callback_url
         is_discord_webhook = "discord.com/api/webhooks" in url
@@ -274,12 +276,15 @@ class JobManager:
         fmt = job.callback_meta.get("format", self._webhook_format)
 
         if fmt == "generic":
-            result_text = (job.result or "")[:4000]
-            payloads = [{"agent": job.agent_name, "job_id": job.job_id,
-                         "status": job.status, "message": result_text,
-                         "error": job.error or None,
-                         **{k: v for k, v in job.callback_meta.items()
-                            if k not in ("format",)}}]
+            text = job.result or ""
+            meta = {"agent": job.agent, "job_id": job.job_id,
+                    "status": job.status, "error": job.error or None}
+            if not text:
+                payloads = [{**meta, "message": ""}]
+            else:
+                parts = [text[i:i+self._CHUNK_SIZE] for i in range(0, len(text), self._CHUNK_SIZE)]
+                payloads = [{**meta, "message": p, "part": i+1, "total_parts": len(parts)}
+                            for i, p in enumerate(parts)]
         elif is_discord_webhook:
             payloads = [self._format_discord_embed(job)]
         elif target:
