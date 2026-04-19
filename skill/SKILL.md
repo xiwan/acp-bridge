@@ -24,6 +24,26 @@ chmod +x "$ACP_CLIENT"
 
 If either `ACP_BRIDGE_URL` or `ACP_TOKEN` is missing, **stop and ask the user**. Never echo the token.
 
+## Init Check (auto, first use only)
+
+On the **first** ACP-related request in a session, run this before anything else:
+
+```bash
+$ACP_CLIENT -l
+```
+
+Display the result as a status card:
+
+```
+🌉 ACP Bridge connected
+   URL:    $ACP_BRIDGE_URL
+   Agents: kiro ✅ · claude ✅ · hermes ✅ · codex ✅ ...
+```
+
+- If the call fails → show error and stop (don't proceed with the user's request)
+- If it succeeds → cache the result, skip on subsequent requests in the same session
+- Never re-run unless the user explicitly asks (`/cli status` or similar)
+
 ## Message Routing
 
 First match wins:
