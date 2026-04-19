@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.15.10 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.15.10 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -62,7 +62,7 @@ Two sources — consider **both** before orchestrating:
 
 | Source | When to use |
 |--------|-------------|
-| Static agents (kiro/claude/codex/qwen/opencode/harness…) | General tasks, known strengths, fast |
+| Static agents (kiro/claude/codex/qwen/opencode/hermes/harness…) | General tasks, known strengths, fast |
 | Harness-factory dynamic agents (`POST /harness`) | Specific permission set, specialized role, or multiple distinct presets collaborating |
 
 Fetch the live list (includes user's earlier dynamic harnesses):
@@ -253,7 +253,7 @@ Rule: if `Write? = no`, do **not** instruct the agent to "save a report" — it 
 
 ## Commands (aliases)
 
-`./cli <prompt>` (default agent) · `./cli ko|cc|cx|qw|oc|hf "..."` (kiro / claude / codex / qwen / opencode / harness) · `/chat ko|cc [--cwd <path>]` (enter) · `/chat end|status` · `/upload <file>`
+`./cli <prompt>` (default agent) · `./cli ko|cc|cx|qw|oc|hm|hf "..."` (kiro / claude / codex / qwen / opencode / hermes / harness) · `/chat ko|cc [--cwd <path>]` (enter) · `/chat end|status` · `/upload <file>`
 
 ## Dynamic Harness (usage)
 
