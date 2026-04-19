@@ -144,6 +144,17 @@ class AcpConnection:
     def alive(self) -> bool:
         return self.proc.returncode is None
 
+    @property
+    def state(self) -> str:
+        """Read-only view of connection state: dead | busy | stale | idle."""
+        if not self.alive:
+            return "dead"
+        if self._busy:
+            return "busy"
+        if self.session_reset:
+            return "stale"
+        return "idle"
+
     async def initialize(self) -> dict:
         self._start_reader()
         result = await self._send_request("initialize", {

@@ -161,6 +161,7 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
                         sessions.append({
                             "session_id": sid,
                             "alive": conn.alive,
+                            "state": conn.state,
                             "idle": round(time.time() - conn.last_active, 1),
                         })
             agent_list.append({
