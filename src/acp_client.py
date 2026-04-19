@@ -77,7 +77,11 @@ class AcpConnection:
     async def _drain_stderr(self) -> None:
         try:
             while True:
-                line = await self.proc.stderr.readline()
+                try:
+                    line = await self.proc.stderr.readline()
+                except (asyncio.LimitOverrunError, ValueError):
+                    # line exceeded StreamReader limit — skip to next newline
+                    continue
                 if not line:
                     break
                 if self.verbose:
@@ -88,7 +92,11 @@ class AcpConnection:
     async def _read_loop(self) -> None:
         try:
             while True:
-                line = await self.proc.stdout.readline()
+                try:
+                    line = await self.proc.stdout.readline()
+                except (asyncio.LimitOverrunError, ValueError):
+                    log.warning("acp_read: line too long, skipping")
+                    continue
                 if not line:
                     break
                 try:

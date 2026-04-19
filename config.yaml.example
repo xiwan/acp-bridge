@@ -70,6 +70,8 @@ agents:
     command: "codex"
     args: ["exec", "--full-auto", "--skip-git-repo-check"]
     working_dir: "/tmp"
+    idle_timeout: 300      # kill if no stdout for this many seconds
+    max_duration: 600      # hard cap on total wall-clock runtime (seconds)
     description: "OpenAI Codex CLI agent"
     metadata:
       author: {name: "OpenAI", url: "https://openai.com"}

@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.15.4 | 2026-04-19 | Robustness: readline now tolerates `LimitOverrunError` (>64KB single line no longer kills connections); PTY agents gain `max_duration` hard cap (default 600s) to prevent runaway subprocesses whose output dribbles in below `idle_timeout`; README gains a `⚠️ Security Considerations` section covering the token-as-shell risk, `--trust-all-tools` implications, prompt injection, and recommended deployment shapes |
 | v0.15.3 | 2026-04-18 | `install.sh` auto-installs systemd units before startup: generates `/etc/systemd/system/acp-bridge.service` (and `litellm.service` when Codex/Qwen is enabled), `daemon-reload` + `enable`, then starts via `systemctl start` instead of `start.sh` |
 | v0.15.2 | 2026-04-18 | `install.sh` prints OpenClaw skill setup box after install: skill URL + `ACP_TOKEN` + `ACP_BRIDGE_URL` (detects LAN/WAN IP). README install section updated with matching guidance |
 | v0.15.1 | 2026-04-18 | Session reuse per (agent, channel_id) to avoid spawning new CLI per Discord message; `POST /harness` supports `model` field to override auto model selection; Job formatters (Discord/Feishu/Fallback) now read from `default_formatter.yml` |

@@ -212,10 +212,12 @@ class JobManager:
         command = cfg["command"]
         args = cfg.get("args", [])
         idle_timeout = cfg.get("idle_timeout", 300)
+        max_duration = cfg.get("max_duration", 600)
         env = os.environ.copy()
         env.update({"TERM": "dumb", "NO_COLOR": "1", "LANG": "en_US.UTF-8"})
         env.update(cfg.get("env", {}))
         parts = []
+        _t0 = time.time()
         try:
             proc = await asyncio.create_subprocess_exec(
                 command, *args, job.prompt,
@@ -226,6 +228,13 @@ class JobManager:
                 env=env,
             )
             while True:
+                if time.time() - _t0 > max_duration:
+                    log.warning("pty_max_duration: job=%s cmd=%s dur=%ds", job.job_id, command, max_duration)
+                    proc.kill()
+                    await proc.wait()
+                    job.error = f"agent exceeded max_duration ({max_duration}s)"
+                    job.status = "failed"
+                    return
                 try:
                     line = await asyncio.wait_for(proc.stdout.readline(), timeout=idle_timeout)
                 except asyncio.TimeoutError:
@@ -235,6 +244,9 @@ class JobManager:
                     job.error = f"agent timeout (idle {idle_timeout}s)"
                     job.status = "failed"
                     return
+                except (asyncio.LimitOverrunError, ValueError):
+                    log.warning("pty_line_too_long: job=%s cmd=%s", job.job_id, command)
+                    continue
                 if not line:
                     break
                 text = ANSI_RE.sub("", line.decode()).rstrip("\n")

@@ -572,10 +572,12 @@ class PipelineManager:
         command = cfg["command"]
         args = cfg.get("args", [])
         idle_timeout = cfg.get("idle_timeout", 300)
+        max_duration = cfg.get("max_duration", 600)
         env = os.environ.copy()
         env.update({"TERM": "dumb", "NO_COLOR": "1", "LANG": "en_US.UTF-8"})
         env.update(cfg.get("env", {}))
         parts = []
+        _t0 = time.time()
         try:
             proc = await asyncio.create_subprocess_exec(
                 command, *args, prompt,
@@ -584,6 +586,12 @@ class PipelineManager:
                 cwd=cfg.get("working_dir", "/tmp"), env=env,
             )
             while True:
+                if time.time() - _t0 > max_duration:
+                    proc.kill()
+                    await proc.wait()
+                    step.error = f"agent exceeded max_duration ({max_duration}s)"
+                    step.status = "failed"
+                    return
                 try:
                     line = await asyncio.wait_for(proc.stdout.readline(), timeout=idle_timeout)
                 except asyncio.TimeoutError:
@@ -592,6 +600,8 @@ class PipelineManager:
                     step.error = f"agent timeout (idle {idle_timeout}s)"
                     step.status = "failed"
                     return
+                except (asyncio.LimitOverrunError, ValueError):
+                    continue
                 if not line:
                     break
                 text = ANSI_RE.sub("", line.decode()).rstrip("\n")

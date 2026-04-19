@@ -151,6 +151,7 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
     command = agent_cfg["command"]
     args = agent_cfg.get("args", [])
     idle_timeout = agent_cfg.get("idle_timeout", 300)
+    max_duration = agent_cfg.get("max_duration", 600)
 
     async def handler(
         input: list[Message], context: Context
@@ -180,6 +181,17 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
 
         try:
             while True:
+                if time.time() - _t0 > max_duration:
+                    log.warning("pty_max_duration: cmd=%s session=%s dur=%ds", command, session_id, max_duration)
+                    proc.kill()
+                    await proc.wait()
+                    if _stats:
+                        _stats.record(command, session_id, False, time.time() - _t0)
+                    yield MessagePart(
+                        content=fmt("agent", "agent_timeout", "[error] agent exceeded max_duration ({timeout}s)",
+                                    agent=command, timeout=max_duration) + "\n",
+                        content_type="text/plain")
+                    return
                 try:
                     line = await asyncio.wait_for(proc.stdout.readline(), timeout=idle_timeout)
                 except asyncio.TimeoutError:
@@ -193,6 +205,9 @@ def make_pty_agent_handler(agent_cfg: dict, verbose: bool = False):
                                     agent=command, timeout=idle_timeout) + "\n",
                         content_type="text/plain")
                     return
+                except (asyncio.LimitOverrunError, ValueError):
+                    log.warning("pty_line_too_long: cmd=%s session=%s", command, session_id)
+                    continue
                 if not line:
                     break
                 text = strip_ansi(line.decode()).rstrip("\n")
