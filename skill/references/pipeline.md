@@ -7,7 +7,7 @@ curl -s -X POST "$ACP_BRIDGE_URL/pipelines" \
   -H "Authorization: Bearer $ACP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "mode": "<sequence|parallel|race|random>",
+    "mode": "<sequence|parallel|race>",
     "steps": [
       {"agent": "<name>", "prompt": "<task>", "output_as": "<var>"},
       {"agent": "<name>", "prompt": "based on: {{<var>}}"}
@@ -22,7 +22,6 @@ curl -s -X POST "$ACP_BRIDGE_URL/pipelines" \
 | `sequence` | Steps in order; `{{output_as}}` passes output to next |
 | `parallel` | All concurrent; results merged |
 | `race` | All concurrent; first to complete wins |
-| `random` | Pick one randomly; others skipped |
 | `conversation` | Multi-turn dialog between agents |
 
 ## Conversation Mode

@@ -36,7 +36,7 @@ def register(app, pipeline_mgr: PipelineManager | None,
     async def submit_pipeline(req: PipelineRequest):
         if not pipeline_mgr:
             return JSONResponse({"error": "pipeline not available (no pool)"}, status_code=503)
-        if req.mode not in ("sequence", "parallel", "race", "random", "conversation"):
+        if req.mode not in ("sequence", "parallel", "race", "conversation"):
             return JSONResponse({"error": f"invalid mode: {req.mode}"}, status_code=400)
         if req.mode == "conversation":
             if len(req.participants) < 2:

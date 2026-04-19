@@ -142,7 +142,7 @@ Contributions that harden this (per-user tokens, rate limits, audit log, mTLS he
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.8
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.9
 
 ## Project Structure
 
@@ -157,7 +157,7 @@ acp-bridge/
 │   ├── agents.py        # Agent handlers (ACP mode + PTY fallback)
 │   ├── auto_detect.py   # Zero-config: scan PATH for agent CLIs, generate config
 │   ├── jobs.py          # Async job manager (submit, monitor, webhook callback)
-│   ├── pipeline.py      # Multi-agent pipeline (sequence, parallel, race, random, conversation) + shared workspace
+│   ├── pipeline.py      # Multi-agent pipeline (sequence, parallel, race, conversation) + shared workspace
 │   ├── sse.py           # ACP session/update → SSE event conversion
 │   └── security.py      # Security middleware (IP allowlist + Bearer Token)
 ├── skill/
@@ -767,14 +767,6 @@ This library is licensed under the Apache License 2.0. See the [LICENSE](LICENSE
    │          └──► qwen ────► ✗ (running)                        │
    └──────────────────────────────────────────────────────────────┘
 
-   mode: "random" — 随机选一个执行
-   ┌──────────────────────────────────────────────────────────────┐
-   │          ┌──  kiro ────  (skipped)                          │
-   │  prompt ─┼──  claude ──  (skipped)                          │
-   │          ├──► codex ───► ✓ CHOSEN! → 执行并返回             │
-   │          └──  qwen ────  (skipped)                          │
-   └──────────────────────────────────────────────────────────────┘
-
 5. /run (sessions_spawn) — OpenClaw Native Integration
    sessions_spawn(runtime="acp", agentId="kiro", task="...")
    特点：OpenClaw 原生 API，支持 thread 绑定、streaming
@@ -792,7 +784,6 @@ This library is licensed under the Apache License 2.0. See the [LICENSE](LICENSE
     sequence│ Yes      │ Chained │             │   串行接力
     parallel│ Yes      │ No      │             │   并行 / 多视角
     race    │ Yes      │ No      │             │   竞速取优
-    random  │ Yes      │ No      │             │   随机选一
     convers.│ Yes      │ Per-agent│            │   多轮对话协作
   /run      │ No       │ Yes     │ No          │ OpenClaw native spawn
 ```

@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import random
 import re
 import time
 import uuid
@@ -209,8 +208,6 @@ class PipelineManager:
                 await self._run_parallel(pl)
             elif pl.mode == "race":
                 await self._run_race(pl)
-            elif pl.mode == "random":
-                await self._run_random(pl)
             elif pl.mode == "conversation":
                 await self._run_conversation(pl)
             else:
@@ -375,18 +372,6 @@ class PipelineManager:
         else:
             pl.status = "failed"
             pl.error = "all agents failed"
-
-    async def _run_random(self, pl: Pipeline):
-        chosen = random.choice(pl.steps)
-        prompt = self._render(chosen.prompt_template, pl.context)
-        await self._exec_step(pl, chosen, prompt)
-        await self._webhook_step(pl, chosen)
-        for step in pl.steps:
-            if step is not chosen:
-                step.status = "skipped"
-        if chosen.status == "failed":
-            pl.status = "failed"
-            pl.error = f"step {chosen.agent} failed: {chosen.error}"
 
     async def _run_conversation(self, pl: Pipeline):
         participants = pl.context.get("participants", [])

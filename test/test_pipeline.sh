@@ -150,25 +150,6 @@ if [[ -n "$result" ]]; then
 fi
 
 # ============================================================
-# 7. Random: 从 5 个 agent 随机选一个
-# ============================================================
-echo ""
-echo "--- 7. Random: 5 agent 随机选 ---"
-result=$(_submit_and_wait "random:5-agent" '{
-  "mode": "random",
-  "steps": [
-    {"agent": "kiro", "prompt": "只回复 picked-kiro"},
-    {"agent": "claude", "prompt": "Just reply: picked-claude"},
-    {"agent": "codex", "prompt": "Just reply: picked-codex"},
-    {"agent": "qwen", "prompt": "只回复 picked-qwen"},
-    {"agent": "opencode", "prompt": "Just reply: picked-opencode"}
-  ]
-}' 180)
-if [[ -n "$result" ]]; then
-    run_test "random:5-agent shared_cwd" "random/" "$result"
-fi
-
-# ============================================================
 # 8. Conversation: kiro + claude
 # ============================================================
 echo ""

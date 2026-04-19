@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.15.8 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.15.9 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -104,7 +104,7 @@ The plan card must expose every key decision, not just the steps:
 - Execution mode: sync / async (async = IM push; **>60s must be async**)
 - Agent count: single / multiple (N)
 - Task dependency: sequential (B needs A's output) / independent (parallel-safe) / shared (read common workspace, no strict chain) — decide this **before** mode
-- Orchestration mode: sequence | parallel | race | random | conversation | —
+- Orchestration mode: sequence | parallel | race | conversation | —
 - Max turns: N (conversation only; else —)
 - Timeout: N seconds (default 600)
 - Push target: Discord channel / Feishu user / — (async only)
@@ -156,7 +156,7 @@ For **pipeline / conversation completion**, always append a **duration breakdown
 ⏱️  kiro 5.3s · claude 8.5s · poet-C 0.7s · total 31.9s   (6 turns, stop: MAX_TURNS)
 ```
 
-- Pull from `steps[].duration` (sequence/parallel/race/random) or `transcript[].duration` (conversation)
+- Pull from `steps[].duration` (sequence/parallel/race) or `transcript[].duration` (conversation)
 - Mark failed steps inline: `claude 12.4s (failed)`
 - Include `stop_reason` for conversation mode
 
@@ -178,7 +178,7 @@ Key rules:
 ```
 Does task B need task A's output?
  ├─ YES (strict chain)            → sequence  (or conversation if multi-turn dialog)
- ├─ NO (independent, can diverge) → parallel / race / random  (pick by intent)
+ ├─ NO (independent, can diverge) → parallel / race  (pick by intent)
  └─ PARTIAL (share workspace,
      read each other's artifacts
      but don't strictly chain)    → conversation  (or parallel + aggregate)
@@ -195,7 +195,6 @@ Phrase → mode tie-breaker (after dependency is already judged):
 | "first X, then Y" | `sequence` | 2–5 |
 | "same time" / "parallel" / "perspectives" | `parallel` | 2–4 |
 | "whoever is fastest" / "race" | `race` | 2–4 |
-| "just pick one" / "random" | `random` | 2–N |
 | "discuss" / "debate" | `conversation` | default 6, max 12 |
 
 ### Step 6 — Common intent → plan quick lookup

@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.15.9 | 2026-04-19 | Remove `random` pipeline mode (breaking). Per v0.15.8 `/stats/pipelines` data: 4/8 runs in 7 days with 50% success — lowest usage, lowest success. `/pipelines` now rejects `mode=random`. Dropped from pipeline.py dispatch, routes validator, SKILL.md planner table + decision tree, pipeline.md mode table, README summary table + diagram, test_pipeline.sh case 7. Other 4 modes (sequence/parallel/race/conversation) unchanged |
 | v0.15.8 | 2026-04-19 | New `/stats/pipelines?hours=N` endpoint: per-mode aggregation (total / completed / failed / running / avg_duration / max_duration) sourced from existing SQLite `pipelines` table. Enables data-driven decisions about pipeline mode usage |
 | v0.15.7 | 2026-04-19 | Observability: `AcpConnection.state` read-only property (`dead`/`busy`/`stale`/`idle`) computed from existing flags; exposed per session in `/health/agents`. Zero-risk additive change, no state-machine refactor |
 | v0.15.6 | 2026-04-19 | Cross-service trace propagation: `acp-client.sh` forwards optional `ACP_TRACE_ID` env var as `X-Request-Id` header; OpenClaw/upstream callers can pass their own request id and see it stitched across Bridge logs (including internal httpx/httpcore sub-calls like LiteLLM health probe). SKILL.md Auth section documents the pattern |
