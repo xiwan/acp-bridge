@@ -14,6 +14,7 @@
 #   ACP_TOKEN       — Auth token (prefer env var over -t flag to avoid ps exposure)
 #   ACP_RETRIES     — Retry count on failure (default: 2)
 #   ACP_TIMEOUT     — Sync call timeout in seconds (default: 300)
+#   ACP_TRACE_ID    — Forward as X-Request-Id header (for cross-service tracing)
 #
 # Dependencies: curl, jq, uuidgen
 
@@ -57,6 +58,8 @@ done
 
 AUTH=()
 [[ -n "$TOKEN" ]] && AUTH=(-H "Authorization: Bearer $TOKEN")
+# Forward upstream trace id if caller set ACP_TRACE_ID (e.g. OpenClaw passes its own request id)
+[[ -n "${ACP_TRACE_ID:-}" ]] && AUTH+=(-H "X-Request-Id: $ACP_TRACE_ID")
 
 # --- List agents ---
 if $LIST; then

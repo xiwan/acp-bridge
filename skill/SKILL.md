@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.15.5 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.15.6 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -13,13 +13,16 @@ Call remote CLI agents via ACP Bridge HTTP API. The planner below is the hot pat
 ```bash
 export ACP_BRIDGE_URL=<bridge_url>
 export ACP_TOKEN=<token>
+# Optional: forward upstream request id for cross-service tracing
+# (e.g. OpenClaw can set ACP_TRACE_ID=<its own request id> so Bridge logs carry it)
+# export ACP_TRACE_ID=<upstream-request-id>
 # CLAUDE_SKILL_DIR is injected by the host (Claude Code / Kiro CLI); fall back
 # to the script's own dir for other hosts.
 ACP_CLIENT="${CLAUDE_SKILL_DIR:-$(dirname "$0")}/scripts/acp-client.sh"
 chmod +x "$ACP_CLIENT"
 ```
 
-If either env var is missing, **stop and ask the user**. Never echo the token.
+If either `ACP_BRIDGE_URL` or `ACP_TOKEN` is missing, **stop and ask the user**. Never echo the token.
 
 ## Message Routing
 
