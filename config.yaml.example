@@ -116,6 +116,23 @@ agents:
       links:
         - {type: "source-code", url: "https://github.com/opencode-ai/opencode"}
         - {type: "homepage", url: "https://opencode.ai"}
+  hermes:
+    enabled: true
+    mode: "acp"
+    command: "hermes"
+    acp_args: ["acp"]
+    working_dir: "/tmp"
+    description: "Hermes Agent (open source, multi-provider)"
+    metadata:
+      author: {name: "Nous Research", url: "https://nousresearch.com"}
+      license: "MIT"
+      programming_language: "Python"
+      natural_languages: ["en", "zh"]
+      domains: ["coding", "multi-provider", "messaging"]
+      tags: ["agentic-cli", "open-source", "provider-agnostic"]
+      links:
+        - {type: "source-code", url: "https://github.com/NousResearch/hermes-agent"}
+        - {type: "homepage", url: "https://hermesagent.org.cn"}
 
 # webhook (optional): async job completion callback via OpenClaw Gateway
 # webhook:

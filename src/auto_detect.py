@@ -38,6 +38,12 @@ KNOWN_AGENTS = {
         "acp_args": ["acp"],
         "description": "OpenCode agent (open source, multi-provider)",
     },
+    "hermes": {
+        "command": "hermes",
+        "mode": "acp",
+        "acp_args": ["acp"],
+        "description": "Hermes Agent (open source, multi-provider)",
+    },
     "harness": {
         "command": "harness-factory",
         "mode": "acp",

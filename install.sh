@@ -60,7 +60,7 @@ if [ -f "$INSTALL_DIR/config.yaml" ]; then
     IS_UPDATE=true
     ok "Existing installation found at $INSTALL_DIR"
     # Parse which agents are already configured
-    for name in kiro claude codex qwen opencode harness; do
+    for name in kiro claude codex qwen opencode hermes harness; do
         if grep -q "^  ${name}:" "$INSTALL_DIR/config.yaml" 2>/dev/null; then
             EXISTING_AGENTS+=("$name")
         fi
@@ -193,6 +193,7 @@ declare -A AGENT_INSTALL_HINTS=(
     [codex]="npm i -g @openai/codex"
     [qwen]="npm i -g @anthropic-ai/qwen-code"
     [opencode]="See https://github.com/opencode-ai/opencode"
+    [hermes]="pip install hermes-agent && pip install -e '.[acp]'"
     [harness]="(auto-installed by this script)"
 )
 
@@ -209,6 +210,7 @@ declare -A AGENT_CMDS=(
     [codex]="codex"
     [qwen]="qwen"
     [opencode]="opencode"
+    [hermes]="hermes"
     [harness]="harness-factory"
 )
 declare -A AGENT_DESCS=(
@@ -217,9 +219,10 @@ declare -A AGENT_DESCS=(
     [codex]="Codex CLI (OpenAI)"
     [qwen]="Qwen Code (Alibaba)"
     [opencode]="OpenCode (open source)"
+    [hermes]="Hermes Agent (Nous Research)"
     [harness]="Harness Factory (lightweight, profile-driven)"
 )
-AGENT_ORDER=(kiro claude codex qwen opencode harness)
+AGENT_ORDER=(kiro claude codex qwen opencode hermes harness)
 
 FOUND=()
 NOT_FOUND=()
@@ -451,6 +454,15 @@ _gen_agent_block() {
                     echo '    enabled: true'
                     echo '    mode: "acp"'
                     echo '    command: "opencode"'
+                    echo '    acp_args: ["acp"]'
+                    echo '    working_dir: "/tmp"'
+                    echo "    description: \"$desc\""
+                    ;;
+                hermes)
+                    echo '  hermes:'
+                    echo '    enabled: true'
+                    echo '    mode: "acp"'
+                    echo '    command: "hermes"'
                     echo '    acp_args: ["acp"]'
                     echo '    working_dir: "/tmp"'
                     echo "    description: \"$desc\""
