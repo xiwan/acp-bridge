@@ -2,6 +2,8 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.15.11 | 2026-04-19 | Webhook generic format: `format: "generic"` sends plain JSON POST to any HTTP endpoint (Hermes, custom). Messages auto-chunked at 1800 chars for Discord safety. Enables Hermes Agent as webhook callback target via its webhook adapter (`/webhooks/<route>` + `deliver` to any IM platform) |
+| v0.15.10 | 2026-04-19 | Project positioning: README one-liner and Features section reorganized into three layers (Gateway → Orchestration → IM Workflows). Hermes Agent integrated as ACP agent (8/8 compliance, 7/7 tests). Added to auto_detect, install.sh, config, AGENT.md, SKILL.md, and test suite |
 | v0.15.9 | 2026-04-19 | Remove `random` pipeline mode (breaking). Per v0.15.8 `/stats/pipelines` data: 4/8 runs in 7 days with 50% success — lowest usage, lowest success. `/pipelines` now rejects `mode=random`. Dropped from pipeline.py dispatch, routes validator, SKILL.md planner table + decision tree, pipeline.md mode table, README summary table + diagram, test_pipeline.sh case 7. Other 4 modes (sequence/parallel/race/conversation) unchanged |
 | v0.15.8 | 2026-04-19 | New `/stats/pipelines?hours=N` endpoint: per-mode aggregation (total / completed / failed / running / avg_duration / max_duration) sourced from existing SQLite `pipelines` table. Enables data-driven decisions about pipeline mode usage |
 | v0.15.7 | 2026-04-19 | Observability: `AcpConnection.state` read-only property (`dead`/`busy`/`stale`/`idle`) computed from existing flags; exposed per session in `/health/agents`. Zero-risk additive change, no state-machine refactor |
