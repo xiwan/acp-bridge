@@ -94,3 +94,9 @@ def register(app, pipeline_mgr: PipelineManager | None,
             return {"pipelines": []}
         pls = pipeline_mgr.list_all()
         return {"pipelines": [p.to_dict() for p in pls]}
+
+    @app.get("/stats/pipelines")
+    async def stats_pipelines(hours: float = 24):
+        if not pipeline_mgr:
+            return {"period_hours": hours, "modes": {}}
+        return pipeline_mgr.stats(hours=hours)

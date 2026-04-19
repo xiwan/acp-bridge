@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.15.8 | 2026-04-19 | New `/stats/pipelines?hours=N` endpoint: per-mode aggregation (total / completed / failed / running / avg_duration / max_duration) sourced from existing SQLite `pipelines` table. Enables data-driven decisions about pipeline mode usage |
 | v0.15.7 | 2026-04-19 | Observability: `AcpConnection.state` read-only property (`dead`/`busy`/`stale`/`idle`) computed from existing flags; exposed per session in `/health/agents`. Zero-risk additive change, no state-machine refactor |
 | v0.15.6 | 2026-04-19 | Cross-service trace propagation: `acp-client.sh` forwards optional `ACP_TRACE_ID` env var as `X-Request-Id` header; OpenClaw/upstream callers can pass their own request id and see it stitched across Bridge logs (including internal httpx/httpcore sub-calls like LiteLLM health probe). SKILL.md Auth section documents the pattern |
 | v0.15.5 | 2026-04-19 | Observability: (1) request trace_id — every HTTP request gets an `X-Request-Id` (accepts client-supplied, else generates 12-char hex); id propagates via contextvar through async logs (including third-party httpcore/uvicorn) and echoes in response header; (2) `/stats.tools_used` now aggregates by tool category (`Running`/`Reading`/`Editing`/...) instead of full command string, making the field actually useful |

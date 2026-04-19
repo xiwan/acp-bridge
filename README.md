@@ -142,7 +142,7 @@ Contributions that harden this (per-user tokens, rate limits, audit log, mTLS he
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.7
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.8
 
 ## Project Structure
 

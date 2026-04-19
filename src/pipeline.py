@@ -154,6 +154,33 @@ class PipelineManager:
                 pls.append(self._dict_to_pipeline(d))
         return sorted(pls, key=lambda p: p.created_at, reverse=True)[:limit]
 
+    def stats(self, hours: float = 24) -> dict:
+        """Aggregate pipeline counts/success/duration by mode over a time window."""
+        cutoff = time.time() - hours * 3600
+        by_mode: dict[str, dict] = {}
+        for d in self._store.load_recent(500):
+            if d["created_at"] < cutoff:
+                continue
+            m = d["mode"]
+            s = by_mode.setdefault(m, {"total": 0, "completed": 0, "failed": 0, "running": 0, "durations": []})
+            s["total"] += 1
+            st = d["status"]
+            if st == "completed":
+                s["completed"] += 1
+                if d["completed_at"]:
+                    s["durations"].append(d["completed_at"] - d["created_at"])
+            elif st == "failed":
+                s["failed"] += 1
+            elif st == "running":
+                s["running"] += 1
+        out = {}
+        for m, s in by_mode.items():
+            durs = s.pop("durations")
+            s["avg_duration"] = round(sum(durs) / len(durs), 2) if durs else 0
+            s["max_duration"] = round(max(durs), 2) if durs else 0
+            out[m] = s
+        return {"period_hours": hours, "modes": out}
+
     @staticmethod
     def _dict_to_pipeline(d: dict) -> Pipeline:
         pl = Pipeline(
