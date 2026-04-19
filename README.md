@@ -1,21 +1,23 @@
 ```
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║     _   ___ ___   ___      _    _                            ║
-║    /_\ / __| _ \ | _ )_ __(_)__| |__ _  ___                  ║
-║   / _ \ (__| _/  | _ \ '_|| / _` / _` |/ -_)                 ║
-║  /_/ \_\___|_|   |___/|_| |_\__,_\__, \___|                  ║
-║                                   |___/                      ║
+║      _   ___ ___   ___      _    _                           ║
+║     /_\ / __| _ \ | _ )_ __(_)__| |__ _  ___                ║
+║    / _ \ (__| _/  | _ \ '_|| / _` / _` |/ -_)               ║
+║   /_/ \_\___|_|   |___/|_| |_\__,_\__, \___|                ║
+║                                    |___/                     ║
+║          https://github.com/xiwan/acp-bridge                 ║
+║                                                              ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
-║   🦞 OpenClaw ─┐              ┌──► 🤖 Kiro / Claude / Codex  ║
-║                 ┼──► acp 🌉 ──┼──► 🤖 Qwen / OpenCode       ║
-║   🌐 Hermes ──┘              └──► 🏭 Harness / ...          ║
+║  IM Agents    🦞 OpenClaw  🤖 Hermes                         ║
+║  CLI Agents   🤖 Claude Code  🤖 Kiro  🤖 Codex             ║
+║               🤖 OpenCode  🤖 Qwen  ...                     ║
+║  Lite Agents  🏭 Harness Agents                              ║
 ║                                                              ║
-║          https://github.com/xiwan/acp-bridge                              ║
 ╚══════════════════════════════════════════════════════════════╝
 
-        ~ Multi-Agent Orchestration Platform ~
+    Multi-Agent Mesh · Connect · Orchestrate · Scale
 ```
 
 # ACP Bridge
@@ -160,6 +162,7 @@ acp-bridge/
 │   ├── test_codex.sh              # Codex agent tests
 │   ├── test_qwen.sh               # Qwen agent tests
 │   ├── test_opencode.sh           # OpenCode agent tests
+│   ├── test_hermes.sh             # Hermes agent tests
 │   └── reports/                   # Test reports
 ├── AGENT_SPEC.md        # ACP agent integration specification
 ├── config.yaml          # Service configuration (auto-generated or manual)

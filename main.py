@@ -70,7 +70,31 @@ def load_config(path: str) -> dict:
     return yaml.safe_load(raw)
 
 
+_BANNER = r"""
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║      _   ___ ___   ___      _    _                           ║
+║     /_\ / __| _ \ | _ )_ __(_)__| |__ _  ___                ║
+║    / _ \ (__| _/  | _ \ '_|| / _` / _` |/ -_)               ║
+║   /_/ \_\___|_|   |___/|_| |_\__,_\__, \___|                ║
+║                                    |___/                     ║
+║          https://github.com/xiwan/acp-bridge                 ║
+║                                                              ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  IM Agents    🦞 OpenClaw  🤖 Hermes                         ║
+║  CLI Agents   🤖 Claude Code  🤖 Kiro  🤖 Codex             ║
+║               🤖 OpenCode  🤖 Qwen  ...                     ║
+║  Lite Agents  🏭 Harness Agents                              ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+
+    Multi-Agent Mesh · Connect · Orchestrate · Scale
+"""
+
+
 def main():
+    print(_BANNER, flush=True)
     parser = argparse.ArgumentParser(description="ACP Bridge Server")
     parser.add_argument("--host", help="Override listen host")
     parser.add_argument("--port", type=int, help="Override listen port")
