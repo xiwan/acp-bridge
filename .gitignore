@@ -32,5 +32,5 @@ test/scratch/
 
 # OS
 .DS_Store
-docs/
+design/
 test/reports/
