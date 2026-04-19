@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.15.5 | 2026-04-19 | Observability: (1) request trace_id — every HTTP request gets an `X-Request-Id` (accepts client-supplied, else generates 12-char hex); id propagates via contextvar through async logs (including third-party httpcore/uvicorn) and echoes in response header; (2) `/stats.tools_used` now aggregates by tool category (`Running`/`Reading`/`Editing`/...) instead of full command string, making the field actually useful |
 | v0.15.4 | 2026-04-19 | Robustness: readline now tolerates `LimitOverrunError` (>64KB single line no longer kills connections); PTY agents gain `max_duration` hard cap (default 600s) to prevent runaway subprocesses whose output dribbles in below `idle_timeout`; README gains a `⚠️ Security Considerations` section covering the token-as-shell risk, `--trust-all-tools` implications, prompt injection, and recommended deployment shapes |
 | v0.15.3 | 2026-04-18 | `install.sh` auto-installs systemd units before startup: generates `/etc/systemd/system/acp-bridge.service` (and `litellm.service` when Codex/Qwen is enabled), `daemon-reload` + `enable`, then starts via `systemctl start` instead of `start.sh` |
 | v0.15.2 | 2026-04-18 | `install.sh` prints OpenClaw skill setup box after install: skill URL + `ACP_TOKEN` + `ACP_BRIDGE_URL` (detects LAN/WAN IP). README install section updated with matching guidance |

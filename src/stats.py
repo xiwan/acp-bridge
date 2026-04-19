@@ -68,7 +68,10 @@ class StatsCollector:
                 s["failed"] += 1
             s["durations"].append(r["duration"])
             for t in json.loads(r["tools"]):
-                s["tools"][t] = s["tools"].get(t, 0) + 1
+                # Aggregate by tool category (first token before ':' or space)
+                # e.g. "Running: cd ..." → "Running", "Reading a.py:1" → "Reading"
+                cat = t.split(":", 1)[0].split(" ", 1)[0] or t
+                s["tools"][cat] = s["tools"].get(cat, 0) + 1
 
         result = {}
         for a, s in agents.items():

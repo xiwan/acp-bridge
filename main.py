@@ -48,11 +48,17 @@ log = logging.getLogger("acp-bridge")
 
 
 def setup_logging(verbose: bool):
+    from src.trace import TraceIdFilter
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
-        format='{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
+        format='{"ts":"%(asctime)s","level":"%(levelname)s","trace":"%(trace_id)s","logger":"%(name)s","msg":"%(message)s"}',
     )
+    # Attach filter to all handlers so every record gets trace_id, even from
+    # third-party loggers that bypass our own logger tree.
+    trace_filter = TraceIdFilter()
+    for h in logging.getLogger().handlers:
+        h.addFilter(trace_filter)
     if not verbose:
         logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
@@ -201,6 +207,10 @@ def main():
                        rate_limit=sec_cfg.get("rate_limit", 60),
                        rate_window=sec_cfg.get("rate_window", 60),
                        max_body=sec_cfg.get("max_body_bytes", 3 * 1024 * 1024))
+
+    # trace_id middleware — added last so it runs first (Starlette is LIFO)
+    from src.trace import TraceIdMiddleware
+    app.add_middleware(TraceIdMiddleware)
 
     # --- Job manager ---
     pty_agents = {k: v for k, v in agents_cfg.items() if v.get("mode") != "acp"}
