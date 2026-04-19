@@ -28,7 +28,7 @@
 [![Agent Guide](https://img.shields.io/badge/Agent_Guide-for_AI_Agents-blue?logo=robot)](AGENT.md)
 [![AWS Blog](https://img.shields.io/badge/AWS_Blog-Published-orange?logo=amazonaws)](https://aws.amazon.com/cn/blogs/china/enable-kiro-and-claude-code-for-im-with-acp-bridge-async-ai-workflow/)
 
-A bridge service that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI Codex](https://github.com/openai/codex), etc.) via [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) over HTTP, with async job support and Discord push notifications.
+A gateway that exposes local CLI agents (Kiro CLI, Claude Code, [OpenAI Codex](https://github.com/openai/codex), etc.) as HTTP services via [ACP (Agent Client Protocol)](https://agentclientprotocol.com/), with multi-agent orchestration and IM-driven async AI workflows.
 
 ## Install
 
@@ -104,19 +104,31 @@ Contributions that harden this (per-user tokens, rate limits, audit log, mTLS he
 
 ## Features
 
+### Gateway — expose local agents as HTTP services
+
 - Native ACP protocol support: structured event stream (thinking / tool_call / text / status)
 - Process pool: reuse subprocess per session, automatic multi-turn context retention
 - Memory protection: auto-evict idle connections when system memory exceeds threshold (OOM prevention)
 - Sync + SSE streaming + Markdown card output
-- Async jobs: submit and return immediately, webhook callback on completion
-- Discord push: send results via OpenClaw Gateway `/tools/invoke`
-- Job monitoring: stuck detection (>10min auto-fail), webhook retry, status stats
 - Auto-reply to `session/request_permission` (prevents Claude from hanging)
 - Bearer Token + IP allowlist dual authentication
+- Client is pure bash + jq, zero Python dependency
+
+### Orchestration — multi-agent pipelines
+
+- Sequence: chain agents, each receives the previous output as context
+- Parallel: fan-out the same prompt to multiple agents, aggregate results
+- Race: fastest agent wins, others are cancelled
+- Conversation: agents take turns in a multi-round discussion
+- Harness Factory support: profile-driven lightweight agents via [harness-factory](https://github.com/xiwan/harness-factory) — same binary, different profiles, different agents
+
+### IM & Async Workflows — from chat to code
+
+- Async jobs: submit and return immediately, webhook callback on completion
+- Discord / Feishu push: send results via OpenClaw Gateway `/tools/invoke`
+- Job monitoring: stuck detection (>10min auto-fail), webhook retry, status stats
 - OpenClaw tools proxy: unified entry point for message/tts/nodes/cron/web_search and more
 - Web UI (opt-in): chat interface at `/ui` with persistence (SQLite), message folding, and settings panel
-- Client is pure bash + jq, zero Python dependency
-- Harness Factory support: profile-driven lightweight agents via [harness-factory](https://github.com/xiwan/harness-factory) — same binary, different profiles, different agents
 
 ## Agent Compatibility Matrix
 
@@ -142,7 +154,7 @@ Contributions that harden this (per-user tokens, rate limits, audit log, mTLS he
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.9
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.10
 
 ## Project Structure
 
