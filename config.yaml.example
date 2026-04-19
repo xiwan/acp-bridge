@@ -134,12 +134,22 @@ agents:
         - {type: "source-code", url: "https://github.com/NousResearch/hermes-agent"}
         - {type: "homepage", url: "https://hermesagent.org.cn"}
 
-# webhook (optional): async job completion callback via OpenClaw Gateway
+# webhook (optional): async job completion callback
+# format: "openclaw" (default) or "generic" (plain JSON POST to any URL)
+#
+# OpenClaw example:
 # webhook:
 #   url: "http://<openclaw-ip>:18789/tools/invoke"
 #   token: "${OPENCLAW_TOKEN}"
+#   format: "openclaw"
 #   account_id: "default"
 #   target: "channel:<discord-channel-id>"
+#
+# Hermes Agent example (via webhook adapter):
+# webhook:
+#   url: "http://<hermes-ip>:8644/webhooks/acp-result"
+#   token: ""
+#   format: "generic"
 
   # harness-factory agents — same binary, different profiles
   # Requires: harness-factory binary (https://github.com/xiwan/harness-factory)

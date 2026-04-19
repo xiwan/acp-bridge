@@ -56,12 +56,14 @@ class Job:
 class JobManager:
     def __init__(self, pool: AcpProcessPool | None = None, pty_configs: dict | None = None,
                  webhook_url: str = "", webhook_token: str = "", base_url: str = "",
+                 webhook_format: str = "openclaw",
                  db_path: str = "data/jobs.db"):
         self._pool = pool
         self._pty_configs = pty_configs or {}
         self._jobs: dict[str, Job] = {}
         self._webhook_url = webhook_url
         self._webhook_token = webhook_token
+        self._webhook_format = webhook_format
         self._base_url = base_url
         self._http: httpx.AsyncClient | None = None
         self._store = JobStore(db_path)
@@ -269,8 +271,16 @@ class JobManager:
         is_discord_webhook = "discord.com/api/webhooks" in url
         target = job.callback_meta.get("target", job.callback_meta.get("discord_target", ""))
         channel = job.callback_meta.get("channel", "discord")
+        fmt = job.callback_meta.get("format", self._webhook_format)
 
-        if is_discord_webhook:
+        if fmt == "generic":
+            result_text = (job.result or "")[:4000]
+            payloads = [{"agent": job.agent_name, "job_id": job.job_id,
+                         "status": job.status, "message": result_text,
+                         "error": job.error or None,
+                         **{k: v for k, v in job.callback_meta.items()
+                            if k not in ("format",)}}]
+        elif is_discord_webhook:
             payloads = [self._format_discord_embed(job)]
         elif target:
             formatter = get_formatter(channel)
@@ -281,7 +291,7 @@ class JobManager:
         headers = {"Content-Type": "application/json"}
         if self._webhook_token:
             headers["Authorization"] = f"Bearer {self._webhook_token}"
-        if not is_discord_webhook:
+        if fmt != "generic" and not is_discord_webhook:
             account_id = job.callback_meta.get("account_id", "")
             if account_id:
                 headers["x-openclaw-account-id"] = account_id

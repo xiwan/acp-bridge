@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.15.10 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.15.11 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 

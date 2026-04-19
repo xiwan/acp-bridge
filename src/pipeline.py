@@ -92,12 +92,14 @@ class Pipeline:
 class PipelineManager:
     def __init__(self, pool: AcpProcessPool, agents_cfg: dict,
                  webhook_url: str = "", webhook_token: str = "",
+                 webhook_format: str = "openclaw",
                  db_path: str = "data/jobs.db"):
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._pipelines: dict[str, Pipeline] = {}
         self._webhook_url = webhook_url
         self._webhook_token = webhook_token
+        self._webhook_format = webhook_format
         self._http: httpx.AsyncClient | None = None
         self._store = PipelineStore(db_path)
 
@@ -233,12 +235,19 @@ class PipelineManager:
         target = pl.webhook_meta.get("target", "")
         channel = pl.webhook_meta.get("channel", "discord")
         account_id = pl.webhook_meta.get("account_id", "")
-        payload = {"tool": "message", "action": "send",
-                   "args": {"channel": channel, "target": target, "message": message}}
+        fmt = pl.webhook_meta.get("format", self._webhook_format)
+
+        if fmt == "generic":
+            payload = {"pipeline_id": pl.pipeline_id, "mode": pl.mode,
+                       "status": pl.status, "message": message}
+        else:
+            payload = {"tool": "message", "action": "send",
+                       "args": {"channel": channel, "target": target, "message": message}}
+
         headers = {"Content-Type": "application/json"}
         if self._webhook_token:
             headers["Authorization"] = f"Bearer {self._webhook_token}"
-        if account_id:
+        if fmt != "generic" and account_id:
             headers["x-openclaw-account-id"] = account_id
             headers["x-openclaw-message-channel"] = channel
         try:
@@ -247,7 +256,7 @@ class PipelineManager:
             resp = await self._http.post(url, json=payload, headers=headers)
             log.info("pipeline_webhook: id=%s status=%d", pl.pipeline_id, resp.status_code)
             if resp.status_code == 401:
-                log.warning("pipeline_webhook_unauthorized: id=%s — OPENCLAW_TOKEN may be missing or wrong",
+                log.warning("pipeline_webhook_unauthorized: id=%s — token may be missing or wrong",
                             pl.pipeline_id)
             elif resp.status_code != 200:
                 log.warning("pipeline_webhook_rejected: id=%s body=%s",
