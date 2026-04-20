@@ -4,13 +4,21 @@
 
 # Getting Started
 
+ACP Bridge is a local HTTP gateway that turns CLI agents (Kiro, Claude Code, Codex, etc.) into a unified REST API. Once running, any HTTP client — your team, your bots, your IM — can call these agents without installing them locally. Auth tokens protect access; see [Security](security.md) for details.
+
 ## Prerequisites
 
 - **Python >= 3.12**
 - **[uv](https://docs.astral.sh/uv/)** — fast Python package manager
-- At least one CLI agent installed (e.g. `kiro-cli`, `claude-agent-acp`, `codex`)
+- **At least one CLI agent installed** — for example:
+  ```bash
+  curl -fsSL https://cli.kiro.dev/install | bash          # Kiro
+  npm i -g @agentclientprotocol/claude-agent-acp           # Claude Code
+  npm i -g @openai/codex                                   # Codex
+  ```
+  → Full list with install commands: [Agents](agents.md)
 - Client dependencies: `curl`, `jq`, `uuidgen`
-- For Codex: [Node.js](https://nodejs.org/) (npm), [LiteLLM](https://github.com/BerriAI/litellm) (if using non-OpenAI models via proxy)
+- For Codex with non-OpenAI models: [Node.js](https://nodejs.org/), [LiteLLM](https://github.com/BerriAI/litellm) — see [Configuration](configuration.md#codex--litellm-setup)
 
 ## Install
 
@@ -29,7 +37,7 @@ The interactive installer will:
 5. Set up systemd services (`acp-bridge.service` and optionally `litellm.service`)
 6. Start the Bridge and verify health
 
-On completion, the installer prints the **OpenClaw skill setup info**:
+**Optional — OpenClaw IM integration:** If you use [OpenClaw](https://github.com/NousResearch/hermes-agent) as an IM gateway (Discord/Feishu/Telegram), the installer also prints connection info:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -44,20 +52,26 @@ On completion, the installer prints the **OpenClaw skill setup info**:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Tell your OpenClaw bot to install the skill at the URL above, then set `ACP_TOKEN` and `ACP_BRIDGE_URL` so it can reach the Bridge.
+If you don't use OpenClaw, ignore this — Bridge works standalone via HTTP.
 
-### Zero-config (auto-detect agents in PATH)
+### Zero-config vs config file
 
-No `config.yaml` needed — Bridge scans your `PATH` for known agent CLIs and registers them automatically.
+| Mode | When to use |
+|------|-------------|
+| **Zero-config** | Quick start, agents already in PATH, default settings are fine |
+| **Config file** | Need fixed token, custom agent paths, webhook/IM push, pool tuning, or LiteLLM proxy |
+
+#### Zero-config (auto-detect agents in PATH)
 
 ```bash
 cd acp-bridge
 uv sync
 uv run main.py
-# Prints auth token on startup; set ACP_BRIDGE_TOKEN env for a fixed token
+# No config.yaml needed — auto-detects installed agent CLIs
+# Prints a random auth token on startup; set ACP_BRIDGE_TOKEN env for a fixed one
 ```
 
-### With config file
+#### With config file
 
 ```bash
 cd acp-bridge
@@ -78,6 +92,8 @@ See [Configuration](configuration.md) for the full `config.yaml` reference.
 | `--port 18010` | Listen port (default: from config or `18010`) |
 
 ## Docker
+
+> Docker and `uv run` are **alternative** startup methods — pick one, not both. Docker is recommended for production; `uv run` is simpler for local development.
 
 A lightweight Docker image containing only the ACP Bridge gateway. Agent CLIs (Kiro, Claude Code, Codex) stay on your host — mount them into the container as needed.
 
@@ -110,6 +126,8 @@ sudo docker compose -f docker/light/docker-compose.yml logs -f
 See `docker/light/docker-compose.yml` for mount examples for each agent.
 
 ## systemd Management
+
+> systemd services are created by the **one-line installer** (`install.sh`). If you started Bridge manually with `uv run` or Docker, this section does not apply.
 
 The installer sets up systemd services automatically. Use `bridge-ctl.sh` for lifecycle management:
 
@@ -156,7 +174,7 @@ Features: agent selection, chat persistence (SQLite), message folding, dark mode
 
 ## Remote Access
 
-If Bridge runs on a remote machine (EC2, cloud VM), use SSH tunneling:
+> If your Bridge runs on a cloud instance (EC2, GCP VM, etc.) without a public IP or with restricted security groups, SSH tunneling is the simplest way to access it from your local machine.
 
 ```bash
 # Forward remote Bridge to local port
@@ -166,6 +184,8 @@ ssh -i ~/.ssh/<KEY> -L 18010:127.0.0.1:18010 <USER>@<REMOTE_IP> -N
 curl http://127.0.0.1:18010/health
 # Web UI: http://127.0.0.1:18010/ui
 ```
+
+The tunnel maps remote `:18010` to your local `:18010`. Keep the SSH session open while using Bridge. Add `-f` to run in background.
 
 ## Next Steps
 
