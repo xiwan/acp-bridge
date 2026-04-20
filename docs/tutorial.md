@@ -1,6 +1,6 @@
 [← Getting Started](getting-started.md) | [Configuration →](configuration.md)
 
-> **Docs:** [Getting Started](getting-started.md) · **Tutorial** · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+> **Docs:** [Getting Started](getting-started.md) · **Tutorial** · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
 # Tutorial: Discord → Agent → Discord in 5 Minutes
 

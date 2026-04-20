@@ -86,6 +86,7 @@ curl -s -X POST http://localhost:18010/runs \
 | [API Reference](docs/api-reference.md) | All HTTP endpoints with examples |
 | [Pipelines](docs/pipelines.md) | Multi-agent orchestration: sequence, parallel, race, conversation |
 | [Async Jobs](docs/async-jobs.md) | Background tasks, webhook callback, IM push |
+| [Webhooks](docs/webhooks.md) | Webhook formats, auth (token vs HMAC), payload examples |
 | [Client Usage](docs/client-usage.md) | `acp-client.sh` CLI client |
 | [Tools Proxy](docs/tools-proxy.md) | OpenClaw tools integration |
 | [Security](docs/security.md) | Auth model, deployment shapes, prompt injection |
@@ -105,7 +106,7 @@ curl -s -X POST http://localhost:18010/runs \
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.12
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.13
 
 ## Contributing
 

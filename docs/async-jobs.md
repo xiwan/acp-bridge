@@ -1,6 +1,6 @@
-[← Pipelines](pipelines.md) | [Client Usage →](client-usage.md)
+[← Pipelines](pipelines.md) | [Webhooks →](webhooks.md)
 
-> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
 # Async Jobs + IM Push
 
@@ -10,17 +10,12 @@ Submit long-running tasks and get results pushed to Discord/Feishu/Telegram auto
 
 ## Webhook Formats
 
-Bridge supports two webhook callback formats:
+Bridge supports two webhook formats (`openclaw` and `generic`) with different payloads and auth methods. See [Webhooks](webhooks.md) for full configuration, payload examples, and authentication details.
 
-| Format | Target | Payload |
-|--------|--------|---------|
-| `openclaw` (default) | OpenClaw Gateway `/tools/invoke` | `{"tool":"message","action":"send","args":{...}}` + OpenClaw headers |
-| `generic` | Any HTTP endpoint (Hermes, custom) | `{"message":"...","agent":"...","status":"...","job_id":"..."}` |
-
-Configure in `config.yaml`:
+Quick config:
 
 ```yaml
-# OpenClaw (default) — Bearer token auth
+# OpenClaw — Bearer token auth
 webhook:
   url: "http://<openclaw-ip>:18789/tools/invoke"
   token: "${OPENCLAW_TOKEN}"
@@ -28,7 +23,7 @@ webhook:
   account_id: "default"
   target: "channel:<discord-channel-id>"
 
-# Hermes Agent — HMAC-SHA256 signature auth
+# Hermes — HMAC-SHA256 signature auth
 webhook:
   url: "http://<hermes-ip>:8644/webhooks/acp-result"
   secret: "${HERMES_WEBHOOK_SECRET}"
@@ -36,10 +31,6 @@ webhook:
   account_id: "default"
   target: "channel:<discord-channel-id>"
 ```
-
-Authentication: set `token` for Bearer auth (OpenClaw) or `secret` for HMAC-SHA256 signing (Hermes). See [Configuration — Webhook Authentication](configuration.md#webhook-authentication) for details.
-
-With Hermes, configure a webhook route on the Hermes side to deliver results to any IM platform (Discord, Telegram, Feishu, Slack, etc.). The `secret` must match the Hermes route's HMAC secret. See [Hermes Webhooks docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks) for route setup.
 
 ## Submit
 

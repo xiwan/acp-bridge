@@ -374,19 +374,42 @@ fi
 
 # Webhook (optional)
 echo ""
-ask "OpenClaw webhook URL for async job push [skip]:"
-read_input WEBHOOK_URL ""
+WEBHOOK_URL=""
+WEBHOOK_FORMAT=""
 WEBHOOK_TOKEN=""
+WEBHOOK_SECRET=""
 WEBHOOK_ACCOUNT=""
 WEBHOOK_TARGET=""
-if [ -n "$WEBHOOK_URL" ]; then
-    ask "  Webhook token (OPENCLAW_TOKEN) [skip]:"
-    read_input WEBHOOK_TOKEN ""
-    ask "  Account ID [default]:"
-    read_input WEBHOOK_ACCOUNT "default"
-    ask "  Default target (e.g. channel:123456) [skip]:"
-    read_input WEBHOOK_TARGET ""
-fi
+info "Webhook pushes async job results to an IM platform."
+info "  1) OpenClaw  — RPC format + Bearer token"
+info "  2) Hermes    — generic JSON + HMAC-SHA256"
+info "  3) Skip"
+ask "Webhook type [3]:"
+read_input WEBHOOK_TYPE "3"
+case "$WEBHOOK_TYPE" in
+    1)
+        WEBHOOK_FORMAT="openclaw"
+        ask "  OpenClaw URL [http://localhost:18789/tools/invoke]:"
+        read_input WEBHOOK_URL "http://localhost:18789/tools/invoke"
+        ask "  OpenClaw token (OPENCLAW_TOKEN) [skip]:"
+        read_input WEBHOOK_TOKEN ""
+        ask "  Account ID [default]:"
+        read_input WEBHOOK_ACCOUNT "default"
+        ask "  Default target (e.g. channel:123456) [skip]:"
+        read_input WEBHOOK_TARGET ""
+        ;;
+    2)
+        WEBHOOK_FORMAT="generic"
+        ask "  Hermes webhook URL [http://127.0.0.1:8644/webhooks/acp-result]:"
+        read_input WEBHOOK_URL "http://127.0.0.1:8644/webhooks/acp-result"
+        ask "  HMAC secret (HERMES_WEBHOOK_SECRET) [skip]:"
+        read_input WEBHOOK_SECRET ""
+        ask "  Account ID [default]:"
+        read_input WEBHOOK_ACCOUNT "default"
+        ask "  Default target (e.g. channel:123456) [skip]:"
+        read_input WEBHOOK_TARGET ""
+        ;;
+esac
 
 echo ""
 
@@ -517,6 +540,9 @@ if $CONFIG_EXISTS; then
         if [ -n "$WEBHOOK_TOKEN" ]; then
             grep -q "OPENCLAW_TOKEN" "$ENV_FILE" || echo "OPENCLAW_TOKEN=$WEBHOOK_TOKEN" >> "$ENV_FILE"
         fi
+        if [ -n "$WEBHOOK_SECRET" ]; then
+            grep -q "HERMES_WEBHOOK_SECRET" "$ENV_FILE" || echo "HERMES_WEBHOOK_SECRET=$WEBHOOK_SECRET" >> "$ENV_FILE"
+        fi
         ok "Updated .env (preserved existing values)"
     else
         {
@@ -526,6 +552,7 @@ if $CONFIG_EXISTS; then
             echo "ANTHROPIC_MODEL=global.anthropic.claude-sonnet-4-6"
             [ -n "$LITELLM_KEY" ] && echo "LITELLM_API_KEY=$LITELLM_KEY"
             [ -n "$WEBHOOK_TOKEN" ] && echo "OPENCLAW_TOKEN=$WEBHOOK_TOKEN"
+            [ -n "$WEBHOOK_SECRET" ] && echo "HERMES_WEBHOOK_SECRET=$WEBHOOK_SECRET"
         } > "$ENV_FILE"
         ok "Created .env"
     fi
@@ -541,6 +568,7 @@ else
         echo "ANTHROPIC_MODEL=global.anthropic.claude-sonnet-4-6"
         [ -n "$LITELLM_KEY" ] && echo "LITELLM_API_KEY=$LITELLM_KEY"
         [ -n "$WEBHOOK_TOKEN" ] && echo "OPENCLAW_TOKEN=$WEBHOOK_TOKEN"
+        [ -n "$WEBHOOK_SECRET" ] && echo "HERMES_WEBHOOK_SECRET=$WEBHOOK_SECRET"
     } > "$ENV_FILE"
     ok "Created .env"
 
@@ -623,7 +651,12 @@ else
             echo ''
             echo 'webhook:'
             echo "  url: \"$WEBHOOK_URL\""
-            echo '  token: "${OPENCLAW_TOKEN}"'
+            echo "  format: \"$WEBHOOK_FORMAT\""
+            if [ "$WEBHOOK_FORMAT" = "openclaw" ]; then
+                echo '  token: "${OPENCLAW_TOKEN}"'
+            else
+                echo '  secret: "${HERMES_WEBHOOK_SECRET}"'
+            fi
             echo "  account_id: \"$WEBHOOK_ACCOUNT\""
             echo "  target: \"$WEBHOOK_TARGET\""
         fi

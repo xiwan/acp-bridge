@@ -1,6 +1,6 @@
 [← Tutorial](tutorial.md) | [Agents →](agents.md)
 
-> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
 # Configuration
 
@@ -158,33 +158,11 @@ Bridge supports two authentication methods for webhook delivery, configured per 
 
 Set `token` or `secret` (not both). If neither is set, no auth header is sent.
 
-HMAC signature is computed as `HMAC-SHA256(secret, request_body)` and sent as a hex digest in the `X-Webhook-Signature` header. The receiver verifies by computing the same HMAC over the raw request body.
+For full details — payload examples, HMAC verification code, per-request overrides, chunking, retry behavior, and Hermes side setup — see [Webhooks](webhooks.md).
 
-### OpenClaw example
+### Configuration examples
 
-```yaml
-webhook:
-  url: "http://<openclaw-ip>:18789/tools/invoke"
-  token: "${OPENCLAW_TOKEN}"
-  format: "openclaw"
-  account_id: "default"
-  target: "channel:<discord-channel-id>"
-```
-
-### Hermes example
-
-```yaml
-webhook:
-  url: "http://<hermes-ip>:8644/webhooks/acp-result"
-  secret: "${HERMES_WEBHOOK_SECRET}"
-  format: "generic"
-  account_id: "default"
-  target: "channel:<discord-channel-id>"
-```
-
-The `secret` must match the HMAC secret configured on the Hermes webhook route (`~/.hermes/config.yaml` → `platforms.webhook.extra.routes.<name>.secret`).
-
-Messages are auto-chunked at 1800 characters for Discord safety.
+See [Webhooks](webhooks.md) for OpenClaw and Hermes configuration examples, payload formats, and Hermes side setup.
 
 ## Codex + LiteLLM Setup
 
