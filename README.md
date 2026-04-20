@@ -124,6 +124,15 @@ cd acp-bridge && uv sync && uv run main.py
 | [Testing](docs/testing.md) | Compliance and integration tests |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and fixes |
 
+## Video Tutorials
+
+| # | Title | Date | Link |
+|---|-------|------|------|
+| 1 | acpbridge:让龙虾和爱马仕沟通 | 2026-04-20 | [BV1QsowBAEg3](https://www.bilibili.com/video/BV1QsowBAEg3) |
+| 2 | 让openclaw指挥多agent干活 | 2026-04-01 | [BV1gD9EBzEQQ](https://www.bilibili.com/video/BV1gD9EBzEQQ) |
+| 3 | openclaw: acp-brige支持容器了 | 2026-03-19 | [BV1t8wyztEuM](https://www.bilibili.com/video/BV1t8wyztEuM) |
+| 4 | 实现了openclaw用ACP来调用claude code | 2026-03-09 | [BV1kbPDzgE8R](https://www.bilibili.com/video/BV1kbPDzgE8R) |
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.11
