@@ -1,3 +1,7 @@
+[← API Reference](api-reference.md) | [Async Jobs →](async-jobs.md)
+
+> **Docs:** [Getting Started](getting-started.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+
 # Orchestration — Multi-Agent Pipelines
 
 - Sequence: chain agents, each receives the previous output as context

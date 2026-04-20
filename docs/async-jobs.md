@@ -1,3 +1,7 @@
+[← Pipelines](pipelines.md) | [Client Usage →](client-usage.md)
+
+> **Docs:** [Getting Started](getting-started.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+
 # Async Jobs + IM Push
 
 Submit long-running tasks and get results pushed to Discord/Feishu/Telegram automatically.

@@ -1,39 +1,47 @@
+[← Getting Started](getting-started.md) | [Agents →](agents.md)
+
+> **Docs:** [Getting Started](getting-started.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+
 # Configuration
+
+ACP Bridge is configured via `config.yaml` in the project root. All fields are optional — Bridge auto-detects agents and generates sensible defaults when no config file is present.
+
+## Full Reference
 
 ```yaml
 server:
-  host: "0.0.0.0"
-  port: 18010
-  session_ttl_hours: 24
-  shutdown_timeout: 30
+  host: "0.0.0.0"                              # bind address
+  port: 18010                                   # listen port
+  session_ttl_hours: 24                         # idle session cleanup after N hours
+  shutdown_timeout: 30                          # graceful shutdown wait (seconds)
   ui: false                                     # enable Web UI at /ui (or use --ui flag)
   upload_dir: "/tmp/acp-uploads"                # file upload storage directory
 
 pool:
-  max_processes: 8
-  max_per_agent: 4
-  memory_limit_percent: 80
+  max_processes: 8                              # max total ACP subprocesses
+  max_per_agent: 4                              # max subprocesses per agent type
+  memory_limit_percent: 80                      # OOM eviction threshold (system memory %)
 
 webhook:
-  url: "http://<openclaw-ip>:18789/tools/invoke"
-  token: "${OPENCLAW_TOKEN}"
+  url: "http://<openclaw-ip>:18789/tools/invoke"  # callback endpoint
+  token: "${OPENCLAW_TOKEN}"                    # webhook auth token
   format: "openclaw"                            # "openclaw" (default) or "generic"
-  account_id: "default"
-  target: "channel:<default-channel-id>"        # also accepts feishu targets
+  account_id: "default"                         # OpenClaw bot account
+  target: "channel:<default-channel-id>"        # default push target
 
 security:
-  auth_token: "${ACP_BRIDGE_TOKEN}"
-  allowed_ips:
+  auth_token: "${ACP_BRIDGE_TOKEN}"             # Bearer token (supports env var refs)
+  allowed_ips:                                  # IP allowlist
     - "127.0.0.1"
 
 litellm:
-  url: "http://localhost:4000"
-  required_by: ["codex", "qwen"]
+  url: "http://localhost:4000"                  # LiteLLM proxy URL
+  required_by: ["codex", "qwen"]               # agents that need LiteLLM
   env:
-    LITELLM_API_KEY: "${LITELLM_API_KEY}"
+    LITELLM_API_KEY: "${LITELLM_API_KEY}"       # proxy auth key
 
 harness:
-  binary: ""                                    # absolute path to harness-factory; empty = use PATH
+  binary: ""                                    # path to harness-factory; empty = use PATH
 
 agents:
   kiro:
@@ -71,8 +79,13 @@ agents:
     acp_args: ["acp"]
     working_dir: "/tmp"
     description: "OpenCode agent (open source, multi-provider)"
-  # harness-factory: same binary, different profiles → different agents
-  # name is arbitrary — use "harness", "pr-reviewer", "translator", etc.
+  hermes:
+    enabled: true
+    mode: "acp"
+    command: "hermes"
+    acp_args: ["acp"]
+    working_dir: "/tmp"
+    description: "Hermes Agent (Nous Research)"
   harness:
     enabled: true
     mode: "acp"
@@ -95,18 +108,66 @@ agents:
         temperature: 0.3
 ```
 
+## Agent Configuration
+
+Each agent entry supports these fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `enabled` | Yes | `true` to register this agent |
+| `mode` | Yes | `"acp"` (JSON-RPC over stdio) or `"pty"` (subprocess stdout) |
+| `command` | Yes | CLI binary name or path |
+| `acp_args` | ACP only | Arguments to start ACP mode (e.g. `["acp", "--trust-all-tools"]`) |
+| `args` | PTY only | Arguments for PTY execution (e.g. `["exec", "--full-auto"]`) |
+| `working_dir` | No | Working directory for the agent subprocess (default: `/tmp`) |
+| `description` | No | Human-readable description shown in `/agents` |
+| `profile` | No | Harness Factory profile (tools, model, system prompt) |
+
+## Environment Variable References
+
+Config values support `${ENV_VAR}` syntax for secrets:
+
+```yaml
+security:
+  auth_token: "${ACP_BRIDGE_TOKEN}"    # resolved from environment at startup
+webhook:
+  token: "${OPENCLAW_TOKEN}"
+```
+
+This keeps secrets out of the config file. Set them in your shell, `.env` file, or systemd `Environment=` directives.
+
+## Webhook Formats
+
+Bridge supports two webhook callback formats for async job results:
+
+| Format | Target | Payload |
+|--------|--------|---------|
+| `openclaw` (default) | OpenClaw Gateway `/tools/invoke` | `{"tool":"message","action":"send","args":{...}}` + OpenClaw headers |
+| `generic` | Any HTTP endpoint (Hermes, custom) | `{"message":"...","agent":"...","status":"...","job_id":"..."}` |
+
+```yaml
+# OpenClaw (default)
+webhook:
+  url: "http://<openclaw-ip>:18789/tools/invoke"
+  format: "openclaw"
+
+# Hermes Agent (via webhook adapter)
+webhook:
+  url: "http://<hermes-ip>:8644/webhooks/<route-name>"
+  format: "generic"
+```
+
+Messages are auto-chunked at 1800 characters for Discord safety.
+
 ## Codex + LiteLLM Setup
 
-[OpenAI Codex CLI](https://github.com/openai/codex) doesn't support ACP protocol natively, so it runs in PTY mode (subprocess). To use non-OpenAI models (e.g. Kimi K2.5 on Bedrock), Codex needs [LiteLLM](https://github.com/BerriAI/litellm) as an OpenAI-compatible proxy.
+[OpenAI Codex CLI](https://github.com/openai/codex) doesn't support ACP protocol natively, so it runs in PTY mode. To use non-OpenAI models (e.g. Kimi K2.5 on Bedrock), Codex needs [LiteLLM](https://github.com/BerriAI/litellm) as an OpenAI-compatible proxy.
 
 ### Install
 
 ```bash
-# Codex CLI
-npm i -g @openai/codex
-
-# LiteLLM proxy
-pip install 'litellm[proxy]'
+npm i -g @openai/codex          # Codex CLI
+pip install 'litellm[proxy]'    # LiteLLM proxy
 ```
 
 ### Configure Codex
@@ -136,10 +197,8 @@ general_settings:
   master_key: "sk-litellm-bedrock"
 
 litellm_settings:
-  drop_params: true
+  drop_params: true    # required — Codex sends params Bedrock doesn't support
 ```
-
-`drop_params: true` is required — Codex sends parameters (e.g. `web_search_options`) that Bedrock doesn't support.
 
 LiteLLM uses the EC2 instance's AWS credentials (IAM Role or `~/.aws/credentials`) to access Bedrock. The `master_key` is just the proxy's own auth token.
 
@@ -152,5 +211,19 @@ LITELLM_API_KEY="sk-litellm-bedrock" litellm --config ~/.codex/litellm-config.ya
 ### Data Flow
 
 ```
-acp-bridge ──(PTY)──► codex exec ──(HTTP)──► LiteLLM :4000 ──(Bedrock API)──► Kimi K2.5
+ACP Bridge ──(PTY)──► codex exec ──(HTTP)──► LiteLLM :4000 ──(Bedrock API)──► Kimi K2.5
 ```
+
+## Harness Factory Profiles
+
+[Harness Factory](https://github.com/xiwan/harness-factory) agents are configured via `profile` in the agent entry. The profile controls tool permissions, model selection, and system prompt.
+
+Available presets: `reader`, `executor`, `scout`, `reviewer`, `analyst`, `researcher`, `developer`, `writer`, `operator`, `admin`.
+
+Dynamic harness agents can also be created at runtime via `POST /harness` — see [API Reference](api-reference.md).
+
+## See Also
+
+- [Getting Started](getting-started.md) — installation and first run
+- [Agents](agents.md) — per-agent install commands and compatibility
+- [Security](security.md) — auth model and deployment recommendations
