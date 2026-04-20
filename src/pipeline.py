@@ -1,9 +1,6 @@
 """Multi-agent pipeline — sequence, parallel, race execution."""
 
 import asyncio
-import hashlib
-import hmac as _hmac
-import json as _json
 import logging
 import os
 import re
@@ -12,12 +9,11 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import httpx
-
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
 from .formatters import PipelineFormatter, get_template, get_prompt_suffix
 from .sse import transform_notification
 from .store import PipelineStore
+from .webhook import WebhookSender, chunk_text
 
 log = logging.getLogger("acp-bridge.pipeline")
 
@@ -100,11 +96,10 @@ class PipelineManager:
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._pipelines: dict[str, Pipeline] = {}
-        self._webhook_url = webhook_url
-        self._webhook_token = webhook_token
-        self._webhook_format = webhook_format
-        self._webhook_secret = webhook_secret
-        self._http: httpx.AsyncClient | None = None
+        self._sender = WebhookSender(
+            default_url=webhook_url, default_token=webhook_token,
+            default_format=webhook_format, default_secret=webhook_secret,
+        )
         self._store = PipelineStore(db_path)
 
     def _make_shared_cwd(self, pl: Pipeline) -> str:
@@ -235,26 +230,17 @@ class PipelineManager:
 
     async def _send_webhook(self, pl: Pipeline, message: str):
         """Send a single message payload via webhook."""
-        url = self._webhook_url
+        url = self._sender.default_url
         if not url:
             return
         target = pl.webhook_meta.get("target", "")
         channel = pl.webhook_meta.get("channel", "discord")
         account_id = pl.webhook_meta.get("account_id", "")
-        fmt = pl.webhook_meta.get("format", self._webhook_format)
-
-        headers = {"Content-Type": "application/json"}
-        secret = pl.webhook_meta.get("secret", self._webhook_secret)
-        if secret:
-            pass  # HMAC signed per-payload below
-        elif self._webhook_token:
-            headers["Authorization"] = f"Bearer {self._webhook_token}"
-        if account_id:
-            headers["x-openclaw-account-id"] = account_id
-            headers["x-openclaw-message-channel"] = channel
+        fmt = pl.webhook_meta.get("format", self._sender.default_format)
+        secret = pl.webhook_meta.get("secret", self._sender._secret)
 
         if fmt == "generic":
-            parts = [message[i:i+self._CHUNK_SIZE] for i in range(0, len(message), self._CHUNK_SIZE)] or [""]
+            parts = chunk_text(message, self._CHUNK_SIZE)
             payloads = [{"pipeline_id": pl.pipeline_id, "mode": pl.mode,
                          "status": pl.status, "message": p,
                          "part": i+1, "total_parts": len(parts)}
@@ -263,32 +249,15 @@ class PipelineManager:
             payloads = [{"tool": "message", "action": "send",
                          "args": {"channel": channel, "target": target, "message": message}}]
 
-        try:
-            if not self._http or self._http.is_closed:
-                self._http = httpx.AsyncClient(timeout=10)
-            for idx, payload in enumerate(payloads):
-                req_headers = dict(headers)
-                if secret:
-                    body_bytes = _json.dumps(payload, ensure_ascii=False).encode()
-                    sig = _hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
-                    req_headers["X-Webhook-Signature"] = sig
-                    resp = await self._http.post(url, content=body_bytes, headers=req_headers)
-                else:
-                    resp = await self._http.post(url, json=payload, headers=req_headers)
-                log.info("pipeline_webhook: id=%s status=%d part=%d/%d",
-                         pl.pipeline_id, resp.status_code, idx+1, len(payloads))
-                if resp.status_code >= 300:
-                    log.warning("pipeline_webhook_rejected: id=%s body=%s",
-                                pl.pipeline_id, resp.text[:300])
-                    return
-                if len(payloads) > 1:
-                    await asyncio.sleep(0.5)
-        except Exception as e:
-            log.error("pipeline_webhook_failed: id=%s error=%s", pl.pipeline_id, e)
+        await self._sender.send(
+            url, payloads, secret=secret,
+            account_id=account_id, channel=channel,
+            log_prefix=f"pipeline_webhook id={pl.pipeline_id}",
+        )
 
     async def _webhook_start(self, pl: Pipeline):
         """Push a notification when pipeline starts."""
-        if not self._webhook_url or not pl.webhook_meta.get("target"):
+        if not self._sender.default_url or not pl.webhook_meta.get("target"):
             return
         agents = [s.agent for s in pl.steps]
         if pl.mode == "conversation":
@@ -298,7 +267,7 @@ class PipelineManager:
 
     async def _webhook_step(self, pl: Pipeline, step: PipelineStep):
         """Push a single step result immediately after it completes."""
-        if not self._webhook_url or not pl.webhook_meta.get("target"):
+        if not self._sender.default_url or not pl.webhook_meta.get("target"):
             return
         idx = pl.steps.index(step) + 1
         dur = round(step.completed_at - step.started_at, 1)
@@ -309,7 +278,7 @@ class PipelineManager:
 
     async def _webhook(self, pl: Pipeline):
         """Final summary push — overall status + per-step duration breakdown."""
-        if not self._webhook_url or not pl.webhook_meta.get("target"):
+        if not self._sender.default_url or not pl.webhook_meta.get("target"):
             return
         dur = round(pl.completed_at - pl.created_at, 1)
         steps_data = [{"agent": s.agent, "status": s.status,
@@ -559,7 +528,7 @@ class PipelineManager:
 
     async def _webhook_conversation_turn(self, pl: Pipeline, turn: int,
                                           agent: str, content: str, duration: float):
-        if not self._webhook_url or not pl.webhook_meta.get("target"):
+        if not self._sender.default_url or not pl.webhook_meta.get("target"):
             return
         msg = PipelineFormatter.format_turn(pl.pipeline_id, turn, agent, content, duration)
         await self._send_webhook(pl, msg)

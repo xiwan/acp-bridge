@@ -1,9 +1,6 @@
 """Async job manager — submit, poll, webhook callback."""
 
 import asyncio
-import hashlib
-import hmac as _hmac
-import json as _json
 import logging
 import os
 import re
@@ -11,12 +8,11 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
-import httpx
-
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
 from .formatters import get_formatter, get_prompt_suffix
 from .sse import transform_notification
 from .store import JobStore
+from .webhook import WebhookSender, chunk_text
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
 
@@ -65,18 +61,14 @@ class JobManager:
         self._pty_configs = pty_configs or {}
         self._jobs: dict[str, Job] = {}
         self._webhook_url = webhook_url
-        self._webhook_token = webhook_token
         self._webhook_format = webhook_format
-        self._webhook_secret = webhook_secret
         self._base_url = base_url
-        self._http: httpx.AsyncClient | None = None
+        self._sender = WebhookSender(
+            default_url=webhook_url, default_token=webhook_token,
+            default_format=webhook_format, default_secret=webhook_secret,
+        )
         self._store = JobStore(db_path)
         self._recover_jobs()
-
-    async def _get_http(self) -> httpx.AsyncClient:
-        if self._http is None or self._http.is_closed:
-            self._http = httpx.AsyncClient(timeout=10)
-        return self._http
 
     def _recover_jobs(self):
         """On startup: queue incomplete jobs for background retry, reload unsent webhooks."""
@@ -286,7 +278,7 @@ class JobManager:
             if not text:
                 payloads = [{**meta, "message": ""}]
             else:
-                parts = [text[i:i+self._CHUNK_SIZE] for i in range(0, len(text), self._CHUNK_SIZE)]
+                parts = chunk_text(text, self._CHUNK_SIZE)
                 payloads = [{**meta, "message": p, "part": i+1, "total_parts": len(parts)}
                             for i, p in enumerate(parts)]
         elif is_discord_webhook:
@@ -297,47 +289,21 @@ class JobManager:
         else:
             payloads = [{**job.to_dict(), **job.callback_meta}]
 
-        headers = {"Content-Type": "application/json"}
-        secret = job.callback_meta.get("secret", self._webhook_secret)
-        if secret:
-            pass  # HMAC signed per-payload below
-        elif self._webhook_token:
-            headers["Authorization"] = f"Bearer {self._webhook_token}"
-        if not is_discord_webhook:
-            account_id = job.callback_meta.get("account_id", "")
-            if account_id:
-                headers["x-openclaw-account-id"] = account_id
-                headers["x-openclaw-message-channel"] = channel
+        secret = job.callback_meta.get("secret", self._sender._secret)
+        account_id = job.callback_meta.get("account_id", "") if not is_discord_webhook else ""
+        channel_header = channel if account_id else ""
 
         job.retries += 1
         self._store.save(job)
 
-        try:
-            client = await self._get_http()
-            for payload in payloads:
-                req_headers = dict(headers)
-                if secret:
-                    body_bytes = _json.dumps(payload, ensure_ascii=False).encode()
-                    sig = _hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
-                    req_headers["X-Webhook-Signature"] = sig
-                    resp = await client.post(url, content=body_bytes, headers=req_headers)
-                else:
-                    resp = await client.post(url, json=payload, headers=req_headers)
-                log.info("webhook_sent: job=%s channel=%s status=%d part=%d/%d",
-                         job.job_id, channel,
-                         resp.status_code, payloads.index(payload) + 1, len(payloads))
-                if resp.status_code >= 300:
-                    body = resp.text[:500]
-                    log.warning("webhook_rejected: job=%s status=%d retries=%d body=%s",
-                                job.job_id, resp.status_code, job.retries, body)
-                    break
-                if len(payloads) > 1:
-                    await asyncio.sleep(0.5)
-            else:
-                job.webhook_sent = True
-                self._store.save(job)
-        except Exception as e:
-            log.error("webhook_failed: job=%s retries=%d error=%s", job.job_id, job.retries, e)
+        ok = await self._sender.send(
+            url, payloads, secret=secret,
+            account_id=account_id, channel=channel_header,
+            log_prefix=f"webhook job={job.job_id}",
+        )
+        if ok:
+            job.webhook_sent = True
+            self._store.save(job)
 
     @staticmethod
     def _format_discord_embed(job: Job) -> dict:
