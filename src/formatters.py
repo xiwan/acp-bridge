@@ -146,6 +146,22 @@ def get_formatter(channel: str) -> JobFormatter:
     return _FORMATTERS.get(channel, FallbackFormatter())
 
 
+def _collapse(text: str) -> tuple[str, str | None]:
+    """Return (summary, full_text_or_None) based on collapse_threshold setting.
+
+    - Short text (≤ threshold): returns (text, None)
+    - Long text (> threshold): returns (first N lines + char count, full text)
+    """
+    threshold = get_setting("collapse_threshold", 800)
+    if len(text) <= threshold:
+        return text, None
+    lines = text.splitlines()
+    n = get_setting("summary_lines", 5)
+    summary = "\n".join(lines[:n])
+    summary += f"\n... (共 {len(text)} 字符)"
+    return summary, text
+
+
 def _split(text: str, limit: int = 1900) -> list[str]:
     """Split text into chunks at line boundaries, each <= limit chars."""
     chunks, cur = [], ""
@@ -179,7 +195,7 @@ class JobFormatter:
 
 
 class DiscordFormatter(JobFormatter):
-    """Discord: summary card + body chunks (2000 char limit)."""
+    """Discord: summary card + body chunks (2000 char limit). Long output collapsed via thread."""
 
     text_limit: int = 1900
 
@@ -200,21 +216,35 @@ class DiscordFormatter(JobFormatter):
                 fmt("job", "tools_line", "> ✅ `{tool}`", tool=t) for t in job.tools[:10])
             summary += f"\n> \n> {tools_hdr}\n{tool_lines}"
         summary += f"\n> \n> {fmt('job', 'footer', '⏱️ {dur}s', dur=dur)}"
-        payloads.append(self._msg(target, summary))
 
-        # 2) Body
+        # 2) Body — collapse long output into thread
         if job.status == "completed" and job.result.strip():
-            chunks = _split(job.result, self.text_limit - 100)
-            for i, chunk in enumerate(chunks):
-                if len(chunks) > 1:
-                    header = fmt("job", "result_header_part",
-                                 "📄 **Result** — {agent} `{job_id}` [{part}/{total}]",
-                                 agent=job.agent, job_id=job.job_id[:8], part=i+1, total=len(chunks))
-                else:
-                    header = fmt("job", "result_header", "📄 **Result** — {agent} `{job_id}`",
-                                 agent=job.agent, job_id=job.job_id[:8])
-                body = _quote(chunk)
-                payloads.append(self._msg(target, f"{header}\n{body}"))
+            short, full = _collapse(job.result)
+            if full is None:
+                # Short output: inline as before
+                payloads.append(self._msg(target, summary))
+                header = fmt("job", "result_header", "📄 **Result** — {agent} `{job_id}`",
+                             agent=job.agent, job_id=job.job_id[:8])
+                payloads.append(self._msg(target, f"{header}\n{_quote(short)}"))
+            else:
+                # Long output: summary + thread
+                summary += "\n\n📄 完整输出见下方 thread"
+                payloads.append(self._msg(target, summary))
+                # Thread payload with full content chunks
+                chunks = _split(full, self.text_limit - 100)
+                for i, chunk in enumerate(chunks):
+                    if len(chunks) > 1:
+                        header = fmt("job", "result_header_part",
+                                     "📄 **Result** — {agent} `{job_id}` [{part}/{total}]",
+                                     agent=job.agent, job_id=job.job_id[:8], part=i+1, total=len(chunks))
+                    else:
+                        header = fmt("job", "result_header", "📄 **Result** — {agent} `{job_id}`",
+                                     agent=job.agent, job_id=job.job_id[:8])
+                    msg = self._msg(target, f"{header}\n{_quote(chunk)}")
+                    msg["thread_content"] = True
+                    payloads.append(msg)
+        else:
+            payloads.append(self._msg(target, summary))
 
         return payloads
 

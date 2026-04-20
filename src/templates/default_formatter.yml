@@ -43,6 +43,8 @@ components:
 settings:
   text_limit: 1900
   chunk_overlap: 50
+  collapse_threshold: 800
+  summary_lines: 5
 
 # ── Prompt Suffix ────────────────────────────────
 # Appended to every agent prompt (pipeline steps, async jobs, etc.)

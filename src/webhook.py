@@ -47,7 +47,11 @@ class WebhookSender:
     async def send(self, url: str, payloads: list[dict], *,
                    secret: str = "", account_id: str = "",
                    channel: str = "", log_prefix: str = "webhook") -> bool:
-        """Send payloads to url. Returns True if all succeeded."""
+        """Send payloads to url. Returns True if all succeeded.
+
+        Payloads with thread_content=True are sent as thread-reply to the
+        first message's ID (requires OpenClaw message tool support).
+        """
         if not url or not payloads:
             return False
 
@@ -62,7 +66,19 @@ class WebhookSender:
 
         try:
             client = await self._get_http()
+            first_message_id: str = ""
+
             for idx, payload in enumerate(payloads):
+                # Separate thread_content flag from the payload sent over the wire
+                is_thread = payload.pop("thread_content", False)
+
+                # If this is thread content and we have a parent message ID,
+                # switch to thread-reply action
+                if is_thread and first_message_id:
+                    payload = dict(payload)
+                    payload["action"] = "thread-reply"
+                    payload["args"] = {**payload.get("args", {}), "message_id": first_message_id}
+
                 req_headers = dict(headers)
                 if secret:
                     body_bytes = _json.dumps(payload, ensure_ascii=False).encode()
@@ -71,12 +87,25 @@ class WebhookSender:
                     resp = await client.post(url, content=body_bytes, headers=req_headers)
                 else:
                     resp = await client.post(url, json=payload, headers=req_headers)
-                log.info("%s: status=%d part=%d/%d",
-                         log_prefix, resp.status_code, idx + 1, len(payloads))
+                log.info("%s: status=%d part=%d/%d thread=%s",
+                         log_prefix, resp.status_code, idx + 1, len(payloads), is_thread)
                 if resp.status_code >= 300:
                     log.warning("%s_rejected: status=%d body=%s",
                                 log_prefix, resp.status_code, resp.text[:500])
                     return False
+
+                # Capture message_id from first (summary) message for thread replies
+                if idx == 0 and not first_message_id:
+                    try:
+                        resp_data = resp.json()
+                        first_message_id = (
+                            resp_data.get("message_id") or
+                            resp_data.get("id") or
+                            resp_data.get("data", {}).get("message_id", "")
+                        )
+                    except Exception:
+                        pass
+
                 if len(payloads) > 1:
                     await asyncio.sleep(0.5)
             return True
