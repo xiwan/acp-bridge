@@ -80,6 +80,7 @@ curl -s -X POST http://localhost:18010/runs \
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/getting-started.md) | Installation, Docker, prerequisites, systemd, Web UI |
+| [Tutorial](docs/tutorial.md) | End-to-end: Discord → Agent → Discord in 5 minutes |
 | [Configuration](docs/configuration.md) | `config.yaml` reference, Codex + LiteLLM proxy setup |
 | [Agents](docs/agents.md) | Supported agents, compatibility matrix, install commands |
 | [API Reference](docs/api-reference.md) | All HTTP endpoints with examples |

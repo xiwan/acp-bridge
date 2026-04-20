@@ -1,6 +1,6 @@
 [← Agents](agents.md) | [Pipelines →](pipelines.md)
 
-> **Docs:** [Getting Started](getting-started.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
 # API Reference
 
@@ -33,6 +33,11 @@ Response:
 ### `POST /runs`
 
 Synchronous or streaming agent call.
+
+> **Input format note:** The `input` field uses the [ACP protocol](https://agentclientprotocol.com/) message format (nested `parts` array). If this feels verbose, use [`acp-client.sh`](client-usage.md) which wraps it for you:
+> ```bash
+> ./skill/scripts/acp-client.sh -a kiro "Hello"   # no JSON needed
+> ```
 
 **Request body:**
 

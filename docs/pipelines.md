@@ -1,8 +1,19 @@
 [← API Reference](api-reference.md) | [Async Jobs →](async-jobs.md)
 
-> **Docs:** [Getting Started](getting-started.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
 # Orchestration — Multi-Agent Pipelines
+
+## Which mode should I use?
+
+| I want to... | Mode | Example |
+|--------------|------|---------|
+| Chain agents — output of A feeds into B | **sequence** | Code review → test generation → QA |
+| Compare answers from multiple agents | **parallel** | Kiro vs Claude on the same question |
+| Get the fastest answer, cancel the rest | **race** | Latency-sensitive one-shot tasks |
+| Have agents discuss and build on each other | **conversation** | Architecture debate, collaborative design |
+
+## Modes
 
 - Sequence: chain agents, each receives the previous output as context
 - Parallel: fan-out the same prompt to multiple agents, aggregate results

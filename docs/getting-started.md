@@ -1,10 +1,26 @@
-[← README](../README.md) | [Configuration →](configuration.md)
+[← README](../README.md) | [Tutorial →](tutorial.md)
 
-> **Docs:** [Getting Started](getting-started.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
 # Getting Started
 
 ACP Bridge is a local HTTP gateway that turns CLI agents (Kiro, Claude Code, Codex, etc.) into a unified REST API. Once running, any HTTP client — your team, your bots, your IM — can call these agents without installing them locally. Auth tokens protect access; see [Security](security.md) for details.
+
+```
+  IM (Discord/Feishu)          HTTP client            Web UI
+        │                          │                     │
+        ▼                          ▼                     ▼
+  ┌───────────┐            ┌──────────────┐        ┌─────────┐
+  │  OpenClaw │───HTTP────▶│  ACP Bridge  │◀──────▶│  /ui    │
+  │  / Hermes │            │  :18010      │        └─────────┘
+  └───────────┘            └──────┬───────┘
+                                  │ stdio JSON-RPC (ACP) / PTY
+                    ┌─────────────┼─────────────┐
+                    ▼             ▼              ▼
+               ┌────────┐  ┌────────┐     ┌────────┐
+               │  Kiro  │  │ Claude │ ... │ Codex  │
+               └────────┘  └────────┘     └────────┘
+```
 
 ## Prerequisites
 
@@ -95,7 +111,9 @@ See [Configuration](configuration.md) for the full `config.yaml` reference.
 
 > Docker and `uv run` are **alternative** startup methods — pick one, not both. Docker is recommended for production; `uv run` is simpler for local development.
 
-A lightweight Docker image containing only the ACP Bridge gateway. Agent CLIs (Kiro, Claude Code, Codex) stay on your host — mount them into the container as needed.
+A lightweight Docker image containing only the ACP Bridge gateway. Agent CLIs stay on your host and are **mounted into the container** as read-only volumes — this avoids bloating the image and lets you manage agent versions independently.
+
+Why not install agents inside the container? Agent CLIs (Kiro, Claude, Codex) have their own auth state, config files, and runtime dependencies. Mounting from the host keeps a single source of truth.
 
 ```bash
 # 1. Prepare config
@@ -115,6 +133,29 @@ sudo docker compose -f docker/light/docker-compose.yml up -d --build
 # Check logs
 sudo docker compose -f docker/light/docker-compose.yml logs -f
 ```
+
+### Agent mount examples
+
+Each agent needs its binary and config directory mounted. From `docker-compose.yml`:
+
+```yaml
+volumes:
+  # Kiro CLI — native binary + auth data
+  - /home/ec2-user/.local/bin/kiro-cli:/usr/local/bin/kiro-cli:ro
+  - /home/ec2-user/.kiro:/home/app/.kiro
+
+  # Claude Code — npm global module
+  - /usr/lib/node_modules/@agentclientprotocol:/usr/lib/node_modules/@agentclientprotocol:ro
+
+  # Codex — npm global module + config
+  - /usr/lib/node_modules/@openai:/usr/lib/node_modules/@openai:ro
+  - /home/ec2-user/.codex:/home/app/.codex:ro
+
+  # Harness Factory — single binary
+  - /path/to/harness-factory:/usr/local/bin/harness-factory:ro
+```
+
+Adjust paths to match your host. See `docker/light/docker-compose.yml` for the full list.
 
 > **Note:** When using `sudo`, shell environment variables and `~` paths are NOT passed to Docker. Use a `.env` file or pass variables inline:
 >
@@ -143,15 +184,16 @@ The installer sets up systemd services automatically. Use `bridge-ctl.sh` for li
 ## Verify Installation
 
 ```bash
-# Health check (no auth required)
+# Option 1: CLI client (recommended — simplest)
+export ACP_BRIDGE_URL=http://localhost:18010
+export ACP_TOKEN=$ACP_BRIDGE_TOKEN
+./skill/scripts/acp-client.sh -l                        # list agents
+./skill/scripts/acp-client.sh -a kiro "Say hello"       # call an agent
+
+# Option 2: curl
 curl -s http://localhost:18010/health
 # → {"status":"ok","version":"0.15.11"}
 
-# List agents (auth required)
-curl -s http://localhost:18010/agents \
-  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN"
-
-# Test an agent call (first call may take 5-15s for cold start)
 curl -s --max-time 120 -X POST http://localhost:18010/runs \
   -H "Authorization: Bearer $ACP_BRIDGE_TOKEN" \
   -H "Content-Type: application/json" \
@@ -160,6 +202,8 @@ curl -s --max-time 120 -X POST http://localhost:18010/runs \
     "input": [{"parts": [{"content": "Say hello in one sentence", "content_type": "text/plain"}]}]
   }'
 ```
+
+> **Tip:** `acp-client.sh` wraps the verbose ACP JSON format for you. See [Client Usage](client-usage.md) for all options.
 
 ## Web UI
 
