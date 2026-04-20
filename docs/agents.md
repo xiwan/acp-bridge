@@ -18,7 +18,7 @@
 | [Harness Factory](https://github.com/xiwan/harness-factory) | Open Source | ✅ Native | `acp` | ✅ Integrated | 4/4 | See [repo](https://github.com/xiwan/harness-factory) |
 | [Hermes Agent](https://github.com/NousResearch/hermes-agent) | Nous Research | ✅ `hermes acp` | `acp` | ✅ Integrated | 8/8 | `pip install hermes-agent && pip install -e '.[acp]'` |
 | [CoStrict](https://github.com/zgsm-ai/costrict) | Open Source 🇨🇳 | ✅ Native | — | 🟡 Planned | — | — |
-| [Trae Agent](https://github.com/bytedance/trae-agent) | ByteDance 🇨🇳 | ❌ | — | ⚪ No ACP | — | — |
+| [Trae Agent](https://github.com/bytedance/trae-agent) | ByteDance 🇨🇳 | ❌ | `pty` | ✅ Integrated | 4/4 | `cd trae-agent && uv sync --all-extras` |
 | [Aider](https://github.com/Aider-AI/aider) | Open Source | ❌ | — | ⚪ No ACP | — | — |
 
 **Legend:** ✅ Integrated — 🟡 Planned (ACP-ready) — ⚪ No ACP support yet — 🧪 Experimental
@@ -73,6 +73,13 @@ agents:
 - Requires [LiteLLM](https://github.com/BerriAI/litellm) proxy for non-OpenAI models — see [Configuration](configuration.md#codex--litellm-setup)
 - Add `--skip-git-repo-check` if `working_dir` is not a git repo
 
+### Trae Agent
+
+- PTY mode only (no ACP support)
+- Requires [LiteLLM](https://github.com/BerriAI/litellm) proxy for Bedrock models — use `openrouter` provider in `trae_config.yaml`
+- LiteLLM must set `additional_drop_params: ["top_p"]` on Anthropic Claude models (Bedrock rejects `temperature` + `top_p` together, and trae always sends both)
+- Config file: `~/projects/trae-agent/trae_config.yaml`
+
 ### Harness Factory
 
 - Profile-driven: same binary + different profiles = different agents
@@ -87,7 +94,7 @@ agents:
 
 ## Zero-Config Auto-Detection
 
-When no `config.yaml` is present, Bridge scans `PATH` for known agent CLIs and registers them with default settings. Supported: `kiro-cli`, `claude-agent-acp`, `codex`, `qwen`, `opencode`, `hermes`, `harness-factory`.
+When no `config.yaml` is present, Bridge scans `PATH` for known agent CLIs and registers them with default settings. Supported: `kiro-cli`, `claude-agent-acp`, `codex`, `trae-cli`, `qwen`, `opencode`, `hermes`, `harness-factory`.
 
 ## Writing a New Agent
 

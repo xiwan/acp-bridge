@@ -60,7 +60,7 @@ if [ -f "$INSTALL_DIR/config.yaml" ]; then
     IS_UPDATE=true
     ok "Existing installation found at $INSTALL_DIR"
     # Parse which agents are already configured
-    for name in kiro claude codex qwen opencode hermes harness; do
+    for name in kiro claude codex trae qwen opencode hermes harness; do
         if grep -q "^  ${name}:" "$INSTALL_DIR/config.yaml" 2>/dev/null; then
             EXISTING_AGENTS+=("$name")
         fi
@@ -194,6 +194,7 @@ declare -A AGENT_INSTALL_HINTS=(
     [qwen]="npm i -g @anthropic-ai/qwen-code"
     [opencode]="See https://github.com/opencode-ai/opencode"
     [hermes]="pip install hermes-agent && pip install -e '.[acp]'"
+    [trae]="cd trae-agent && uv sync --all-extras"
     [harness]="(auto-installed by this script)"
 )
 
@@ -208,6 +209,7 @@ declare -A AGENT_CMDS=(
     [kiro]="kiro-cli"
     [claude]="claude-agent-acp"
     [codex]="codex"
+    [trae]="trae-cli"
     [qwen]="qwen"
     [opencode]="opencode"
     [hermes]="hermes"
@@ -217,12 +219,13 @@ declare -A AGENT_DESCS=(
     [kiro]="Kiro CLI (AWS)"
     [claude]="Claude Code (Anthropic)"
     [codex]="Codex CLI (OpenAI)"
+    [trae]="Trae Agent (ByteDance)"
     [qwen]="Qwen Code (Alibaba)"
     [opencode]="OpenCode (open source)"
     [hermes]="Hermes Agent (Nous Research)"
     [harness]="Harness Factory (lightweight, profile-driven)"
 )
-AGENT_ORDER=(kiro claude codex qwen opencode hermes harness)
+AGENT_ORDER=(kiro claude codex trae qwen opencode hermes harness)
 
 FOUND=()
 NOT_FOUND=()
@@ -336,14 +339,14 @@ ok "Allowed IPs: $ALLOWED_IPS"
 # LiteLLM — needed for codex, qwen, harness
 NEEDS_LITELLM=false
 for name in "${ENABLED[@]}"; do
-    [[ "$name" == "codex" || "$name" == "qwen" || "$name" == "harness" ]] && NEEDS_LITELLM=true
+    [[ "$name" == "codex" || "$name" == "qwen" || "$name" == "trae" || "$name" == "harness" ]] && NEEDS_LITELLM=true
 done
 
 LITELLM_KEY=""
 LITELLM_URL=""
 if $NEEDS_LITELLM; then
     echo ""
-    info "Some agents (codex/qwen/harness) need a LiteLLM proxy for LLM access."
+    info "Some agents (codex/trae/qwen/harness) need a LiteLLM proxy for LLM access."
 
     if command -v litellm &>/dev/null; then
         ok "litellm found: $(command -v litellm)"
@@ -461,6 +464,15 @@ _gen_agent_block() {
                     echo '    command: "codex"'
                     echo '    args: ["exec", "--full-auto", "--skip-git-repo-check"]'
                     echo '    working_dir: "/tmp"'
+                    echo "    description: \"$desc\""
+                    ;;
+                trae)
+                    echo '  trae:'
+                    echo '    enabled: true'
+                    echo '    mode: "pty"'
+                    echo '    command: "trae-cli"'
+                    echo '    args: ["run", "--working-dir", "/tmp/trae"]'
+                    echo '    working_dir: "/tmp/trae"'
                     echo "    description: \"$desc\""
                     ;;
                 qwen)

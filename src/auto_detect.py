@@ -44,6 +44,13 @@ KNOWN_AGENTS = {
         "acp_args": ["acp"],
         "description": "Hermes Agent (open source, multi-provider)",
     },
+    "trae": {
+        "command": "trae-cli",
+        "mode": "pty",
+        "args": ["run", "--working-dir", "/tmp/trae"],
+        "working_dir": "/tmp/trae",
+        "description": "Trae Agent (ByteDance, PTY mode via LiteLLM)",
+    },
     "harness": {
         "command": "harness-factory",
         "mode": "acp",
