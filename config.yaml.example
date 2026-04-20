@@ -145,11 +145,13 @@ agents:
 #   account_id: "default"
 #   target: "channel:<discord-channel-id>"
 #
-# Hermes Agent example (via webhook adapter):
+# Hermes Agent example (HMAC-SHA256 signed):
 # webhook:
 #   url: "http://<hermes-ip>:8644/webhooks/acp-result"
-#   token: ""
+#   secret: "${HERMES_WEBHOOK_SECRET}"
 #   format: "generic"
+#   account_id: "default"
+#   target: "channel:<discord-channel-id>"
 
   # harness-factory agents — same binary, different profiles
   # Requires: harness-factory binary (https://github.com/xiwan/harness-factory)

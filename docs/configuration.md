@@ -24,9 +24,10 @@ pool:
 
 webhook:
   url: "http://<openclaw-ip>:18789/tools/invoke"  # callback endpoint
-  token: "${OPENCLAW_TOKEN}"                    # webhook auth token
+  token: "${OPENCLAW_TOKEN}"                    # Bearer auth (openclaw)
+  secret: ""                                    # HMAC-SHA256 signing secret (hermes)
   format: "openclaw"                            # "openclaw" (default) or "generic"
-  account_id: "default"                         # OpenClaw bot account
+  account_id: "default"                         # bot account identifier
   target: "channel:<default-channel-id>"        # default push target
 
 security:
@@ -132,6 +133,7 @@ security:
   auth_token: "${ACP_BRIDGE_TOKEN}"    # resolved from environment at startup
 webhook:
   token: "${OPENCLAW_TOKEN}"
+  secret: "${HERMES_WEBHOOK_SECRET}"
 ```
 
 This keeps secrets out of the config file. Set them in your shell, `.env` file, or systemd `Environment=` directives.
@@ -145,17 +147,42 @@ Bridge supports two webhook callback formats for async job results:
 | `openclaw` (default) | OpenClaw Gateway `/tools/invoke` | `{"tool":"message","action":"send","args":{...}}` + OpenClaw headers |
 | `generic` | Any HTTP endpoint (Hermes, custom) | `{"message":"...","agent":"...","status":"...","job_id":"..."}` |
 
+## Webhook Authentication
+
+Bridge supports two authentication methods for webhook delivery, configured per target:
+
+| Method | Header | Config field | Used by |
+|--------|--------|-------------|---------|
+| Bearer token | `Authorization: Bearer <token>` | `token` | OpenClaw |
+| HMAC-SHA256 | `X-Webhook-Signature: <hex>` | `secret` | Hermes |
+
+Set `token` or `secret` (not both). If neither is set, no auth header is sent.
+
+HMAC signature is computed as `HMAC-SHA256(secret, request_body)` and sent as a hex digest in the `X-Webhook-Signature` header. The receiver verifies by computing the same HMAC over the raw request body.
+
+### OpenClaw example
+
 ```yaml
-# OpenClaw (default)
 webhook:
   url: "http://<openclaw-ip>:18789/tools/invoke"
+  token: "${OPENCLAW_TOKEN}"
   format: "openclaw"
-
-# Hermes Agent (via webhook adapter)
-webhook:
-  url: "http://<hermes-ip>:8644/webhooks/<route-name>"
-  format: "generic"
+  account_id: "default"
+  target: "channel:<discord-channel-id>"
 ```
+
+### Hermes example
+
+```yaml
+webhook:
+  url: "http://<hermes-ip>:8644/webhooks/acp-result"
+  secret: "${HERMES_WEBHOOK_SECRET}"
+  format: "generic"
+  account_id: "default"
+  target: "channel:<discord-channel-id>"
+```
+
+The `secret` must match the HMAC secret configured on the Hermes webhook route (`~/.hermes/config.yaml` → `platforms.webhook.extra.routes.<name>.secret`).
 
 Messages are auto-chunked at 1800 characters for Discord safety.
 

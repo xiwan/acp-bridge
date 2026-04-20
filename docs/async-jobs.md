@@ -20,7 +20,7 @@ Bridge supports two webhook callback formats:
 Configure in `config.yaml`:
 
 ```yaml
-# OpenClaw (default)
+# OpenClaw (default) — Bearer token auth
 webhook:
   url: "http://<openclaw-ip>:18789/tools/invoke"
   token: "${OPENCLAW_TOKEN}"
@@ -28,13 +28,18 @@ webhook:
   account_id: "default"
   target: "channel:<discord-channel-id>"
 
-# Hermes Agent (via webhook adapter)
+# Hermes Agent — HMAC-SHA256 signature auth
 webhook:
-  url: "http://<hermes-ip>:8644/webhooks/<route-name>"
+  url: "http://<hermes-ip>:8644/webhooks/acp-result"
+  secret: "${HERMES_WEBHOOK_SECRET}"
   format: "generic"
+  account_id: "default"
+  target: "channel:<discord-channel-id>"
 ```
 
-With Hermes, configure a webhook route on the Hermes side to deliver results to any IM platform (Discord, Telegram, Feishu, Slack, etc.). See [Hermes Webhooks docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks) for route setup.
+Authentication: set `token` for Bearer auth (OpenClaw) or `secret` for HMAC-SHA256 signing (Hermes). See [Configuration — Webhook Authentication](configuration.md#webhook-authentication) for details.
+
+With Hermes, configure a webhook route on the Hermes side to deliver results to any IM platform (Discord, Telegram, Feishu, Slack, etc.). The `secret` must match the Hermes route's HMAC secret. See [Hermes Webhooks docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks) for route setup.
 
 ## Submit
 

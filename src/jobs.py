@@ -1,6 +1,9 @@
 """Async job manager — submit, poll, webhook callback."""
 
 import asyncio
+import hashlib
+import hmac as _hmac
+import json as _json
 import logging
 import os
 import re
@@ -56,7 +59,7 @@ class Job:
 class JobManager:
     def __init__(self, pool: AcpProcessPool | None = None, pty_configs: dict | None = None,
                  webhook_url: str = "", webhook_token: str = "", base_url: str = "",
-                 webhook_format: str = "openclaw",
+                 webhook_format: str = "openclaw", webhook_secret: str = "",
                  db_path: str = "data/jobs.db"):
         self._pool = pool
         self._pty_configs = pty_configs or {}
@@ -64,6 +67,7 @@ class JobManager:
         self._webhook_url = webhook_url
         self._webhook_token = webhook_token
         self._webhook_format = webhook_format
+        self._webhook_secret = webhook_secret
         self._base_url = base_url
         self._http: httpx.AsyncClient | None = None
         self._store = JobStore(db_path)
@@ -294,9 +298,12 @@ class JobManager:
             payloads = [{**job.to_dict(), **job.callback_meta}]
 
         headers = {"Content-Type": "application/json"}
-        if self._webhook_token:
+        secret = job.callback_meta.get("secret", self._webhook_secret)
+        if secret:
+            pass  # HMAC signed per-payload below
+        elif self._webhook_token:
             headers["Authorization"] = f"Bearer {self._webhook_token}"
-        if fmt != "generic" and not is_discord_webhook:
+        if not is_discord_webhook:
             account_id = job.callback_meta.get("account_id", "")
             if account_id:
                 headers["x-openclaw-account-id"] = account_id
@@ -308,11 +315,18 @@ class JobManager:
         try:
             client = await self._get_http()
             for payload in payloads:
-                resp = await client.post(url, json=payload, headers=headers)
+                req_headers = dict(headers)
+                if secret:
+                    body_bytes = _json.dumps(payload, ensure_ascii=False).encode()
+                    sig = _hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+                    req_headers["X-Webhook-Signature"] = sig
+                    resp = await client.post(url, content=body_bytes, headers=req_headers)
+                else:
+                    resp = await client.post(url, json=payload, headers=req_headers)
                 log.info("webhook_sent: job=%s channel=%s status=%d part=%d/%d",
                          job.job_id, channel,
                          resp.status_code, payloads.index(payload) + 1, len(payloads))
-                if resp.status_code != 200:
+                if resp.status_code >= 300:
                     body = resp.text[:500]
                     log.warning("webhook_rejected: job=%s status=%d retries=%d body=%s",
                                 job.job_id, resp.status_code, job.retries, body)

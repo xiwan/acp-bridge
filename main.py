@@ -244,6 +244,7 @@ def main():
         webhook_url=webhook_cfg.get("url", ""),
         webhook_token=webhook_cfg.get("token", ""),
         webhook_format=webhook_cfg.get("format", "openclaw"),
+        webhook_secret=webhook_cfg.get("secret", ""),
         base_url=base_url,
     ) if (pool or pty_agents) else None
 
@@ -279,7 +280,8 @@ def main():
     pipeline_mgr = PipelineManager(pool, agents_cfg,
                                    webhook_url=webhook_cfg.get("url", ""),
                                    webhook_token=webhook_cfg.get("token", ""),
-                                   webhook_format=webhook_cfg.get("format", "openclaw")) if pool else None
+                                   webhook_format=webhook_cfg.get("format", "openclaw"),
+                                   webhook_secret=webhook_cfg.get("secret", "")) if pool else None
     pipelines_routes.register(app, pipeline_mgr, webhook_account_id, webhook_default_target)
 
     if ui_enabled:

@@ -1,6 +1,9 @@
 """Multi-agent pipeline — sequence, parallel, race execution."""
 
 import asyncio
+import hashlib
+import hmac as _hmac
+import json as _json
 import logging
 import os
 import re
@@ -92,7 +95,7 @@ class Pipeline:
 class PipelineManager:
     def __init__(self, pool: AcpProcessPool, agents_cfg: dict,
                  webhook_url: str = "", webhook_token: str = "",
-                 webhook_format: str = "openclaw",
+                 webhook_format: str = "openclaw", webhook_secret: str = "",
                  db_path: str = "data/jobs.db"):
         self._pool = pool
         self._agents_cfg = agents_cfg
@@ -100,6 +103,7 @@ class PipelineManager:
         self._webhook_url = webhook_url
         self._webhook_token = webhook_token
         self._webhook_format = webhook_format
+        self._webhook_secret = webhook_secret
         self._http: httpx.AsyncClient | None = None
         self._store = PipelineStore(db_path)
 
@@ -240,9 +244,12 @@ class PipelineManager:
         fmt = pl.webhook_meta.get("format", self._webhook_format)
 
         headers = {"Content-Type": "application/json"}
-        if self._webhook_token:
+        secret = pl.webhook_meta.get("secret", self._webhook_secret)
+        if secret:
+            pass  # HMAC signed per-payload below
+        elif self._webhook_token:
             headers["Authorization"] = f"Bearer {self._webhook_token}"
-        if fmt != "generic" and account_id:
+        if account_id:
             headers["x-openclaw-account-id"] = account_id
             headers["x-openclaw-message-channel"] = channel
 
@@ -260,10 +267,17 @@ class PipelineManager:
             if not self._http or self._http.is_closed:
                 self._http = httpx.AsyncClient(timeout=10)
             for idx, payload in enumerate(payloads):
-                resp = await self._http.post(url, json=payload, headers=headers)
+                req_headers = dict(headers)
+                if secret:
+                    body_bytes = _json.dumps(payload, ensure_ascii=False).encode()
+                    sig = _hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+                    req_headers["X-Webhook-Signature"] = sig
+                    resp = await self._http.post(url, content=body_bytes, headers=req_headers)
+                else:
+                    resp = await self._http.post(url, json=payload, headers=req_headers)
                 log.info("pipeline_webhook: id=%s status=%d part=%d/%d",
                          pl.pipeline_id, resp.status_code, idx+1, len(payloads))
-                if resp.status_code != 200:
+                if resp.status_code >= 300:
                     log.warning("pipeline_webhook_rejected: id=%s body=%s",
                                 pl.pipeline_id, resp.text[:300])
                     return
