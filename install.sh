@@ -210,7 +210,7 @@ declare -A AGENT_INSTALL_HINTS=(
     [codex]="npm i -g @openai/codex"
     [qwen]="npm i -g @anthropic-ai/qwen-code"
     [opencode]="See https://github.com/opencode-ai/opencode"
-    [hermes]="uv tool install 'hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git'"
+    [hermes]="uv tool install 'hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git'  (or: pip install 'hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git')"
     [trae]="cd trae-agent && uv sync --all-extras"
     [harness]="(auto-installed by this script)"
 )
