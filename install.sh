@@ -132,6 +132,11 @@ info "Step 2/6: Installing ACP Bridge..."
 if [ -d "$INSTALL_DIR/.git" ] && $HAS_GIT; then
     info "Updating existing installation at $INSTALL_DIR..."
     git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || warn "git pull failed, using existing version"
+elif [ -d "$INSTALL_DIR" ]; then
+    # Existing dir without .git (tarball install) — update via tarball overlay
+    info "Updating existing installation at $INSTALL_DIR (tarball)..."
+    curl -fsSL https://github.com/xiwan/acp-bridge/archive/refs/heads/main.tar.gz \
+        | tar -xz --strip-components=1 -C "$INSTALL_DIR"
 elif $HAS_GIT; then
     git clone --depth 1 "$REPO" "$INSTALL_DIR"
 else
