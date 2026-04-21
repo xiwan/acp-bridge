@@ -44,6 +44,12 @@ KNOWN_AGENTS = {
         "acp_args": ["acp"],
         "description": "Hermes Agent (open source, multi-provider)",
     },
+    "openclaw": {
+        "command": "openclaw",
+        "mode": "acp",
+        "acp_args": ["acp"],
+        "description": "OpenClaw Gateway (ACP bridge)",
+    },
     "trae": {
         "command": "trae-cli",
         "mode": "pty",

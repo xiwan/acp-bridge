@@ -16,7 +16,8 @@
 | [Copilot CLI](https://docs.github.com/en/copilot/reference/acp-server) | GitHub | ✅ `--acp` | — | 🟡 Planned | — | — |
 | [OpenCode](https://github.com/opencode-ai/opencode) | Open Source | ✅ `opencode acp` | `acp` | ✅ Integrated | 6/6 | See [repo](https://github.com/opencode-ai/opencode) |
 | [Harness Factory](https://github.com/xiwan/harness-factory) | Open Source | ✅ Native | `acp` | ✅ Integrated | 4/4 | See [repo](https://github.com/xiwan/harness-factory) |
-| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | Nous Research | ✅ `hermes acp` | `acp` | ✅ Integrated | 8/8 | `pip install hermes-agent && pip install -e '.[acp]'` |
+| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | Nous Research | ✅ `hermes acp` | `acp` | ✅ Integrated | 8/8 | `uv tool install 'hermes-agent[acp] @ git+...'` |
+| [OpenClaw](https://github.com/openclaw/openclaw) | Open Source | ✅ `openclaw acp` | `acp` | ✅ Integrated | — | `sudo npm i -g openclaw` |
 | [CoStrict](https://github.com/zgsm-ai/costrict) | Open Source 🇨🇳 | ✅ Native | — | 🟡 Planned | — | — |
 | [Trae Agent](https://github.com/bytedance/trae-agent) | ByteDance 🇨🇳 | ❌ | `pty` | ✅ Integrated | 4/4 | `cd trae-agent && uv sync --all-extras` |
 | [Aider](https://github.com/Aider-AI/aider) | Open Source | ❌ | — | ⚪ No ACP | — | — |

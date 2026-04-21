@@ -10,7 +10,7 @@
 ║                                                              ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
-║  IM Agents    🦞 OpenClaw  🤖 Hermes                         ║
+║  IM Agents    🦞 OpenClaw  🐎 Hermes                         ║
 ║  CLI Agents   🤖 Claude Code  🤖 Kiro  🤖 Codex             ║
 ║               🤖 OpenCode  🤖 Qwen  🤖 Trae  ...           ║
 ║  Lite Agents  🏭 Harness Agents                              ║
@@ -106,7 +106,7 @@ curl -s -X POST http://localhost:18010/runs \
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.17
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.15.18
 
 ## Contributing
 

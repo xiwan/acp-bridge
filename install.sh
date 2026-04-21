@@ -212,6 +212,7 @@ declare -A AGENT_INSTALL_HINTS=(
     [opencode]="See https://github.com/opencode-ai/opencode"
     [hermes]="uv tool install 'hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git'  (or: pip install 'hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git')"
     [trae]="cd trae-agent && uv sync --all-extras"
+    [openclaw]="sudo npm i -g openclaw  (requires a running OpenClaw Gateway)"
     [harness]="(auto-installed by this script)"
 )
 
@@ -230,6 +231,7 @@ declare -A AGENT_CMDS=(
     [qwen]="qwen"
     [opencode]="opencode"
     [hermes]="hermes"
+    [openclaw]="openclaw"
     [harness]="harness-factory"
 )
 declare -A AGENT_DESCS=(
@@ -240,9 +242,10 @@ declare -A AGENT_DESCS=(
     [qwen]="Qwen Code (Alibaba)"
     [opencode]="OpenCode (open source)"
     [hermes]="Hermes Agent (Nous Research)"
+    [openclaw]="OpenClaw Gateway (ACP bridge)"
     [harness]="Harness Factory (lightweight, profile-driven)"
 )
-AGENT_ORDER=(kiro claude codex trae qwen opencode hermes harness)
+AGENT_ORDER=(kiro claude codex trae qwen opencode hermes openclaw harness)
 
 FOUND=()
 NOT_FOUND=()
@@ -321,6 +324,22 @@ fi
 
 ok "Enabled agents: ${ENABLED[*]}"
 echo ""
+
+# OpenClaw Gateway config (if openclaw agent is enabled)
+OPENCLAW_GW_URL=""
+OPENCLAW_GW_TOKEN_FILE=""
+for name in "${ENABLED[@]}"; do
+    if [[ "$name" == "openclaw" ]]; then
+        echo ""
+        info "OpenClaw agent needs a running Gateway to connect to."
+        ask "  Gateway WebSocket URL [ws://127.0.0.1:18789]:"
+        read_input OPENCLAW_GW_URL "ws://127.0.0.1:18789"
+        ask "  Gateway token file path [~/.openclaw/gateway.token]:"
+        read_input OPENCLAW_GW_TOKEN_FILE "$HOME/.openclaw/gateway.token"
+        echo ""
+        break
+    fi
+done
 
 # ============================================================
 # Step 4: Token configuration
@@ -519,6 +538,23 @@ _gen_agent_block() {
                     echo '    mode: "acp"'
                     echo '    command: "hermes"'
                     echo '    acp_args: ["acp"]'
+                    echo '    working_dir: "/tmp"'
+                    echo "    description: \"$desc\""
+                    ;;
+                openclaw)
+                    echo '  openclaw:'
+                    echo '    enabled: true'
+                    echo '    mode: "acp"'
+                    echo '    command: "openclaw"'
+                    local _oc_args='["acp"]'
+                    if [ -n "${OPENCLAW_GW_URL:-}" ]; then
+                        _oc_args="[\"acp\", \"--url\", \"${OPENCLAW_GW_URL}\""
+                        if [ -n "${OPENCLAW_GW_TOKEN_FILE:-}" ]; then
+                            _oc_args+=", \"--token-file\", \"${OPENCLAW_GW_TOKEN_FILE}\""
+                        fi
+                        _oc_args+="]"
+                    fi
+                    echo "    acp_args: $_oc_args"
                     echo '    working_dir: "/tmp"'
                     echo "    description: \"$desc\""
                     ;;

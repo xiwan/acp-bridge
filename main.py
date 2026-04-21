@@ -82,7 +82,7 @@ _BANNER = r"""
 ║                                                              ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
-║  IM Agents    🦞 OpenClaw  🤖 Hermes                         ║
+║  IM Agents    🦞 OpenClaw  🐎 Hermes                         ║
 ║  CLI Agents   🤖 Claude Code  🤖 Kiro  🤖 Codex             ║
 ║               🤖 OpenCode  🤖 Qwen  ...                     ║
 ║  Lite Agents  🏭 Harness Agents                              ║

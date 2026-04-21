@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.15.18 | 2026-04-21 | Add OpenClaw (`openclaw acp`) as ACP-mode agent. Bridges stdio JSON-RPC to OpenClaw Gateway over WebSocket. Added to auto_detect, install.sh (with interactive Gateway URL/token config), docs/agents.md |
 | v0.15.17 | 2026-04-21 | Fix token inconsistency: install.sh update mode now reads existing token from .env instead of generating a new one (was showing wrong token in OpenClaw skill hint). Client scripts (`acp-client.sh`, `tools-client.sh`, `test/lib.sh`) now accept both `ACP_TOKEN` and `ACP_BRIDGE_TOKEN` (fallback), eliminating the need for manual `export ACP_TOKEN=$ACP_BRIDGE_TOKEN` |
 | v0.15.15 | 2026-04-20 | Trae Agent integrated (PTY mode via LiteLLM/Bedrock). Added to auto_detect, install.sh, config, docs/agents.md, test suite. Requires LiteLLM proxy with `additional_drop_params: ["top_p"]` on Anthropic Claude models |
 | v0.15.11 | 2026-04-19 | Webhook generic format: `format: "generic"` sends plain JSON POST to any HTTP endpoint (Hermes, custom). Messages auto-chunked at 1800 chars for Discord safety. Enables Hermes Agent as webhook callback target via its webhook adapter (`/webhooks/<route>` + `deliver` to any IM platform). README rewrite: landing page + docs/ split into 12 files. New ASCII banner with agent roster. Startup banner in main.py |
