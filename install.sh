@@ -106,7 +106,19 @@ else
     ok "uv installed"
 fi
 
-# git (optional — fallback to tarball download)
+# git
+if command -v git &>/dev/null; then
+    ok "git $(git --version 2>/dev/null | awk '{print $3}')"
+else
+    info "Installing git..."
+    if command -v yum &>/dev/null; then
+        sudo yum install -y git &>/dev/null
+    elif command -v apt-get &>/dev/null; then
+        sudo apt-get install -y git &>/dev/null
+    fi
+    command -v git &>/dev/null && ok "git installed" || warn "Could not install git — will use tarball fallback"
+fi
+
 HAS_GIT=false
 command -v git &>/dev/null && HAS_GIT=true
 
@@ -193,7 +205,7 @@ declare -A AGENT_INSTALL_HINTS=(
     [codex]="npm i -g @openai/codex"
     [qwen]="npm i -g @anthropic-ai/qwen-code"
     [opencode]="See https://github.com/opencode-ai/opencode"
-    [hermes]="pip install hermes-agent && pip install -e '.[acp]'"
+    [hermes]="uv tool install 'hermes-agent[acp] @ git+https://github.com/NousResearch/hermes-agent.git'"
     [trae]="cd trae-agent && uv sync --all-extras"
     [harness]="(auto-installed by this script)"
 )
