@@ -298,7 +298,7 @@ class JobManager:
 
         ok = await self._sender.send(
             url, payloads, secret=secret,
-            account_id=account_id, channel=channel_header,
+            account_id=account_id, channel=channel,
             log_prefix=f"webhook job={job.job_id}",
         )
         if ok:
