@@ -315,6 +315,9 @@ echo ""
 if [ -n "${ACP_BRIDGE_TOKEN:-}" ]; then
     ok "ACP_BRIDGE_TOKEN already set in environment"
     BRIDGE_TOKEN="$ACP_BRIDGE_TOKEN"
+elif $CONFIG_EXISTS && [ -f "$INSTALL_DIR/.env" ] && grep -q '^ACP_BRIDGE_TOKEN=' "$INSTALL_DIR/.env" 2>/dev/null; then
+    BRIDGE_TOKEN=$(grep '^ACP_BRIDGE_TOKEN=' "$INSTALL_DIR/.env" | cut -d= -f2-)
+    ok "ACP_BRIDGE_TOKEN read from existing .env"
 else
     BRIDGE_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")
     ask "ACP Bridge auth token [auto-generated]:"

@@ -6,6 +6,7 @@ CLIENT="$SCRIPT_DIR/skill/scripts/acp-client.sh"
 TOOLS_CLIENT="$SCRIPT_DIR/tools/tools-client.sh"
 
 export ACP_BRIDGE_URL="${ACP_BRIDGE_URL:-http://127.0.0.1:18010}"
+export ACP_TOKEN="${ACP_TOKEN:-${ACP_BRIDGE_TOKEN:-}}"
 export ACP_RETRIES=1
 
 PASS=0 FAIL=0 SKIP=0

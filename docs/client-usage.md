@@ -11,9 +11,11 @@ Bash client for ACP Bridge. Requires `curl`, `jq`, `uuidgen`.
 ### Setup
 
 ```bash
+source .env                                    # loads ACP_BRIDGE_TOKEN (auto-detected by client)
 export ACP_BRIDGE_URL=http://localhost:18010
-export ACP_TOKEN=$ACP_BRIDGE_TOKEN
 ```
+
+> Both `ACP_TOKEN` and `ACP_BRIDGE_TOKEN` are accepted. The client reads `ACP_TOKEN` first, then falls back to `ACP_BRIDGE_TOKEN`.
 
 ### Commands
 

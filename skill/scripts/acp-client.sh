@@ -22,7 +22,7 @@ set -euo pipefail
 
 URL="${ACP_BRIDGE_URL:-http://127.0.0.1:18010}"
 AGENT="${ACP_AGENT:-kiro}"
-TOKEN="${ACP_TOKEN:-}"
+TOKEN="${ACP_TOKEN:-${ACP_BRIDGE_TOKEN:-}}"
 SESSION=""
 LIST=false
 STREAM=false

@@ -36,18 +36,20 @@ See [`AGENT_SPEC.md`](../AGENT_SPEC.md) for the full protocol specification.
 Run the full test suite against a running Bridge instance:
 
 ```bash
-ACP_TOKEN=$ACP_BRIDGE_TOKEN bash test/test.sh http://127.0.0.1:18010
+source .env   # loads ACP_BRIDGE_TOKEN (test lib auto-detects it)
+bash test/test.sh http://127.0.0.1:18010
 ```
 
 ### Individual Agent Tests
 
 ```bash
-ACP_TOKEN=$ACP_BRIDGE_TOKEN bash test/test_kiro.sh
-ACP_TOKEN=$ACP_BRIDGE_TOKEN bash test/test_claude.sh
-ACP_TOKEN=$ACP_BRIDGE_TOKEN bash test/test_codex.sh
-ACP_TOKEN=$ACP_BRIDGE_TOKEN bash test/test_qwen.sh
-ACP_TOKEN=$ACP_BRIDGE_TOKEN bash test/test_opencode.sh
-ACP_TOKEN=$ACP_BRIDGE_TOKEN bash test/test_hermes.sh
+source .env
+bash test/test_kiro.sh
+bash test/test_claude.sh
+bash test/test_codex.sh
+bash test/test_qwen.sh
+bash test/test_opencode.sh
+bash test/test_hermes.sh
 ```
 
 ### Filter from Main Runner

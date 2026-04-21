@@ -185,14 +185,14 @@ The installer sets up systemd services automatically. Use `bridge-ctl.sh` for li
 
 ```bash
 # Option 1: CLI client (recommended — simplest)
+source .env                                              # loads ACP_BRIDGE_TOKEN
 export ACP_BRIDGE_URL=http://localhost:18010
-export ACP_TOKEN=$ACP_BRIDGE_TOKEN
 ./skill/scripts/acp-client.sh -l                        # list agents
 ./skill/scripts/acp-client.sh -a kiro "Say hello"       # call an agent
 
 # Option 2: curl
 curl -s http://localhost:18010/health
-# → {"status":"ok","version":"0.15.11"}
+# → {"status":"ok","version":"0.15.17"}
 
 curl -s --max-time 120 -X POST http://localhost:18010/runs \
   -H "Authorization: Bearer $ACP_BRIDGE_TOKEN" \
