@@ -101,11 +101,10 @@ class WebhookSender:
                 if is_thread and first_message_id and is_discord:
                     # Step 1: create thread on the summary message
                     if not thread_id:
+                        thread_name = payload.pop("thread_name", "Thread")
                         thread_payload = dict(payload)
                         thread_payload["action"] = "thread-create"
-                        thread_content = payload.get("args", {}).get("message", "Thread")
-                        thread_name = thread_content[:97] + "..." if len(thread_content) > 100 else thread_content
-                        thread_payload["args"] = {"message_id": first_message_id, "name": thread_name}
+                        thread_payload["args"] = {"messageId": first_message_id, "threadName": thread_name}
                         resp = await self._post(client, url, thread_payload, headers, secret)
                         log.info("%s: thread-create status=%d", log_prefix, resp.status_code)
                         if resp.status_code < 300:

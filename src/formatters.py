@@ -242,6 +242,8 @@ class DiscordFormatter(JobFormatter):
                                      agent=job.agent, job_id=job.job_id[:8])
                     msg = self._msg(target, f"{header}\n{_quote(chunk)}")
                     msg["thread_content"] = True
+                    if i == 0:
+                        msg["thread_name"] = f"📄 {job.agent} {job.job_id[:8]} — 完整输出"
                     payloads.append(msg)
         else:
             payloads.append(self._msg(target, summary))
