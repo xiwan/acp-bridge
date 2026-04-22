@@ -453,6 +453,33 @@ case "$WEBHOOK_TYPE" in
         ;;
 esac
 
+# S3 file sharing (optional)
+echo ""
+S3_BUCKET=""
+info "S3 file sharing uploads long agent outputs to S3 with presigned URLs."
+ask "Enable S3 file sharing? [y/N]:"
+read_input ENABLE_S3 "n"
+if [[ "$ENABLE_S3" =~ ^[Yy]$ ]]; then
+    ask "  S3 bucket name [benxiwan-acp-bridge-bucket]:"
+    read_input S3_BUCKET "benxiwan-acp-bridge-bucket"
+    # Try to create bucket if it doesn't exist
+    if command -v aws &>/dev/null; then
+        REGION=$(aws configure get region 2>/dev/null || aws ec2 describe-availability-zones --query 'AvailabilityZones[0].RegionName' --output text 2>/dev/null || echo "")
+        if aws s3api head-bucket --bucket "$S3_BUCKET" 2>/dev/null; then
+            ok "S3 bucket exists: $S3_BUCKET"
+        else
+            info "Creating S3 bucket: $S3_BUCKET (region: ${REGION:-auto})..."
+            if [ -z "$REGION" ] || [ "$REGION" = "us-east-1" ]; then
+                aws s3api create-bucket --bucket "$S3_BUCKET" ${REGION:+--region "$REGION"} 2>/dev/null && ok "Created bucket: $S3_BUCKET" || { warn "Cannot create bucket (no permission), skipping S3"; S3_BUCKET=""; }
+            else
+                aws s3api create-bucket --bucket "$S3_BUCKET" --region "$REGION" --create-bucket-configuration LocationConstraint="$REGION" 2>/dev/null && ok "Created bucket: $S3_BUCKET" || { warn "Cannot create bucket (no permission), skipping S3"; S3_BUCKET=""; }
+            fi
+        fi
+    else
+        warn "aws CLI not found — bucket will be created at Bridge startup if possible"
+    fi
+fi
+
 echo ""
 
 # ============================================================
@@ -727,6 +754,14 @@ else
             fi
             echo "  account_id: \"$WEBHOOK_ACCOUNT\""
             echo "  target: \"$WEBHOOK_TARGET\""
+        fi
+
+        if [ -n "$S3_BUCKET" ]; then
+            echo ''
+            echo 's3:'
+            echo "  bucket: \"$S3_BUCKET\""
+            echo '  prefix: "acp-bridge/files"'
+            echo '  presign_expires: 3600'
         fi
 
         echo ''

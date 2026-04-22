@@ -207,6 +207,28 @@ def main():
     shutdown_timeout = srv_cfg.get("shutdown_timeout", 30)
     ui_enabled = args.ui or srv_cfg.get("ui", False)
 
+    # --- S3 file sharing ---
+    from src import s3 as s3_mod
+    s3_cfg = config.get("s3", {})
+    s3_ok = s3_mod.init(
+        bucket=s3_cfg.get("bucket", ""),
+        prefix=s3_cfg.get("prefix", "acp-bridge/files"),
+        expires=s3_cfg.get("presign_expires", 3600),
+    )
+    if s3_ok:
+        log.info("s3: file sharing enabled")
+
+    # --- S3 file sharing ---
+    from src import s3 as s3_mod
+    s3_cfg = config.get("s3", {})
+    s3_ok = s3_mod.init(
+        bucket=s3_cfg.get("bucket", ""),
+        prefix=s3_cfg.get("prefix", "acp-bridge/files"),
+        expires=s3_cfg.get("presign_expires", 3600),
+    )
+    if s3_ok:
+        log.info("s3: file sharing enabled")
+
     # --- App + middleware ---
     app = create_app(*server.agents)
 
@@ -259,6 +281,7 @@ def main():
     jobs_routes.register(app, job_mgr, webhook_account_id, webhook_default_target)
     tools_routes.register(app, openclaw_url, webhook_cfg.get("token", ""), webhook_account_id)
     upload_dir = srv_cfg.get("upload_dir", "/tmp/acp-uploads")
+    os.environ["ACP_UPLOAD_DIR"] = upload_dir
     files_routes.register(app, upload_dir)
 
     # --- Stats ---

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -71,8 +72,8 @@ AGENT_ICONS = {"kiro": "🟢", "claude": "🟣", "codex": "🔵", "qwen": "🟠"
 
 
 def _quote(text: str) -> str:
-    """Prefix every line with '> ' for markdown quote blocks."""
-    return "\n".join(f"> {line}" for line in text.splitlines()) if text else ""
+    """Return text as-is (no quote wrapping)."""
+    return text
 
 
 def _preview(text: str) -> str:
@@ -184,6 +185,23 @@ def _tools_md(job: Job, limit: int = 10) -> str:
     return "\n".join(f"✅ `{t}`" for t in job.tools[:limit])
 
 
+def _upload_result_s3(job: Job) -> str | None:
+    """Write job result to upload_dir, upload to S3, return presigned URL or None."""
+    from src import s3
+    if not s3.is_available():
+        return None
+    try:
+        upload_dir = os.environ.get("ACP_UPLOAD_DIR", "/tmp/acp-uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+        fname = f"{job.agent}-{job.job_id[:8]}.md"
+        path = os.path.join(upload_dir, fname)
+        with open(path, "w") as f:
+            f.write(job.result)
+        return s3.upload(path, fname)
+    except Exception:
+        return None
+
+
 @dataclass
 class JobFormatter:
     """Base formatter — subclasses override format()."""
@@ -221,30 +239,34 @@ class DiscordFormatter(JobFormatter):
         if job.status == "completed" and job.result.strip():
             short, full = _collapse(job.result)
             if full is None:
-                # Short output: inline as before
+                # Short output: inline
                 payloads.append(self._msg(target, summary))
                 header = fmt("job", "result_header", "📄 **Result** — {agent} `{job_id}`",
                              agent=job.agent, job_id=job.job_id[:8])
                 payloads.append(self._msg(target, f"{header}\n{_quote(short)}"))
             else:
-                # Long output: summary + thread
-                summary += "\n\n📄 完整输出见下方 thread"
-                payloads.append(self._msg(target, summary))
-                # Thread payload with full content chunks
-                chunks = _split(full, self.text_limit - 100)
-                for i, chunk in enumerate(chunks):
-                    if len(chunks) > 1:
-                        header = fmt("job", "result_header_part",
-                                     "📄 **Result** — {agent} `{job_id}` [{part}/{total}]",
-                                     agent=job.agent, job_id=job.job_id[:8], part=i+1, total=len(chunks))
-                    else:
-                        header = fmt("job", "result_header", "📄 **Result** — {agent} `{job_id}`",
-                                     agent=job.agent, job_id=job.job_id[:8])
-                    msg = self._msg(target, f"{header}\n{_quote(chunk)}")
-                    msg["thread_content"] = True
-                    if i == 0:
-                        msg["thread_name"] = f"📄 {job.agent} {job.job_id[:8]} — 完整输出"
-                    payloads.append(msg)
+                # Long output: try S3 presigned URL, fallback to thread chunks
+                s3_url = _upload_result_s3(job)
+                if s3_url:
+                    summary += f"\n\n📎 **完整输出**: [点击下载]({s3_url})"
+                    payloads.append(self._msg(target, summary))
+                else:
+                    summary += "\n\n📄 完整输出见下方 thread"
+                    payloads.append(self._msg(target, summary))
+                    chunks = _split(full, self.text_limit - 100)
+                    for i, chunk in enumerate(chunks):
+                        if len(chunks) > 1:
+                            header = fmt("job", "result_header_part",
+                                         "📄 **Result** — {agent} `{job_id}` [{part}/{total}]",
+                                         agent=job.agent, job_id=job.job_id[:8], part=i+1, total=len(chunks))
+                        else:
+                            header = fmt("job", "result_header", "📄 **Result** — {agent} `{job_id}`",
+                                         agent=job.agent, job_id=job.job_id[:8])
+                        msg = self._msg(target, f"{header}\n{_quote(chunk)}")
+                        msg["thread_content"] = True
+                        if i == 0:
+                            msg["thread_name"] = f"📄 {job.agent} {job.job_id[:8]} — 完整输出"
+                        payloads.append(msg)
         else:
             payloads.append(self._msg(target, summary))
 
