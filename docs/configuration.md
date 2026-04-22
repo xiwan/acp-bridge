@@ -138,6 +138,22 @@ webhook:
 
 This keeps secrets out of the config file. Set them in your shell, `.env` file, or systemd `Environment=` directives.
 
+## S3 File Sharing (Optional)
+
+Long async job outputs can be uploaded to S3 with presigned URLs instead of being split into Discord thread chunks. If S3 is not configured or unavailable, the system falls back to thread-based delivery.
+
+```yaml
+s3:
+  bucket: "my-acp-bridge-bucket"       # S3 bucket name (auto-created if missing)
+  prefix: "acp-bridge/files"           # key prefix for uploaded files
+  presign_expires: 3600                # presigned URL expiry in seconds (default: 1h)
+```
+
+- **No config / no AWS access**: S3 is silently disabled; long outputs use thread chunks as before
+- **Bucket doesn't exist**: Bridge attempts to create it at startup; skips S3 if creation fails
+- **Region**: resolved from AWS profile, environment, or instance metadata — not hardcoded
+- Set `ACP_S3_BUCKET` env var as an alternative to the config file
+
 ## Webhook Formats
 
 Bridge supports two webhook callback formats for async job results:
