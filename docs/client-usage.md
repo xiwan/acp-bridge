@@ -69,6 +69,9 @@ export ACP_TRACE_ID="my-trace-123"
 | `--stream` | SSE streaming output |
 | `--card` | Markdown card format |
 | `--upload <file>` | Upload a file |
+| `--async` | Submit as background job (returns job_id) |
+
+> **💡 Tip:** For prompts that may take over 60 seconds (e.g. large refactors, full repo analysis), prefer `--async` to avoid sync timeout (default 450s). Query results later with `--job-status <job_id>`.
 
 ## See Also
 

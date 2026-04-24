@@ -51,6 +51,7 @@
 | Discord push fails | Wrong or missing `account_id` | Use `"default"` for Discord, `"main"` for Feishu |
 | Discord 500 error | Bad target format | DM: `user:<id>`, channel: `channel:<id>` |
 | Job stuck >10min | Agent process anomaly | Auto-marked failed by patrol; check agent logs |
+| Sync call times out (450s) | Task too long for sync mode | Use `--async` for heavy tasks; or raise `ACP_TIMEOUT` env var |
 | Webhook delivery fails | Endpoint unreachable | Check `webhook.url` in config; retries happen automatically |
 
 ## Docker

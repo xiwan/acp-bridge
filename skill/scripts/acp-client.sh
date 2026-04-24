@@ -13,7 +13,9 @@
 #   ACP_AGENT       — Default agent (default: kiro)
 #   ACP_TOKEN       — Auth token (prefer env var over -t flag to avoid ps exposure)
 #   ACP_RETRIES     — Retry count on failure (default: 2)
-#   ACP_TIMEOUT     — Sync call timeout in seconds (default: 300)
+#   ACP_TIMEOUT     — Sync call timeout in seconds (default: 450)
+#   ACP_IDLE_TIMEOUT — Stream/SSE idle timeout in seconds (default: 120)
+#   ACP_FALLBACK    — Comma-separated fallback agents (e.g. "claude,opencode")
 #   ACP_TRACE_ID    — Forward as X-Request-Id header (for cross-service tracing)
 #
 # Dependencies: curl, jq, uuidgen
@@ -31,10 +33,13 @@ ASYNC=false
 JOB_STATUS=""
 CWD=""
 UPLOAD=""
+HB_CMD=""
+HB_PING=""
 MAX_RETRIES="${ACP_RETRIES:-2}"
 CONNECT_TIMEOUT=10
-SYNC_TIMEOUT="${ACP_TIMEOUT:-300}"
-IDLE_TIMEOUT=120
+SYNC_TIMEOUT="${ACP_TIMEOUT:-450}"
+IDLE_TIMEOUT="${ACP_IDLE_TIMEOUT:-120}"
+FALLBACK_AGENTS="${ACP_FALLBACK:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -49,6 +54,8 @@ while [[ $# -gt 0 ]]; do
         --cwd)        CWD="$2"; shift 2 ;;
         --upload)     UPLOAD="$2"; shift 2 ;;
         --job-status) JOB_STATUS="$2"; shift 2 ;;
+        --hb)         HB_CMD="${2:-status}"; shift; [[ $# -gt 0 && "$1" != -* ]] && shift || true ;;
+        --hb-ping)    HB_PING="$2"; shift 2 ;;
         --retries)    MAX_RETRIES="$2"; shift 2 ;;
         -h|--help)    sed -n '2,17s/^# //p' "$0"; exit 0 ;;
         -V|--version) _vf="$(cd "$(dirname "$0")/.." && cat VERSION 2>/dev/null)"; echo "acp-client ${_vf:-unknown}"; exit 0 ;;
@@ -77,6 +84,29 @@ if [[ -n "$UPLOAD" ]]; then
         -F "file=@$UPLOAD" -F "agent=$AGENT") || { echo "❌ Upload failed" >&2; exit 1; }
     echo "$resp" | jq -r '"✅ Uploaded: \(.filename) (\(.size) bytes)\nPath: \(.path)"'
     exit 0
+fi
+
+# --- Heartbeat ---
+if [[ -n "$HB_PING" ]]; then
+    curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time 60 \
+        -X POST "${AUTH[@]}" "$URL/heartbeat/$HB_PING" | jq .
+    exit $?
+fi
+if [[ -n "$HB_CMD" ]]; then
+    case "$HB_CMD" in
+        logs)
+            curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time 10 \
+                "${AUTH[@]}" "$URL/heartbeat/logs" | jq -r '
+                .logs[:10][] |
+                "\((.ts | todate | split("T")[1] | split(".")[0])) 🤖 \(.agent) (\(.duration)s)" +
+                (if .silent then " — [SILENT]" else "\n  \(.response[:200])" end) + "\n"'
+            ;;
+        *)
+            curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time 10 \
+                "${AUTH[@]}" "$URL/heartbeat" | jq .
+            ;;
+    esac
+    exit $?
 fi
 
 # --- Query job status ---
@@ -147,7 +177,12 @@ if $ASYNC; then
     exit 0
 fi
 
-# --- API call with retry ---
+# --- API call with retry + 429 fallback ---
+_TMPDIR=$(mktemp -d)
+trap 'rm -rf "$_TMPDIR"' EXIT
+_BODY="$_TMPDIR/body"
+_HEADERS="$_TMPDIR/headers"
+
 call_api() {
     if [[ "$MODE" == "stream" ]]; then
         curl -sN --connect-timeout "$CONNECT_TIMEOUT" \
@@ -156,26 +191,85 @@ call_api() {
             -H "Accept: text/event-stream" \
             -d "$PAYLOAD"
     else
-        curl -sf --connect-timeout "$CONNECT_TIMEOUT" --max-time "$SYNC_TIMEOUT" \
+        local http_code
+        http_code=$(curl -s --connect-timeout "$CONNECT_TIMEOUT" --max-time "$SYNC_TIMEOUT" \
+            -o "$_BODY" -D "$_HEADERS" -w '%{http_code}' \
             -X POST "${AUTH[@]}" "$URL/runs" \
             -H "Content-Type: application/json" \
-            -d "$PAYLOAD"
+            -d "$PAYLOAD") || return 1
+
+        if [[ "$http_code" == "429" ]]; then
+            # Check server-suggested fallback
+            local fb
+            fb=$(grep -i '^X-Fallback-Agent:' "$_HEADERS" 2>/dev/null | awk '{print $2}' | tr -d '\r\n')
+            if [[ -n "$fb" ]]; then
+                echo "$fb" > "$_TMPDIR/fallback"
+            fi
+            return 129  # signal: 429 rate limited
+        elif [[ "$http_code" -ge 400 ]]; then
+            cat "$_BODY" >&2
+            return 1
+        fi
+        cat "$_BODY"
+    fi
+}
+
+_rebuild_payload() {
+    PAYLOAD=$(jq -n \
+        --arg agent "$AGENT" \
+        --arg session "$SESSION" \
+        --arg prompt "$PROMPT" \
+        --arg mode "$MODE" \
+        --arg cwd "$CWD" \
+        '{agent_name: $agent, session_id: $session,
+          input: [{parts: [{content: $prompt, content_type: "text/plain"}]}]}
+          + (if $cwd != "" then {cwd: $cwd} else {} end)
+          + (if $mode == "stream" then {mode: "stream"} else {} end)')
+}
+
+_get_fallback_agent() {
+    # Priority: server header > ACP_FALLBACK env > none
+    if [[ -f "$_TMPDIR/fallback" ]]; then
+        cat "$_TMPDIR/fallback"
+        rm -f "$_TMPDIR/fallback"
+        return
+    fi
+    if [[ -n "$FALLBACK_AGENTS" ]]; then
+        echo "${FALLBACK_AGENTS%%,*}"
+        # Rotate: move first to end
+        local rest="${FALLBACK_AGENTS#*,}"
+        [[ "$rest" != "$FALLBACK_AGENTS" ]] && FALLBACK_AGENTS="$rest,${FALLBACK_AGENTS%%,*}" || FALLBACK_AGENTS=""
     fi
 }
 
 retry() {
     local attempt=0
+    local orig_agent="$AGENT"
     while true; do
-        if RESP=$(call_api); then
+        local rc=0
+        RESP=$(call_api) || rc=$?
+        if [[ $rc -eq 0 ]]; then
             echo "$RESP"
             return 0
+        fi
+        if [[ $rc -eq 129 ]]; then
+            # 429: try fallback agent
+            local fb
+            fb=$(_get_fallback_agent)
+            if [[ -n "$fb" ]]; then
+                echo "⚠️ $AGENT rate-limited, switching to $fb" >&2
+                AGENT="$fb"
+                SESSION=$(uuidgen -s -n @dns -N "$AGENT")
+                _rebuild_payload
+                continue
+            fi
         fi
         ((attempt++))
         if (( attempt > MAX_RETRIES )); then
             echo "❌ Connection failed (retried $MAX_RETRIES times): $URL" >&2
             return 1
         fi
-        sleep $((attempt * 2))
+        sleep $((2 ** attempt))
     done
 }
 
@@ -187,7 +281,7 @@ _sse_data_lines() {
 # --- Card mode: single-process jq parses all events ---
 if $CARD; then
     TMPDIR_CARD=$(mktemp -d)
-    trap 'rm -rf "$TMPDIR_CARD"' EXIT
+    trap 'rm -rf "$TMPDIR_CARD" "$_TMPDIR"' EXIT
     : > "$TMPDIR_CARD/thoughts"
     : > "$TMPDIR_CARD/tools"
     : > "$TMPDIR_CARD/content"
@@ -197,7 +291,11 @@ if $CARD; then
     retry | _sse_data_lines | \
         jq --unbuffered -r '
             if .type == "message.part" then
-                ["part", (.part.name // "_"), (.part.content // "")] | @tsv
+                if .part.name == "fallback_info" then
+                    ["fallback_info", "_", (.part.content // "")] | @tsv
+                else
+                    ["part", (.part.name // "_"), (.part.content // "")] | @tsv
+                end
             elif .type == "run.failed" then
                 ["error", "_", ((.run.error.code // "error") + ": " + (.run.error.message // "unknown error"))] | @tsv
             else empty end' | \
@@ -218,6 +316,9 @@ if $CARD; then
                         *) printf '%s' "$content" >> "$TMPDIR_CARD/content" ;;
                     esac
                 fi
+                ;;
+            fallback_info)
+                echo "⚠ fallback: $content" >&2
                 ;;
             error)
                 echo "$content" > "$TMPDIR_CARD/error"
@@ -268,6 +369,7 @@ if $STREAM; then
         jq --unbuffered -r '
             if .type == "message.part" then
                 if .part.name == "thought" then "💭 " + (.part.content // "")
+                elif .part.name == "fallback_info" then "\u001b[33m⚠ fallback: " + (.part.content // "") + "\u001b[0m" | stderr
                 elif .part.content then .part.content
                 else empty end
             elif .type == "run.completed" or .type == "message.completed" then
@@ -288,9 +390,13 @@ RESP=$(retry) || exit 1
 status=$(echo "$RESP" | jq -r '.status // "unknown"')
 case "$status" in
     completed)
+        # Check for fallback_info in response parts
+        fb_content=$(echo "$RESP" | jq -r '.output[]? | .parts[]? | select(.name == "fallback_info") | .content // empty' 2>/dev/null)
+        [[ -n "$fb_content" ]] && echo "⚠ fallback: $fb_content" >&2
+        
         echo "$RESP" | jq -r '
             [.output[]? | .parts[]? |
-             select(.name != "thought" and .content != null and .content != "") |
+             select(.name != "thought" and .name != "fallback_info" and .content != null and .content != "") |
              .content] | join("\n") // "(empty response)"'
         sid=$(echo "$RESP" | jq -r '.session_id // empty')
         [[ -n "$sid" ]] && echo "session_id: $sid" >&2
