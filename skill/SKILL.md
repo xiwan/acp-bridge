@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.16.0 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/openclaw/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.17.0 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/openclaw/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -47,10 +47,11 @@ Display the result as a status card:
 ## Message Routing
 
 First match wins:
-1. `/chat` → Chat command (see [references/chat.md](references/chat.md))
-2. `/cli` → Single CLI call
-3. `chat-state.json` exists → Forward to current agent
-4. Fallback → Normal processing (no Bridge call)
+1. `/hb` → Heartbeat monitor (see [references/heartbeat.md](references/heartbeat.md))
+2. `/chat` → Chat command (see [references/chat.md](references/chat.md))
+3. `/cli` → Single CLI call
+4. `chat-state.json` exists → Forward to current agent
+5. Fallback → Normal processing (no Bridge call)
 
 ## Planning Workflow
 
@@ -273,7 +274,7 @@ Rule: if `Write? = no`, do **not** instruct the agent to "save a report" — it 
 
 ## Commands (aliases)
 
-`./cli <prompt>` (default agent) · `./cli ko|cc|cx|qw|oc|hm|hf "..."` (kiro / claude / codex / qwen / opencode / hermes / harness) · `/chat ko|cc [--cwd <path>]` (enter) · `/chat end|status` · `/upload <file>`
+`./cli <prompt>` (default agent) · `./cli ko|cc|cx|qw|oc|hm|hf "..."` (kiro / claude / codex / qwen / opencode / hermes / harness) · `/chat ko|cc [--cwd <path>]` (enter) · `/chat end|status` · `/upload <file>` · `/hb [status|logs|ping]` (heartbeat)
 
 ## Dynamic Harness (usage)
 
@@ -289,6 +290,7 @@ curl -X DELETE "$ACP_BRIDGE_URL/harness/<name>" -H "Authorization: Bearer $ACP_T
 
 ## References
 
+- [references/heartbeat.md](references/heartbeat.md) — Heartbeat monitor, agent activity observation
 - [references/chat.md](references/chat.md) — Chat mode lifecycle, session ID, state file
 - [references/pipeline.md](references/pipeline.md) — Pipeline API, modes, conversation config
 - [references/orchestration-patterns.md](references/orchestration-patterns.md) — Preset templates for 2–5 agent orchestration

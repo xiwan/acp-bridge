@@ -13,13 +13,15 @@ from acp_sdk.server import Context, RunYield, RunYieldResume
 
 from .acp_client import AcpConnection, AcpError, AcpProcessPool, PoolExhaustedError
 from .formatters import fmt
+from .heartbeat import EnvCollector
 from .sse import transform_notification
 from .stats import StatsCollector
 
 log = logging.getLogger("acp-bridge.agents")
 
-# Module-level stats collector, set by main.py
+# Module-level refs, set by main.py
 _stats: StatsCollector | None = None
+_env: EnvCollector | None = None
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
 
@@ -96,7 +98,13 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
             _tools_used = []
             _success = True
 
-            async for notification in conn.session_prompt(prompt):
+            enriched = prompt
+            if _env:
+                prefix = _env.get_prefix(agent_name)
+                if prefix:
+                    enriched = prefix + prompt
+
+            async for notification in conn.session_prompt(enriched):
                 if "_prompt_result" in notification:
                     log.info("acp_done: agent=%s session=%s stop=%s",
                              agent_name, session_id,

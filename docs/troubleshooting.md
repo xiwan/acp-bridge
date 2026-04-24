@@ -23,7 +23,7 @@
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Claude hangs indefinitely | Permission schema mismatch | Update `claude-agent-acp` to latest; Bridge auto-replies `allow_always` |
+| Claude hangs indefinitely | Permission schema mismatch | Update `claude-agent-acp` to latest; Bridge auto-replies `proceed_always` |
 | `invalid_input: Field required` | Wrong request format | Use `input` with `parts` array, not `{"prompt":"..."}` |
 | Agent not listed in `/agents` | Not installed or not in PATH | Install the agent CLI; or check `config.yaml` has `enabled: true` |
 

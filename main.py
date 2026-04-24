@@ -218,17 +218,6 @@ def main():
     if s3_ok:
         log.info("s3: file sharing enabled")
 
-    # --- S3 file sharing ---
-    from src import s3 as s3_mod
-    s3_cfg = config.get("s3", {})
-    s3_ok = s3_mod.init(
-        bucket=s3_cfg.get("bucket", ""),
-        prefix=s3_cfg.get("prefix", "acp-bridge/files"),
-        expires=s3_cfg.get("presign_expires", 3600),
-    )
-    if s3_ok:
-        log.info("s3: file sharing enabled")
-
     # --- App + middleware ---
     app = create_app(*server.agents)
 
@@ -290,6 +279,21 @@ def main():
     import src.agents as _agents_mod
     _agents_mod._stats = stats_collector
 
+    # --- Heartbeat / env awareness ---
+    from src.heartbeat import EnvCollector
+    heartbeat_cfg = config.get("heartbeat", {})
+    env_collector = None
+    if heartbeat_cfg.get("enabled", False) and pool:
+        env_collector = EnvCollector(pool, agents_cfg, port=port,
+                                     client_script=heartbeat_cfg.get("client_script", ""),
+                                     job_mgr=job_mgr,
+                                     language=heartbeat_cfg.get("language", "en"),
+                                     shared_workdir=srv_cfg.get("public_workdir", "/tmp/acp-public"))
+        _agents_mod._env = env_collector
+        from src.heartbeat import register as heartbeat_register
+        heartbeat_register(app, env_collector, pool)
+        log.info("heartbeat: env injection enabled for %s", sorted(env_collector._enabled_agents))
+
     # --- Templates ---
     templates_routes.register(app)
 
@@ -323,7 +327,49 @@ def main():
                 pool.cleanup_ghosts()
             if job_mgr:
                 job_mgr.cleanup()
+            if env_collector:
+                env_collector.refresh()
             stats_collector.delete_old()
+
+    heartbeat_interval = heartbeat_cfg.get("interval", 0)
+
+    async def heartbeat_loop():
+        """Auto-ping heartbeat-enabled agents on a fixed interval."""
+        import uuid
+        from src.sse import transform_notification
+        while True:
+            await asyncio.sleep(heartbeat_interval)
+            if not env_collector:
+                continue
+            for agent_name in sorted(env_collector._enabled_agents):
+                cfg = agents_cfg.get(agent_name, {})
+                if not isinstance(cfg, dict) or cfg.get("mode") != "acp":
+                    continue
+                prompt = env_collector.build_heartbeat_prompt(agent_name)
+                session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"heartbeat:{agent_name}"))
+                # Skip if heartbeat session is still busy from previous round
+                existing = pool._connections.get((agent_name, session_id))
+                if existing and existing._busy:
+                    log.info("heartbeat_skip: agent=%s still busy", agent_name)
+                    continue
+                t0 = time.time()
+                try:
+                    conn = await pool.get_or_create(agent_name, session_id,
+                                                    cwd=cfg.get("working_dir", "/tmp"))
+                    parts = []
+                    async for notification in conn.session_prompt(prompt):
+                        if "_prompt_result" in notification:
+                            break
+                        event = transform_notification(notification)
+                        if event and event["type"] == "message.part":
+                            parts.append(event["content"])
+                    response = "".join(parts).strip()
+                    silent = "[SILENT]" in response.upper() or not response
+                    env_collector.record(agent_name, prompt, response, silent, time.time() - t0)
+                    log.info("heartbeat_auto: agent=%s silent=%s dur=%.1fs",
+                             agent_name, silent, time.time() - t0)
+                except Exception as e:
+                    log.warning("heartbeat_auto: agent=%s error=%s", agent_name, e)
 
     _original_lifespan = app.router.lifespan_context
 
@@ -335,6 +381,9 @@ def main():
             task = asyncio.create_task(cleanup_loop())
             if job_mgr:
                 asyncio.create_task(job_mgr.run_recovery())
+            if env_collector and heartbeat_interval > 0:
+                asyncio.create_task(heartbeat_loop())
+                log.info("heartbeat_loop: started, interval=%ds", heartbeat_interval)
             yield
             task.cancel()
             if pool:

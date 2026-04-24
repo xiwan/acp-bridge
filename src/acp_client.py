@@ -115,7 +115,7 @@ class AcpConnection:
                                  msg.get("params", {}).get("toolCall", {}).get("title", "?"))
                         reply = {"jsonrpc": "2.0", "id": msg_id,
                                  "result": {"outcome": {"outcome": "selected",
-                                                        "optionId": "allow_always"}}}
+                                                        "optionId": "proceed_always"}}}
                         data = json.dumps(reply) + "\n"
                         self.proc.stdin.write(data.encode())
                         asyncio.ensure_future(self.proc.stdin.drain())
@@ -295,29 +295,25 @@ class AcpProcessPool:
         group = self._agent_group(agent)
         return sum(1 for (a, _) in self._connections if self._agent_group(a) == group)
 
-    def _lru_idle(self, agent: str | None = None) -> tuple[str, str] | None:
-        """Return key of least-recently-used idle connection, optionally filtered by agent group."""
+    def _lru_idle(self, agent: str | None = None, exact_match: bool = False) -> tuple[str, str] | None:
+        """Return key of least-recently-used idle connection, optionally filtered by agent."""
         if agent is not None:
-            group = self._agent_group(agent)
-            candidates = [
-                (k, c) for k, c in self._connections.items()
-                if not c._busy and c.alive and self._agent_group(k[0]) == group
-            ]
+            if exact_match:
+                candidates = [
+                    (k, c) for k, c in self._connections.items()
+                    if not c._busy and c.alive and k[0] == agent
+                ]
+            else:
+                group = self._agent_group(agent)
+                candidates = [
+                    (k, c) for k, c in self._connections.items()
+                    if not c._busy and c.alive and self._agent_group(k[0]) == group
+                ]
         else:
             candidates = [
                 (k, c) for k, c in self._connections.items()
                 if not c._busy and c.alive
             ]
-        if not candidates:
-            return None
-        return min(candidates, key=lambda x: x[1].last_active)[0]
-
-    def _lru_idle_exact(self, agent: str) -> tuple[str, str] | None:
-        """Return LRU idle connection for the exact agent name (no group matching)."""
-        candidates = [
-            (k, c) for k, c in self._connections.items()
-            if not c._busy and c.alive and k[0] == agent
-        ]
         if not candidates:
             return None
         return min(candidates, key=lambda x: x[1].last_active)[0]
@@ -368,7 +364,7 @@ class AcpProcessPool:
 
         # global limit: prefer reusing same-agent process, else evict globally LRU
         if len(self._connections) >= self._max:
-            lru_same = self._lru_idle_exact(agent)
+            lru_same = self._lru_idle(agent, exact_match=True)
             if lru_same:
                 return await self._reuse(lru_same, key, cwd, profile=profile)
             lru = self._lru_idle()
