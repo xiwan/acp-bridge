@@ -31,7 +31,7 @@ from acp_sdk.server import Server
 from acp_sdk.server.app import create_app
 
 from src.acp_client import AcpProcessPool
-from src.agents import make_acp_agent_handler, make_pty_agent_handler
+from src.agents import make_acp_agent_handler, make_pty_agent_handler, ping_loop
 from src.jobs import JobManager
 from src.security import SecurityMiddleware
 from src.stats import StatsCollector
@@ -259,6 +259,11 @@ def main():
         base_url=base_url,
     ) if (pool or pty_agents) else None
 
+    # --- Fallback chain (load from YAML, fallback to built-in defaults) ---
+    from src.agents import load_fallback_chain
+    _config_dir = os.path.dirname(os.path.abspath(args.config)) if os.path.exists(args.config) else "."
+    load_fallback_chain(os.path.join(_config_dir, "fallback-chain.yaml"))
+
     # --- Register routes ---
     start_time = time.time()
     webhook_account_id = webhook_cfg.get("account_id", "")
@@ -278,6 +283,8 @@ def main():
     stats_routes.register(app, stats_collector)
     import src.agents as _agents_mod
     _agents_mod._stats = stats_collector
+    if job_mgr:
+        job_mgr._stats = stats_collector
 
     # --- Heartbeat / env awareness ---
     from src.heartbeat import EnvCollector
@@ -317,11 +324,13 @@ def main():
     # --- Lifespan ---
     from contextlib import asynccontextmanager
 
+    busy_timeout = pool_cfg.get("busy_timeout", 360)
+
     async def cleanup_loop():
         while True:
             await asyncio.sleep(60)
             if pool:
-                await pool.health_check()
+                await pool.health_check(busy_timeout=busy_timeout)
                 await pool.cleanup_idle(ttl_hours * 3600)
                 await pool.memory_evict()
                 pool.cleanup_ghosts()
@@ -384,6 +393,9 @@ def main():
             if env_collector and heartbeat_interval > 0:
                 asyncio.create_task(heartbeat_loop())
                 log.info("heartbeat_loop: started, interval=%ds", heartbeat_interval)
+            if pool:
+                asyncio.create_task(ping_loop(pool))
+                log.info("ping_loop: started, interval=300s")
             yield
             task.cancel()
             if pool:
@@ -396,7 +408,7 @@ def main():
     auth_token = sec_cfg.get("auth_token", "")
     log.info("allowed_ips=%s", sec_cfg.get("allowed_ips", []))
     if pool:
-        log.info("pool: max=%d max_per_agent=%d", pool_cfg.get("max_processes", 20), pool_cfg.get("max_per_agent", 10))
+        log.info("pool: max=%d max_per_agent=%d busy_timeout=%ds", pool_cfg.get("max_processes", 20), pool_cfg.get("max_per_agent", 10), busy_timeout)
     log.info("auth_token=%s", auth_token[:8] + "..." if len(auth_token) > 8 else auth_token)
     if job_mgr:
         log.info("jobs: monitor=60s stuck_timeout=600s webhook=%s", webhook_cfg.get("url", "(none)"))

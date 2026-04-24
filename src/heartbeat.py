@@ -57,6 +57,8 @@ class EnvCollector:
                 self._enabled_agents.add(name)
         # Heartbeat history — ring buffer, last 50
         self._history: deque[dict] = deque(maxlen=50)
+        # Injected contexts — human-in-the-loop directives with TTL
+        self._injected_contexts: list[dict] = []
         self.refresh()
 
     def _agent_profile(self, agent: str) -> dict:
@@ -104,6 +106,15 @@ class EnvCollector:
 
     def _build_context(self) -> str:
         lines = []
+        # Injected human directives
+        remaining = []
+        for ctx in self._injected_contexts:
+            lines.append(f"  📌 {ctx['text']}")
+            ctx["ttl"] -= 1
+            if ctx["ttl"] > 0:
+                remaining.append(ctx)
+        self._injected_contexts = remaining
+
         if self._job_mgr:
             for j in self._job_mgr.list_jobs(limit=5):
                 if j.status == "running":
@@ -179,6 +190,30 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool):
                 "prompt_preview": h["prompt"][:1000],
             })
         return JSONResponse({"total": len(entries), "logs": entries})
+
+    @app.post("/heartbeat/context")
+    async def inject_context(req: dict):
+        text = req.get("text", "").strip()
+        if not text:
+            return JSONResponse({"error": "text is required"}, status_code=400)
+        ttl = max(1, min(int(req.get("ttl", 3)), 100))
+        entry = {"text": text, "ttl": ttl, "created_at": time.time()}
+        env_collector._injected_contexts.append(entry)
+        log.info("heartbeat_context_injected: ttl=%d text=%s", ttl, text[:80])
+        return JSONResponse({"status": "ok", "ttl": ttl, "active_contexts": len(env_collector._injected_contexts)})
+
+    @app.get("/heartbeat/context")
+    async def list_contexts():
+        return JSONResponse({"contexts": [
+            {"text": c["text"], "ttl": c["ttl"], "created_at": c["created_at"]}
+            for c in env_collector._injected_contexts
+        ]})
+
+    @app.delete("/heartbeat/context")
+    async def clear_contexts():
+        n = len(env_collector._injected_contexts)
+        env_collector._injected_contexts.clear()
+        return JSONResponse({"cleared": n})
 
     @app.post("/heartbeat/{agent_name}")
     async def heartbeat_ping(agent_name: str):

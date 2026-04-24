@@ -8,3 +8,7 @@ def register(app, stats: StatsCollector):
     @app.get("/stats")
     async def get_stats(agent: str | None = None, hours: float = 24):
         return stats.query(agent=agent, hours=hours)
+
+    @app.get("/stats/fallback")
+    async def get_fallback_stats(hours: float = 24):
+        return stats.query_fallback(hours=hours)

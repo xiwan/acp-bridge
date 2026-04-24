@@ -21,7 +21,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     callback_url TEXT DEFAULT '',
     callback_meta TEXT DEFAULT '{}',
     webhook_sent INTEGER DEFAULT 0,
-    retries      INTEGER DEFAULT 0
+    retries      INTEGER DEFAULT 0,
+    original_agent TEXT DEFAULT '',
+    fallback_history TEXT DEFAULT '[]',
+    retry_count  INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
@@ -41,18 +44,42 @@ class JobStore:
         if "retries" not in cols:
             self._db.execute("ALTER TABLE jobs ADD COLUMN retries INTEGER DEFAULT 0")
             self._db.commit()
+        if "original_agent" not in cols:
+            self._db.execute("ALTER TABLE jobs ADD COLUMN original_agent TEXT DEFAULT ''")
+        if "fallback_history" not in cols:
+            self._db.execute("ALTER TABLE jobs ADD COLUMN fallback_history TEXT DEFAULT '[]'")
+        if "retry_count" not in cols:
+            self._db.execute("ALTER TABLE jobs ADD COLUMN retry_count INTEGER DEFAULT 0")
+        if "input_tokens" not in cols:
+            self._db.execute("ALTER TABLE jobs ADD COLUMN input_tokens INTEGER DEFAULT 0")
+        if "output_tokens" not in cols:
+            self._db.execute("ALTER TABLE jobs ADD COLUMN output_tokens INTEGER DEFAULT 0")
+        if "cost_usd" not in cols:
+            self._db.execute("ALTER TABLE jobs ADD COLUMN cost_usd REAL DEFAULT 0.0")
+        if "model_name" not in cols:
+            self._db.execute("ALTER TABLE jobs ADD COLUMN model_name TEXT DEFAULT ''")
+        self._db.commit()
 
     def save(self, job) -> None:
         self._db.execute(
             """INSERT OR REPLACE INTO jobs
                (job_id, agent, session_id, prompt, cwd, status, result, error,
-                tools, created_at, completed_at, callback_url, callback_meta, webhook_sent, retries)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                tools, created_at, completed_at, callback_url, callback_meta, webhook_sent, retries,
+                original_agent, fallback_history, retry_count,
+                input_tokens, output_tokens, cost_usd, model_name)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (job.job_id, job.agent, job.session_id, job.prompt, job.cwd,
              job.status, job.result, job.error,
              json.dumps(job.tools), job.created_at, job.completed_at,
              job.callback_url, json.dumps(job.callback_meta), int(job.webhook_sent),
-             job.retries),
+             job.retries,
+             getattr(job, 'original_agent', ''),
+             json.dumps(getattr(job, 'fallback_history', [])),
+             getattr(job, 'retry_count', 0),
+             getattr(job, 'input_tokens', 0),
+             getattr(job, 'output_tokens', 0),
+             getattr(job, 'cost_usd', 0.0),
+             getattr(job, 'model_name', '')),
         )
         self._db.commit()
 
@@ -94,6 +121,13 @@ class JobStore:
         d["callback_meta"] = json.loads(d["callback_meta"])
         d["webhook_sent"] = bool(d["webhook_sent"])
         d.setdefault("retries", 0)
+        d.setdefault("original_agent", "")
+        d["fallback_history"] = json.loads(d.get("fallback_history") or "[]")
+        d.setdefault("retry_count", 0)
+        d.setdefault("input_tokens", 0)
+        d.setdefault("output_tokens", 0)
+        d.setdefault("cost_usd", 0.0)
+        d.setdefault("model_name", "")
         return d
 
 
