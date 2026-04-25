@@ -336,49 +336,51 @@ def main():
                 pool.cleanup_ghosts()
             if job_mgr:
                 job_mgr.cleanup()
-            if env_collector:
-                env_collector.refresh()
             stats_collector.delete_old()
 
     heartbeat_interval = heartbeat_cfg.get("interval", 0)
 
-    async def heartbeat_loop():
-        """Auto-ping heartbeat-enabled agents on a fixed interval."""
+    async def _heartbeat_ping_agent(agent_name: str):
+        """Ping a single agent — designed to run concurrently."""
         import uuid
         from src.sse import transform_notification
+        cfg = agents_cfg.get(agent_name, {})
+        if not isinstance(cfg, dict) or cfg.get("mode") != "acp":
+            return
+        prompt = env_collector.build_heartbeat_prompt(agent_name)
+        session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"heartbeat:{agent_name}"))
+        existing = pool._connections.get((agent_name, session_id))
+        if existing and existing._busy:
+            log.info("heartbeat_skip: agent=%s still busy", agent_name)
+            return
+        t0 = time.time()
+        try:
+            conn = await pool.get_or_create(agent_name, session_id,
+                                            cwd=cfg.get("working_dir", "/tmp"))
+            parts = []
+            async for notification in conn.session_prompt(prompt):
+                if "_prompt_result" in notification:
+                    break
+                event = transform_notification(notification)
+                if event and event["type"] == "message.part":
+                    parts.append(event["content"])
+            response = "".join(parts).strip()
+            silent = "[SILENT]" in response.upper() or not response
+            env_collector.record(agent_name, prompt, response, silent, time.time() - t0)
+            log.info("heartbeat_auto: agent=%s silent=%s dur=%.1fs",
+                     agent_name, silent, time.time() - t0)
+        except Exception as e:
+            log.warning("heartbeat_auto: agent=%s error=%s", agent_name, e)
+
+    async def heartbeat_loop():
+        """Independent heartbeat loop — fixed interval, fire-and-forget per agent."""
         while True:
             await asyncio.sleep(heartbeat_interval)
             if not env_collector:
                 continue
-            for agent_name in sorted(env_collector._enabled_agents):
-                cfg = agents_cfg.get(agent_name, {})
-                if not isinstance(cfg, dict) or cfg.get("mode") != "acp":
-                    continue
-                prompt = env_collector.build_heartbeat_prompt(agent_name)
-                session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"heartbeat:{agent_name}"))
-                # Skip if heartbeat session is still busy from previous round
-                existing = pool._connections.get((agent_name, session_id))
-                if existing and existing._busy:
-                    log.info("heartbeat_skip: agent=%s still busy", agent_name)
-                    continue
-                t0 = time.time()
-                try:
-                    conn = await pool.get_or_create(agent_name, session_id,
-                                                    cwd=cfg.get("working_dir", "/tmp"))
-                    parts = []
-                    async for notification in conn.session_prompt(prompt):
-                        if "_prompt_result" in notification:
-                            break
-                        event = transform_notification(notification)
-                        if event and event["type"] == "message.part":
-                            parts.append(event["content"])
-                    response = "".join(parts).strip()
-                    silent = "[SILENT]" in response.upper() or not response
-                    env_collector.record(agent_name, prompt, response, silent, time.time() - t0)
-                    log.info("heartbeat_auto: agent=%s silent=%s dur=%.1fs",
-                             agent_name, silent, time.time() - t0)
-                except Exception as e:
-                    log.warning("heartbeat_auto: agent=%s error=%s", agent_name, e)
+            env_collector.refresh()
+            for a in sorted(env_collector._enabled_agents):
+                asyncio.create_task(_heartbeat_ping_agent(a))
 
     _original_lifespan = app.router.lifespan_context
 
