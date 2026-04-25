@@ -182,12 +182,12 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
 
     @app.get("/agents/fallback-chain")
     async def get_fallback_chain():
-        from ..agents import FALLBACK_CHAIN
+        from ..fallback_policy import FALLBACK_CHAIN
         return {"fallback_chain": dict(FALLBACK_CHAIN)}
 
     @app.put("/agents/fallback-chain")
     async def put_fallback_chain(req: dict):
-        from ..agents import FALLBACK_CHAIN, save_fallback_chain
+        from ..fallback_policy import FALLBACK_CHAIN, save_fallback_chain
         chain = req.get("fallback_chain")
         if not isinstance(chain, dict):
             return JSONResponse({"error": "fallback_chain must be a dict"}, status_code=400)

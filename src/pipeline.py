@@ -20,6 +20,7 @@ log = logging.getLogger("acp-bridge.pipeline")
 AGENT_ICONS = {"kiro": "🟢", "claude": "🟣", "codex": "🔵", "qwen": "🟠", "opencode": "⚪"}
 _SEPARATOR = get_template("components", "separator", "━━━━━━━━━━━━━━━━━━━━")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
+MAX_OUTPUT_SIZE = 1 * 1024 * 1024  # 1 MB — truncate step output beyond this
 MENTION_RE = re.compile(r"@(\w+)")
 _VAR_RE = re.compile(r"\{\{(\w+)\}\}")
 
@@ -208,6 +209,8 @@ class PipelineManager:
             elif pl.mode == "parallel":
                 await self._run_parallel(pl)
             elif pl.mode == "race":
+                if not pl.steps:
+                    raise ValueError("Race mode requires at least one step")
                 await self._run_race(pl)
             elif pl.mode == "conversation":
                 await self._run_conversation(pl)
@@ -553,6 +556,12 @@ class PipelineManager:
         else:
             await self._exec_step_acp(step, prompt + get_prompt_suffix(), session_id, cwd=shared_cwd)
         step.completed_at = time.time()
+        # Truncate oversized output to prevent OOM
+        if len(step.result) > MAX_OUTPUT_SIZE:
+            original_len = len(step.result)
+            step.result = step.result[:MAX_OUTPUT_SIZE] + f'\n... (truncated {original_len - MAX_OUTPUT_SIZE} bytes)'
+            log.warning("step_output_truncated: pipeline=%s agent=%s original=%d limit=%d",
+                        pl.pipeline_id, step.agent, original_len, MAX_OUTPUT_SIZE)
         log.info("step_done: pipeline=%s agent=%s status=%s duration=%.1fs",
                  pl.pipeline_id, step.agent, step.status,
                  step.completed_at - step.started_at)

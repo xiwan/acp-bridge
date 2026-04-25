@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.acp_client import AcpError, PoolExhaustedError
 from src.jobs import Job, JobManager
 from src.store import JobStore
-from src.agents import get_next_fallback, get_best_fallback
+from src.fallback_policy import get_next_fallback, get_best_fallback
 
 
 # ── Helpers ──────────────────────────────────────────────
@@ -634,7 +634,7 @@ def test_best_fallback_success_rate_can_overcome_idle():
 
 import pytest
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitState
-import src.agents as _agents_mod
+import src.fallback_policy as _agents_mod
 
 
 def _setup_breakers(states: dict[str, CircuitState]):

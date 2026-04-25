@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
-from .agents import get_best_fallback
+from .fallback_policy import get_best_fallback
 from .complexity import TIMEOUT_MAP, Complexity, estimate_complexity, should_use_async
 from .cost import calc_cost, estimate_tokens, model_from_agent
 from .exceptions import AgentModelError, AgentRateLimitError, AgentTimeoutError
