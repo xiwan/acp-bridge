@@ -115,7 +115,7 @@ class AcpConnection:
                                  msg.get("params", {}).get("toolCall", {}).get("title", "?"))
                         reply = {"jsonrpc": "2.0", "id": msg_id,
                                  "result": {"outcome": {"outcome": "selected",
-                                                        "optionId": "allow_always"}}}
+                                                        "optionId": "proceed_always"}}}
                         data = json.dumps(reply) + "\n"
                         self.proc.stdin.write(data.encode())
                         asyncio.ensure_future(self.proc.stdin.drain())
@@ -215,6 +215,7 @@ class AcpConnection:
                     if notification is None:
                         break
                     last_event_time = time.time()
+                    self.last_active = time.time()
                     yield notification
                 except asyncio.TimeoutError:
                     continue
@@ -295,29 +296,25 @@ class AcpProcessPool:
         group = self._agent_group(agent)
         return sum(1 for (a, _) in self._connections if self._agent_group(a) == group)
 
-    def _lru_idle(self, agent: str | None = None) -> tuple[str, str] | None:
-        """Return key of least-recently-used idle connection, optionally filtered by agent group."""
+    def _lru_idle(self, agent: str | None = None, exact_match: bool = False) -> tuple[str, str] | None:
+        """Return key of least-recently-used idle connection, optionally filtered by agent."""
         if agent is not None:
-            group = self._agent_group(agent)
-            candidates = [
-                (k, c) for k, c in self._connections.items()
-                if not c._busy and c.alive and self._agent_group(k[0]) == group
-            ]
+            if exact_match:
+                candidates = [
+                    (k, c) for k, c in self._connections.items()
+                    if not c._busy and c.alive and k[0] == agent
+                ]
+            else:
+                group = self._agent_group(agent)
+                candidates = [
+                    (k, c) for k, c in self._connections.items()
+                    if not c._busy and c.alive and self._agent_group(k[0]) == group
+                ]
         else:
             candidates = [
                 (k, c) for k, c in self._connections.items()
                 if not c._busy and c.alive
             ]
-        if not candidates:
-            return None
-        return min(candidates, key=lambda x: x[1].last_active)[0]
-
-    def _lru_idle_exact(self, agent: str) -> tuple[str, str] | None:
-        """Return LRU idle connection for the exact agent name (no group matching)."""
-        candidates = [
-            (k, c) for k, c in self._connections.items()
-            if not c._busy and c.alive and k[0] == agent
-        ]
         if not candidates:
             return None
         return min(candidates, key=lambda x: x[1].last_active)[0]
@@ -368,7 +365,7 @@ class AcpProcessPool:
 
         # global limit: prefer reusing same-agent process, else evict globally LRU
         if len(self._connections) >= self._max:
-            lru_same = self._lru_idle_exact(agent)
+            lru_same = self._lru_idle(agent, exact_match=True)
             if lru_same:
                 return await self._reuse(lru_same, key, cwd, profile=profile)
             lru = self._lru_idle()
@@ -421,8 +418,14 @@ class AcpProcessPool:
         self._connections.pop((agent, session_id), None)
 
     async def cleanup_idle(self, ttl_seconds: float) -> None:
-        cutoff = time.time() - ttl_seconds
-        stale = [k for k, c in self._connections.items() if c.last_active < cutoff]
+        now = time.time()
+        default_cutoff = now - ttl_seconds
+        stale = []
+        for k, c in self._connections.items():
+            agent_ttl = self._config.get(k[0], {}).get("idle_ttl")
+            cutoff = (now - agent_ttl) if agent_ttl is not None else default_cutoff
+            if not c._busy and c.last_active < cutoff:
+                stale.append(k)
         for key in stale:
             conn = self._connections.pop(key)
             log.info("cleanup idle: agent=%s session=%s", key[0], key[1])
@@ -463,16 +466,23 @@ class AcpProcessPool:
             pct = self._mem_used_pct()
         return evicted
 
-    async def health_check(self) -> None:
-        """Ping all idle connections; kill and remove unresponsive ones."""
+    async def health_check(self, busy_timeout: float = 600) -> None:
+        """Ping all idle connections; kill and remove unresponsive ones.
+        Also kill connections stuck in busy state beyond busy_timeout."""
+        now = time.time()
         dead: list[tuple[str, str]] = []
         for key, conn in list(self._connections.items()):
             if not conn.alive:
                 dead.append(key)
                 continue
             if conn._busy:
+                # Kill connections stuck busy beyond timeout
+                if now - conn.last_active > busy_timeout:
+                    log.warning("health_check: agent=%s session=%s stuck busy for %.0fs, killing",
+                                key[0], key[1], now - conn.last_active)
+                    dead.append(key)
                 continue
-            ok = await conn.ping()
+            ok = await conn.ping(timeout=10)
             if not ok:
                 dead.append(key)
         for key in dead:
@@ -480,6 +490,9 @@ class AcpProcessPool:
             if conn:
                 log.warning("health_check: agent=%s session=%s unresponsive, killing", key[0], key[1])
                 await conn.kill()
+        if dead:
+            log.info("health_check: removed %d dead connections", len(dead))
+            self._save_pids()
 
     async def shutdown(self) -> None:
         for key, conn in list(self._connections.items()):

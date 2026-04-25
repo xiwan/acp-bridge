@@ -31,7 +31,7 @@ from acp_sdk.server import Server
 from acp_sdk.server.app import create_app
 
 from src.acp_client import AcpProcessPool
-from src.agents import make_acp_agent_handler, make_pty_agent_handler
+from src.agents import make_acp_agent_handler, make_pty_agent_handler, ping_loop
 from src.jobs import JobManager
 from src.security import SecurityMiddleware
 from src.stats import StatsCollector
@@ -218,17 +218,6 @@ def main():
     if s3_ok:
         log.info("s3: file sharing enabled")
 
-    # --- S3 file sharing ---
-    from src import s3 as s3_mod
-    s3_cfg = config.get("s3", {})
-    s3_ok = s3_mod.init(
-        bucket=s3_cfg.get("bucket", ""),
-        prefix=s3_cfg.get("prefix", "acp-bridge/files"),
-        expires=s3_cfg.get("presign_expires", 3600),
-    )
-    if s3_ok:
-        log.info("s3: file sharing enabled")
-
     # --- App + middleware ---
     app = create_app(*server.agents)
 
@@ -270,6 +259,11 @@ def main():
         base_url=base_url,
     ) if (pool or pty_agents) else None
 
+    # --- Fallback chain (load from YAML, fallback to built-in defaults) ---
+    from src.agents import load_fallback_chain
+    _config_dir = os.path.dirname(os.path.abspath(args.config)) if os.path.exists(args.config) else "."
+    load_fallback_chain(os.path.join(_config_dir, "fallback-chain.yaml"))
+
     # --- Register routes ---
     start_time = time.time()
     webhook_account_id = webhook_cfg.get("account_id", "")
@@ -289,6 +283,23 @@ def main():
     stats_routes.register(app, stats_collector)
     import src.agents as _agents_mod
     _agents_mod._stats = stats_collector
+    if job_mgr:
+        job_mgr._stats = stats_collector
+
+    # --- Heartbeat / env awareness ---
+    from src.heartbeat import EnvCollector
+    heartbeat_cfg = config.get("heartbeat", {})
+    env_collector = None
+    if heartbeat_cfg.get("enabled", False) and pool:
+        env_collector = EnvCollector(pool, agents_cfg, port=port,
+                                     client_script=heartbeat_cfg.get("client_script", ""),
+                                     job_mgr=job_mgr,
+                                     language=heartbeat_cfg.get("language", "en"),
+                                     shared_workdir=srv_cfg.get("public_workdir", "/tmp/acp-public"))
+        _agents_mod._env = env_collector
+        from src.heartbeat import register as heartbeat_register
+        heartbeat_register(app, env_collector, pool)
+        log.info("heartbeat: env injection enabled for %s", sorted(env_collector._enabled_agents))
 
     # --- Templates ---
     templates_routes.register(app)
@@ -313,17 +324,61 @@ def main():
     # --- Lifespan ---
     from contextlib import asynccontextmanager
 
+    busy_timeout = pool_cfg.get("busy_timeout", 360)
+
     async def cleanup_loop():
         while True:
             await asyncio.sleep(60)
             if pool:
-                await pool.health_check()
+                await pool.health_check(busy_timeout=busy_timeout)
                 await pool.cleanup_idle(ttl_hours * 3600)
                 await pool.memory_evict()
                 pool.cleanup_ghosts()
             if job_mgr:
                 job_mgr.cleanup()
+            if env_collector:
+                env_collector.refresh()
             stats_collector.delete_old()
+
+    heartbeat_interval = heartbeat_cfg.get("interval", 0)
+
+    async def heartbeat_loop():
+        """Auto-ping heartbeat-enabled agents on a fixed interval."""
+        import uuid
+        from src.sse import transform_notification
+        while True:
+            await asyncio.sleep(heartbeat_interval)
+            if not env_collector:
+                continue
+            for agent_name in sorted(env_collector._enabled_agents):
+                cfg = agents_cfg.get(agent_name, {})
+                if not isinstance(cfg, dict) or cfg.get("mode") != "acp":
+                    continue
+                prompt = env_collector.build_heartbeat_prompt(agent_name)
+                session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"heartbeat:{agent_name}"))
+                # Skip if heartbeat session is still busy from previous round
+                existing = pool._connections.get((agent_name, session_id))
+                if existing and existing._busy:
+                    log.info("heartbeat_skip: agent=%s still busy", agent_name)
+                    continue
+                t0 = time.time()
+                try:
+                    conn = await pool.get_or_create(agent_name, session_id,
+                                                    cwd=cfg.get("working_dir", "/tmp"))
+                    parts = []
+                    async for notification in conn.session_prompt(prompt):
+                        if "_prompt_result" in notification:
+                            break
+                        event = transform_notification(notification)
+                        if event and event["type"] == "message.part":
+                            parts.append(event["content"])
+                    response = "".join(parts).strip()
+                    silent = "[SILENT]" in response.upper() or not response
+                    env_collector.record(agent_name, prompt, response, silent, time.time() - t0)
+                    log.info("heartbeat_auto: agent=%s silent=%s dur=%.1fs",
+                             agent_name, silent, time.time() - t0)
+                except Exception as e:
+                    log.warning("heartbeat_auto: agent=%s error=%s", agent_name, e)
 
     _original_lifespan = app.router.lifespan_context
 
@@ -335,6 +390,12 @@ def main():
             task = asyncio.create_task(cleanup_loop())
             if job_mgr:
                 asyncio.create_task(job_mgr.run_recovery())
+            if env_collector and heartbeat_interval > 0:
+                asyncio.create_task(heartbeat_loop())
+                log.info("heartbeat_loop: started, interval=%ds", heartbeat_interval)
+            if pool:
+                asyncio.create_task(ping_loop(pool))
+                log.info("ping_loop: started, interval=300s")
             yield
             task.cancel()
             if pool:
@@ -347,7 +408,7 @@ def main():
     auth_token = sec_cfg.get("auth_token", "")
     log.info("allowed_ips=%s", sec_cfg.get("allowed_ips", []))
     if pool:
-        log.info("pool: max=%d max_per_agent=%d", pool_cfg.get("max_processes", 20), pool_cfg.get("max_per_agent", 10))
+        log.info("pool: max=%d max_per_agent=%d busy_timeout=%ds", pool_cfg.get("max_processes", 20), pool_cfg.get("max_per_agent", 10), busy_timeout)
     log.info("auth_token=%s", auth_token[:8] + "..." if len(auth_token) > 8 else auth_token)
     if job_mgr:
         log.info("jobs: monitor=60s stuck_timeout=600s webhook=%s", webhook_cfg.get("url", "(none)"))

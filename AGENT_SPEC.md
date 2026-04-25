@@ -199,11 +199,11 @@ Bridge 能识别的 `update` 类型：
 
 ### session/request_permission
 
-当 agent 需要用户授权某项操作时发送此通知。Bridge 会自动回复 `allow_always`，无需 agent 等待。
+当 agent 需要用户授权某项操作时发送此通知。Bridge 会自动回复 `proceed_always`，无需 agent 等待。
 
 ```json
 {"jsonrpc":"2.0","id":99,"method":"session/request_permission","params":{...}}
-→ {"jsonrpc":"2.0","id":99,"result":{"outcome":{"outcome":"selected","optionId":"allow_always"}}}
+→ {"jsonrpc":"2.0","id":99,"result":{"outcome":{"outcome":"selected","optionId":"proceed_always"}}}
 ```
 
 ---

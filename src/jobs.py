@@ -9,6 +9,10 @@ import uuid
 from dataclasses import dataclass, field
 
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
+from .agents import get_best_fallback
+from .complexity import TIMEOUT_MAP, Complexity, estimate_complexity, should_use_async
+from .cost import calc_cost, estimate_tokens, model_from_agent
+from .exceptions import AgentModelError, AgentRateLimitError, AgentTimeoutError
 from .formatters import get_formatter, get_prompt_suffix
 from .sse import transform_notification
 from .store import JobStore
@@ -36,12 +40,22 @@ class Job:
     callback_meta: dict = field(default_factory=dict)
     webhook_sent: bool = False
     retries: int = 0
+    original_agent: str = ""
+    fallback_history: list = field(default_factory=list)
+    retry_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+    model_name: str = ""
 
     def to_dict(self) -> dict:
         d = {"job_id": self.job_id, "agent": self.agent, "session_id": self.session_id,
              "status": self.status, "created_at": self.created_at,
              "target": self.callback_meta.get("target", self.callback_meta.get("discord_target", "")),
              "account_id": self.callback_meta.get("account_id", "")}
+        if self.original_agent and self.original_agent != self.agent:
+            d["original_agent"] = self.original_agent
+            d["fallback_history"] = self.fallback_history
         if self.status == "running":
             d["elapsed"] = round(time.time() - self.created_at, 1)
         if self.status in ("completed", "failed"):
@@ -60,6 +74,7 @@ class JobManager:
         self._pool = pool
         self._pty_configs = pty_configs or {}
         self._jobs: dict[str, Job] = {}
+        self._stats = None  # set by main.py after StatsCollector init
         self._webhook_url = webhook_url
         self._webhook_format = webhook_format
         self._base_url = base_url
@@ -122,21 +137,33 @@ class JobManager:
             callback_meta=d.get("callback_meta", {}),
             webhook_sent=d.get("webhook_sent", False),
             retries=d.get("retries", 0),
+            original_agent=d.get("original_agent", ""),
+            fallback_history=d.get("fallback_history", []),
+            retry_count=d.get("retry_count", 0),
+            input_tokens=d.get("input_tokens", 0),
+            output_tokens=d.get("output_tokens", 0),
+            cost_usd=d.get("cost_usd", 0.0),
+            model_name=d.get("model_name", ""),
         )
 
     def submit(self, agent: str, session_id: str, prompt: str,
                callback_url: str = "", callback_meta: dict | None = None,
                cwd: str = "") -> Job:
+        complexity = estimate_complexity(prompt)
+        meta = dict(callback_meta or {})
+        meta.setdefault("complexity", complexity.value)
+        meta.setdefault("timeout", TIMEOUT_MAP[complexity])
         job = Job(
             job_id=str(uuid.uuid4()), agent=agent, session_id=session_id, prompt=prompt,
             cwd=cwd,
             callback_url=callback_url or self._webhook_url,
-            callback_meta=callback_meta or {},
+            callback_meta=meta,
         )
         self._jobs[job.job_id] = job
         self._store.save(job)
         asyncio.create_task(self._run(job))
-        log.info("job_submitted: job=%s agent=%s session=%s", job.job_id, agent, session_id)
+        log.info("job_submitted: job=%s agent=%s complexity=%s timeout=%s",
+                 job.job_id, agent, complexity.value, meta["timeout"])
         return job
 
     def get(self, job_id: str) -> Job | None:
@@ -168,42 +195,153 @@ class JobManager:
         else:
             await self._run_acp(job)
         job.completed_at = time.time()
+        # Cost tracking
+        job.model_name = model_from_agent(job.agent)
+        job.input_tokens = estimate_tokens(job.prompt, job.model_name)
+        job.output_tokens = estimate_tokens(job.result, job.model_name)
+        job.cost_usd = calc_cost(job.input_tokens, job.output_tokens, job.model_name)
         self._store.save(job)
         log.info("job_done: job=%s status=%s len=%d duration=%.1fs",
                  job.job_id, job.status, len(job.result), job.completed_at - job.created_at)
         if job.callback_url:
             await self._webhook(job)
 
-    async def _run_acp(self, job: Job):
-        parts = []
-        try:
-            conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
-            prompt = job.prompt + get_prompt_suffix()
-            async for notification in conn.session_prompt(prompt):
-                if "_prompt_result" in notification:
-                    if "error" in notification["_prompt_result"]:
-                        job.error = str(notification["_prompt_result"]["error"])
-                        job.status = "failed"
-                    else:
-                        job.status = "completed"
-                    break
-                event = transform_notification(notification)
-                if not event:
-                    continue
-                if event["type"] == "message.part":
-                    parts.append(event["content"])
-                elif event["type"] == "tool.done":
-                    title = event.get("title", "")
-                    if title:
-                        job.tools.append(title)
-        except (PoolExhaustedError, AcpError) as e:
-            job.error = str(e)
-            job.status = "failed"
-        except Exception as e:
-            job.error = str(e)
-            job.status = "failed"
-            self._pool.remove(job.agent, job.session_id)
+    MAX_FALLBACK_RETRIES = 3
+
+    def _select_fallback(self, job: Job, tried_agents: list, attempt: int, error: Exception, parts: list) -> bool:
+        """Try to switch to next fallback agent. Returns True if switched, False if exhausted."""
+        next_agent = get_best_fallback(job.agent, tried_agents, self._pool, self._stats)
+        if next_agent:
+            job.fallback_history.append(job.agent)
+            job.retry_count += 1
+            log.info("job_fallback: job=%s %s -> %s (attempt %d/%d)",
+                     job.job_id, job.agent, next_agent, attempt + 1, self.MAX_FALLBACK_RETRIES)
+            job.agent = next_agent
+            job.session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{next_agent}:{job.session_id[:8]}"))
+            self._store.save(job)
+            return True
+        job.error = str(error)
+        job.status = "failed"
         job.result = "".join(parts)
+        log.error("job_fallback_exhausted: job=%s original=%s tried=%s",
+                  job.job_id, job.original_agent, tried_agents)
+        if self._stats:
+            self._stats.record_fallback(job.original_agent, job.agent, tried_agents, False)
+        return False
+
+    async def _run_acp(self, job: Job):
+        if not job.original_agent:
+            job.original_agent = job.agent
+        tried_agents: list[str] = list(job.fallback_history)
+
+        for attempt in range(self.MAX_FALLBACK_RETRIES):
+            tried_agents.append(job.agent)
+            parts = []
+            try:
+                conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
+                prompt = job.prompt + get_prompt_suffix()
+                async for notification in conn.session_prompt(prompt):
+                    if "_prompt_result" in notification:
+                        if "error" in notification["_prompt_result"]:
+                            job.error = str(notification["_prompt_result"]["error"])
+                            job.status = "failed"
+                        else:
+                            job.status = "completed"
+                        break
+                    event = transform_notification(notification)
+                    if not event:
+                        continue
+                    if event["type"] == "message.part":
+                        parts.append(event["content"])
+                    elif event["type"] == "tool.done":
+                        title = event.get("title", "")
+                        if title:
+                            job.tools.append(title)
+                job.result = "".join(parts)
+                if job.status == "completed" and job.agent != job.original_agent:
+                    log.info("job_fallback_success: job=%s original=%s fallback=%s history=%s",
+                             job.job_id, job.original_agent, job.agent, tried_agents)
+                    if self._stats:
+                        self._stats.record_fallback(job.original_agent, job.agent, tried_agents, True)
+                return
+
+            except AgentTimeoutError as e:
+                log.warning("job_agent_timeout: job=%s agent=%s, retrying same agent",
+                            job.job_id, job.agent)
+                try:
+                    conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
+                    async for notification in conn.session_prompt(job.prompt + get_prompt_suffix()):
+                        if "_prompt_result" in notification:
+                            if "error" in notification["_prompt_result"]:
+                                job.error = str(notification["_prompt_result"]["error"])
+                                job.status = "failed"
+                            else:
+                                job.status = "completed"
+                            break
+                        event = transform_notification(notification)
+                        if event and event["type"] == "message.part":
+                            parts.append(event["content"])
+                        elif event and event["type"] == "tool.done" and event.get("title"):
+                            job.tools.append(event["title"])
+                    job.result = "".join(parts)
+                    return
+                except Exception:
+                    log.warning("job_timeout_retry_failed: job=%s agent=%s, falling back",
+                                job.job_id, job.agent)
+                    if not self._select_fallback(job, tried_agents, attempt, e, parts):
+                        return
+                    continue
+
+            except AgentRateLimitError as e:
+                log.warning("job_agent_rate_limited: job=%s agent=%s retry_after=%d",
+                            job.job_id, job.agent, e.retry_after)
+                await asyncio.sleep(min(e.retry_after, 30))
+                try:
+                    conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
+                    async for notification in conn.session_prompt(job.prompt + get_prompt_suffix()):
+                        if "_prompt_result" in notification:
+                            if "error" in notification["_prompt_result"]:
+                                job.error = str(notification["_prompt_result"]["error"])
+                                job.status = "failed"
+                            else:
+                                job.status = "completed"
+                            break
+                        event = transform_notification(notification)
+                        if event and event["type"] == "message.part":
+                            parts.append(event["content"])
+                        elif event and event["type"] == "tool.done" and event.get("title"):
+                            job.tools.append(event["title"])
+                    job.result = "".join(parts)
+                    return
+                except Exception:
+                    log.warning("job_rate_limit_retry_failed: job=%s agent=%s, falling back",
+                                job.job_id, job.agent)
+                    if not self._select_fallback(job, tried_agents, attempt, e, parts):
+                        return
+                    continue
+
+            except (PoolExhaustedError, AcpError) as e:
+                log.warning("job_agent_failed: job=%s agent=%s attempt=%d error=%s",
+                            job.job_id, job.agent, attempt + 1, e)
+                if not self._select_fallback(job, tried_agents, attempt, e, parts):
+                    return
+                continue
+
+            except Exception as e:
+                job.error = str(e)
+                job.status = "failed"
+                job.result = "".join(parts)
+                self._pool.remove(job.agent, job.session_id)
+                return
+
+        # Exhausted all retry attempts
+        if job.status not in ("completed", "failed"):
+            job.status = "failed"
+            job.error = job.error or f"fallback exhausted after {self.MAX_FALLBACK_RETRIES} attempts (tried: {tried_agents})"
+            log.error("job_fallback_exhausted: job=%s original=%s tried=%s",
+                      job.job_id, job.original_agent, tried_agents)
+            if self._stats:
+                self._stats.record_fallback(job.original_agent, job.agent, tried_agents, False)
 
     async def _run_pty(self, job: Job):
         cfg = self._pty_configs[job.agent]

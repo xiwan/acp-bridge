@@ -44,7 +44,7 @@ On startup, Bridge scans for orphaned agent processes from previous runs (e.g. a
 
 ## Permission Auto-Reply
 
-`session/request_permission` notifications from agents are auto-answered with `allow_always`. This is required for Claude compatibility — without it, Claude hangs waiting for user approval.
+`session/request_permission` notifications from agents are auto-answered with `proceed_always`. This is required for Claude compatibility — without it, Claude hangs waiting for user approval.
 
 ## Configuration
 

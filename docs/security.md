@@ -12,7 +12,7 @@ Agents run as full subprocesses of the Bridge host, with the Bridge user's permi
 
 - **Token compromise ≈ shell compromise.** Anyone with `ACP_TOKEN` can tell an agent to `rm -rf`, exfiltrate `~/.ssh`, or hit internal services. Rotate tokens, never commit them, and scope `allowed_ips` tightly.
 - **`--trust-all-tools`** auto-approves every tool call. Kiro's default config includes this flag — remove it in untrusted networks.
-- **`session/request_permission`** is auto-answered with `allow_always` so Claude doesn't hang. Same implication: anything the agent wants to do, it gets to do.
+- **`session/request_permission`** is auto-answered with `proceed_always` so Claude doesn't hang. Same implication: anything the agent wants to do, it gets to do.
 - **Prompt injection is a real vector.** Untrusted content fed to an agent (web pages, user input, log files) can hijack it into running unintended commands.
 
 ## Authentication

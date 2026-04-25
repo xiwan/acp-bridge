@@ -64,7 +64,7 @@ agents:
 ### Claude Code
 
 - Uses `claude-agent-acp` adapter (not the `claude` CLI directly)
-- `session/request_permission` is auto-answered with `allow_always` by Bridge
+- `session/request_permission` is auto-answered with `proceed_always` by Bridge
 - For Bedrock: set `CLAUDE_CODE_USE_BEDROCK=1` and `ANTHROPIC_MODEL=<model-id>`
 - ⚠️ `@zed-industries/claude-agent-acp` is deprecated — use `@agentclientprotocol/claude-agent-acp`
 

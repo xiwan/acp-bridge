@@ -155,23 +155,49 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
                 continue
             alive = stats["by_agent"].get(name, 0)
             sessions = []
+            responsive = 0
             if pool:
+                now = time.time()
                 for (a, sid), conn in pool._connections.items():
                     if a == name:
+                        stuck = conn._busy and (now - conn.last_active > 600)
+                        is_responsive = conn.alive and not stuck
+                        if is_responsive:
+                            responsive += 1
                         sessions.append({
                             "session_id": sid,
                             "alive": conn.alive,
-                            "state": conn.state,
-                            "idle": round(time.time() - conn.last_active, 1),
+                            "state": "stuck" if stuck else conn.state,
+                            "idle": round(now - conn.last_active, 1),
                         })
             agent_list.append({
                 "name": name,
                 "mode": cfg.get("mode", "pty"),
                 "alive_sessions": alive,
-                "healthy": alive > 0 or cfg.get("mode") == "pty",
+                "responsive_sessions": responsive,
+                "healthy": responsive > 0 or cfg.get("mode") == "pty",
                 "sessions": sessions,
             })
         return {"version": version, "agents": agent_list}
+
+    @app.get("/agents/fallback-chain")
+    async def get_fallback_chain():
+        from ..agents import FALLBACK_CHAIN
+        return {"fallback_chain": dict(FALLBACK_CHAIN)}
+
+    @app.put("/agents/fallback-chain")
+    async def put_fallback_chain(req: dict):
+        from ..agents import FALLBACK_CHAIN, save_fallback_chain
+        chain = req.get("fallback_chain")
+        if not isinstance(chain, dict):
+            return JSONResponse({"error": "fallback_chain must be a dict"}, status_code=400)
+        for agent, candidates in chain.items():
+            if not isinstance(candidates, list) or not all(isinstance(c, str) for c in candidates):
+                return JSONResponse({"error": f"invalid candidates for {agent}"}, status_code=400)
+        FALLBACK_CHAIN.clear()
+        FALLBACK_CHAIN.update(chain)
+        save_fallback_chain()
+        return {"status": "ok", "fallback_chain": dict(FALLBACK_CHAIN)}
 
     if pool:
         @app.delete("/sessions/{agent}/{session_id}")

@@ -50,3 +50,33 @@ settings:
 # Appended to every agent prompt (pipeline steps, async jobs, etc.)
 # Controls output verbosity at the Bridge level — all agents see this.
 prompt_suffix: "\n\n[IMPORTANT: Be concise. Summarize your result in a few sentences. Do not output verbose logs, full file contents, or lengthy explanations. 请言简意赅地总结结果。]"
+
+# ── Heartbeat ────────────────────────────────────
+# Prompt template for heartbeat pings. Variables: {agent_name}, {agents_json}
+heartbeat:
+  prompt: |
+    [HEARTBEAT] 你是 '{agent_name}'。
+    在线 agent：
+    {agents_json}
+
+    与其他 agent 对话：
+      {client} -a <agent_name> "<消息>"
+      {client} -a <agent_name> --async "<消息>"   # 长任务用异步
+
+    共享工作区：{shared_workdir}
+      所有 agent 都可以在此目录读写文件进行协作。
+
+    各 agent 擅长领域：kiro=编码/运维/云, claude=重构/调试/审查, codex=代码生成, qwen=编码/调试, hermes=消息/IM, harness=轻量/沙箱
+
+    {context}
+
+    鼓励你与其他 agent 互动！比如：
+    - 问问其他 agent 最近在做什么、擅长什么
+    - 提议协作："hey claude, 帮我 review 一下刚写的代码？"
+    - 分享发现："qwen, 我发现测试套件有些不稳定的用例"
+    - 把任务委派给更合适的 agent
+    - 关心一下忙碌的 agent："任务进展如何？"
+
+    选一个 agent 发一条简短消息。保持自然、有用。
+    只有所有 agent 都忙时才回复 [SILENT]。
+    请务必用中文回复。
