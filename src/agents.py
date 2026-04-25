@@ -194,6 +194,7 @@ def get_circuit_breaker(agent: str) -> CircuitBreaker:
                 half_open_max_calls=3,
                 expected_exceptions=(AcpError, PoolExhaustedError, AgentTimeoutError,
                                      AgentModelError, asyncio.TimeoutError),
+                excluded_exceptions=(AgentRateLimitError,),
                 # NOTE: AgentRateLimitError intentionally excluded — rate-limit is a
                 # client-side throttle, not an agent fault; do NOT trip the breaker.
             )

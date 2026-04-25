@@ -630,6 +630,131 @@ def test_best_fallback_success_rate_can_overcome_idle():
     print("✅ test_best_fallback_success_rate_can_overcome_idle")
 
 
+# ── Circuit breaker integration tests ────────────────────
+
+import pytest
+from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitState
+import src.agents as _agents_mod
+
+
+def _setup_breakers(states: dict[str, CircuitState]):
+    """Inject fake circuit breakers into agents module."""
+    saved = dict(_agents_mod._circuit_breakers)
+    _agents_mod._circuit_breakers.clear()
+    for agent, state in states.items():
+        cb = CircuitBreaker(agent, CircuitBreakerConfig(
+            failure_threshold=2, open_timeout=999))
+        cb.state = state
+        cb._state_changed_at = time.monotonic()
+        _agents_mod._circuit_breakers[agent] = cb
+    return saved
+
+
+def _restore_breakers(saved):
+    _agents_mod._circuit_breakers.clear()
+    _agents_mod._circuit_breakers.update(saved)
+
+
+def test_open_breaker_filtered_from_candidates():
+    """Agent with OPEN circuit breaker is excluded from fallback candidates."""
+    saved = _setup_breakers({"claude": CircuitState.OPEN, "opencode": CircuitState.CLOSED})
+    try:
+        pool = FakePoolWithState({"claude": "idle", "opencode": "idle"})
+        result = get_best_fallback("kiro", [], pool=pool)
+        assert result == "opencode", f"expected opencode, got {result}"
+    finally:
+        _restore_breakers(saved)
+
+
+def test_all_breakers_open_returns_none():
+    """When all fallback agents have OPEN breakers, return None."""
+    saved = _setup_breakers({
+        "claude": CircuitState.OPEN,
+        "opencode": CircuitState.OPEN,
+        "qwen": CircuitState.OPEN,
+    })
+    try:
+        pool = FakePoolWithState({"claude": "idle", "opencode": "idle", "qwen": "idle"})
+        result = get_best_fallback("kiro", [], pool=pool)
+        assert result is None
+    finally:
+        _restore_breakers(saved)
+
+
+def test_half_open_gets_lower_score_than_closed():
+    """HALF_OPEN agent scores lower than identical CLOSED agent (×0.5 weight)."""
+    saved = _setup_breakers({
+        "claude": CircuitState.HALF_OPEN,
+        "opencode": CircuitState.CLOSED,
+    })
+    try:
+        # Both idle, same stats → CLOSED should win due to cb_weight
+        pool = FakePoolWithState({"claude": "idle", "opencode": "idle"})
+        stats = FakeStats({
+            "claude": {"total": 10, "success": 10, "avg_duration": 10.0},
+            "opencode": {"total": 10, "success": 10, "avg_duration": 10.0},
+        })
+        result = get_best_fallback("kiro", [], pool=pool, stats=stats)
+        assert result == "opencode", f"expected opencode (CLOSED), got {result}"
+    finally:
+        _restore_breakers(saved)
+
+
+def test_half_open_still_selectable_if_only_option():
+    """HALF_OPEN agent is still returned when it's the only non-OPEN candidate."""
+    saved = _setup_breakers({
+        "claude": CircuitState.HALF_OPEN,
+        "opencode": CircuitState.OPEN,
+        "qwen": CircuitState.OPEN,
+    })
+    try:
+        pool = FakePoolWithState({"claude": "idle"})
+        result = get_best_fallback("kiro", [], pool=pool)
+        assert result == "claude"
+    finally:
+        _restore_breakers(saved)
+
+
+def test_no_breaker_entry_treated_as_closed():
+    """Agent without a circuit breaker entry gets full score (no penalty)."""
+    saved = _setup_breakers({"claude": CircuitState.HALF_OPEN})
+    try:
+        # opencode has no breaker entry → should be treated as CLOSED (weight=1.0)
+        pool = FakePoolWithState({"claude": "idle", "opencode": "idle"})
+        stats = FakeStats({
+            "claude": {"total": 10, "success": 10, "avg_duration": 10.0},
+            "opencode": {"total": 10, "success": 10, "avg_duration": 10.0},
+        })
+        result = get_best_fallback("kiro", [], pool=pool, stats=stats)
+        assert result == "opencode"
+    finally:
+        _restore_breakers(saved)
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_does_not_trip_breaker():
+    """AgentRateLimitError must NOT count as a circuit breaker failure."""
+    from src.exceptions import AgentRateLimitError
+
+    cb = CircuitBreaker("rate-test", CircuitBreakerConfig(
+        failure_threshold=2,
+        expected_exceptions=(AcpError,),
+        excluded_exceptions=(AgentRateLimitError,),  # excluded takes priority
+    ))
+
+    async def rate_limited():
+        raise AgentRateLimitError("429 too many requests", retry_after=5)
+
+    for _ in range(5):
+        with pytest.raises(AgentRateLimitError):
+            await cb.call(rate_limited)
+
+    # AgentRateLimitError is caught by excluded_exceptions before expected_exceptions,
+    # so it bypasses the breaker's failure recording entirely.
+    assert cb.state == CircuitState.CLOSED
+    assert cb.failure_calls == 0, f"expected 0 failure_calls, got {cb.failure_calls}"
+
+
 if __name__ == "__main__":
     test_no_fallback_on_success()
     test_fallback_on_pool_exhausted()
@@ -657,4 +782,9 @@ if __name__ == "__main__":
     test_timeout_falls_back_if_retry_fails()
     test_rate_limit_waits_and_retries()
     test_model_error_skips_to_fallback()
-    print(f"\n=== All 26 tests passed ✅ ===")
+    test_open_breaker_filtered_from_candidates()
+    test_all_breakers_open_returns_none()
+    test_half_open_gets_lower_score_than_closed()
+    test_half_open_still_selectable_if_only_option()
+    test_no_breaker_entry_treated_as_closed()
+    print(f"\n=== All 32 tests passed ✅ ===")
