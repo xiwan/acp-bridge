@@ -102,6 +102,12 @@ class EnvCollector:
             return {}
         return {"agents": json.loads(self._snapshot), "ts": self._ts}
 
+    @staticmethod
+    def _sanitize(text: str) -> str:
+        """Strip absolute paths to avoid leaking project locations."""
+        import re
+        return re.sub(r'/home/\S+/', '.../', text)
+
     def _build_context(self) -> str:
         lines = []
         # Injected human directives
@@ -115,15 +121,16 @@ class EnvCollector:
 
         if self._job_mgr:
             for j in self._job_mgr.list_jobs(limit=5):
+                prompt_preview = self._sanitize(j.prompt[:60])
                 if j.status == "running":
                     elapsed = round(time.time() - j.created_at)
-                    lines.append(f"  🔄 {j.agent} running: {j.prompt[:60]}... ({elapsed}s)")
+                    lines.append(f"  🔄 {j.agent} running: {prompt_preview}... ({elapsed}s)")
                 elif j.status == "failed":
-                    lines.append(f"  ❌ {j.agent} failed: {j.error[:60]}")
+                    lines.append(f"  ❌ {j.agent} failed: {self._sanitize(j.error[:60])}")
                 elif j.status == "completed":
                     ago = round(time.time() - j.completed_at)
                     if ago < 300:
-                        lines.append(f"  ✅ {j.agent} completed {ago}s ago: {j.prompt[:60]}")
+                        lines.append(f"  ✅ {j.agent} completed {ago}s ago: {prompt_preview}")
         return "Recent activity:\n" + "\n".join(lines) if lines else "Recent activity: none"
 
     def build_heartbeat_prompt(self, agent_name: str) -> str:

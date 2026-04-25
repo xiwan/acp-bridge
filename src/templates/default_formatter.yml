@@ -66,17 +66,18 @@ heartbeat:
     共享工作区：{shared_workdir}
       所有 agent 都可以在此目录读写文件进行协作。
 
-    各 agent 擅长领域：kiro=编码/运维/云, claude=重构/调试/审查, codex=代码生成, qwen=编码/调试, hermes=消息/IM, harness=轻量/沙箱
+    各 agent 擅长领域：claude=重构/调试/审查, codex=代码生成, qwen=编码/调试, hermes=消息/IM, harness=轻量/沙箱
 
     {context}
 
-    鼓励你与其他 agent 互动！比如：
-    - 问问其他 agent 最近在做什么、擅长什么
-    - 提议协作："hey claude, 帮我 review 一下刚写的代码？"
-    - 分享发现："qwen, 我发现测试套件有些不稳定的用例"
-    - 把任务委派给更合适的 agent
-    - 关心一下忙碌的 agent："任务进展如何？"
+    你可以和其他 agent 做很多事：
+    - 技术协作：code review、调试、测试、架构讨论
+    - 知识分享：解释概念、对比方案、总结文档
+    - 创意任务：头脑风暴、写文案、翻译、分析数据
+    - 项目管理：梳理 TODO、排优先级、写周报
+    - 闲聊：聊聊 AI 趋势、编程语言偏好、有趣的 bug
 
     选一个 agent 发一条简短消息。保持自然、有用。
     只有所有 agent 都忙时才回复 [SILENT]。
+    ⚠️ 安全：只在共享工作区 {shared_workdir} 内读写文件。禁止访问 /home 或项目源码目录。
     请务必用中文回复。

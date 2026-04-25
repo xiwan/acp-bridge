@@ -16,6 +16,8 @@ def make_limiter(agent: str, rpm: int = 5, tpm: int = 1000, fallback: str | None
     rl._windows = {}
     import threading
     rl._lock = threading.Lock()
+    rl._total_requests = 0
+    rl._rejected_requests = 0
     rl.configure(agent, AgentQuota(rpm=rpm, tpm=tpm, fallback=fallback))
     return rl
 
@@ -153,6 +155,8 @@ class TestGetStats:
         rl._windows = {}
         import threading
         rl._lock = threading.Lock()
+        rl._total_requests = 0
+        rl._rejected_requests = 0
         rl.configure("claude", AgentQuota(rpm=50, tpm=80_000))
         rl.configure("qwen", AgentQuota(rpm=120, tpm=150_000))
         all_s = rl.all_stats()
@@ -160,10 +164,86 @@ class TestGetStats:
         assert "qwen" in all_s
 
 
+# ---------------------------------------------------------------------------
+# get_stats() – global aggregate counters (total_requests / rejected_requests
+#               / rejection_rate)
+# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Claude review fixes (P0 bugs + edge cases)
-# ---------------------------------------------------------------------------
+class TestGetStatsGlobal:
+    def test_initial_state_all_zeros(self):
+        """A brand-new limiter should report zero for every counter."""
+        rl = make_limiter("claude", rpm=10, tpm=1000)
+        stats = rl.get_stats()
+        assert stats["total_requests"] == 0
+        assert stats["rejected_requests"] == 0
+        assert stats["rejection_rate"] == 0.0
+
+    def test_total_requests_increments_on_allowed(self):
+        """Allowed requests must be counted in total_requests."""
+        rl = make_limiter("claude", rpm=10, tpm=1000)
+        rl.check_and_consume("claude", 100)
+        rl.check_and_consume("claude", 100)
+        stats = rl.get_stats()
+        assert stats["total_requests"] == 2
+        assert stats["rejected_requests"] == 0
+        assert stats["rejection_rate"] == 0.0
+
+    def test_rejected_requests_increments_on_rejection(self):
+        """Over-quota calls must increment rejected_requests."""
+        rl = make_limiter("claude", rpm=2, tpm=1000)
+        rl.check_and_consume("claude", 10)
+        rl.check_and_consume("claude", 10)
+        # Third call is over the rpm=2 limit → rejected
+        rl.check_and_consume("claude", 10)
+        stats = rl.get_stats()
+        assert stats["total_requests"] == 3
+        assert stats["rejected_requests"] == 1
+
+    def test_rejection_rate_is_correct_fraction(self):
+        """rejection_rate == rejected_requests / total_requests."""
+        rl = make_limiter("claude", rpm=3, tpm=100_000)
+        for _ in range(3):
+            rl.check_and_consume("claude", 10)   # allowed
+        for _ in range(2):
+            rl.check_and_consume("claude", 10)   # rejected (over rpm)
+        stats = rl.get_stats()
+        assert stats["total_requests"] == 5
+        assert stats["rejected_requests"] == 2
+        assert abs(stats["rejection_rate"] - 0.4) < 1e-9
+
+    def test_rejection_rate_zero_when_no_requests(self):
+        """rejection_rate must be 0.0 (not ZeroDivisionError) on a fresh limiter."""
+        rl = make_limiter("claude", rpm=5, tpm=1000)
+        stats = rl.get_stats()
+        assert stats["rejection_rate"] == 0.0   # no ZeroDivisionError
+
+    def test_unknown_agent_counts_as_total_not_rejected(self):
+        """Requests for agents without a quota are allowed and counted in total."""
+        rl = make_limiter("claude", rpm=5, tpm=1000)
+        rl.check_and_consume("unknown_agent", 50)
+        stats = rl.get_stats()
+        assert stats["total_requests"] == 1
+        assert stats["rejected_requests"] == 0
+
+    def test_get_stats_required_keys_present(self):
+        """get_stats() dict must always contain the three required keys."""
+        rl = make_limiter("claude", rpm=5, tpm=1000)
+        stats = rl.get_stats()
+        assert "total_requests" in stats
+        assert "rejected_requests" in stats
+        assert "rejection_rate" in stats
+
+    def test_get_stats_does_not_break_per_agent_stats(self):
+        """Calling get_stats() must not interfere with get_stats(agent)."""
+        rl = make_limiter("claude", rpm=10, tpm=1000)
+        rl.check_and_consume("claude", 200)
+        rl.check_and_consume("claude", 300)
+        per_agent = rl.get_stats("claude")
+        assert per_agent["rpm_used"] == 2
+        assert per_agent["tpm_used"] == 500
+        global_stats = rl.get_stats()
+        assert global_stats["total_requests"] == 2
+        assert global_stats["rejected_requests"] == 0
 
 class TestClaudeReviewFixes:
     def test_negative_tokens_raises(self):
@@ -179,6 +259,8 @@ class TestClaudeReviewFixes:
         rl._windows = {}
         import threading
         rl._lock = threading.Lock()
+        rl._total_requests = 0
+        rl._rejected_requests = 0
         # Add quota without pre-creating a window (simulate configure() race)
         rl.quotas["late_agent"] = AgentQuota(rpm=5, tpm=1000)
         # Should NOT raise KeyError
@@ -212,6 +294,8 @@ class TestClaudeReviewFixes:
         rl._windows = {}
         import threading
         rl._lock = threading.Lock()
+        rl._total_requests = 0
+        rl._rejected_requests = 0
         rl.configure("a", AgentQuota(rpm=5, tpm=1000, fallback="b"))
         with pytest.raises(ValueError, match="cycle"):
             rl.configure("b", AgentQuota(rpm=5, tpm=1000, fallback="a"))
@@ -223,6 +307,8 @@ class TestClaudeReviewFixes:
         rl._windows = {}
         import threading
         rl._lock = threading.Lock()
+        rl._total_requests = 0
+        rl._rejected_requests = 0
         with pytest.raises(ValueError, match="cycle"):
             rl.configure("a", AgentQuota(rpm=5, tpm=1000, fallback="a"))
 

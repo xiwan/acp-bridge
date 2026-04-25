@@ -274,7 +274,7 @@ Rule: if `Write? = no`, do **not** instruct the agent to "save a report" — it 
 
 ## Commands (aliases)
 
-`./cli <prompt>` (default agent) · `./cli ko|cc|cx|qw|oc|hm|hf "..."` (kiro / claude / codex / qwen / opencode / hermes / harness) · `/chat ko|cc [--cwd <path>]` (enter) · `/chat end|status` · `/upload <file>` · `/hb [status|logs|ping]` (heartbeat)
+`./cli <prompt>` (default agent) · `./cli ko|cc|cx|qw|oc|hm|hf "..."` (kiro / claude / codex / qwen / opencode / hermes / harness) · `/chat ko|cc [--cwd <path>]` (enter) · `/chat end|status` · `/upload <file>` · `/hb [status|logs|ping|ctx]` (heartbeat)
 
 ## Dynamic Harness (usage)
 

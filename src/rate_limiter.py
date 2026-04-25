@@ -42,6 +42,8 @@ class RateLimiter:
         self.quotas: Dict[str, AgentQuota] = {}
         self._windows: Dict[str, deque] = {}   # agent -> deque[(ts, tokens)]
         self._lock = threading.Lock()
+        self._total_requests: int = 0
+        self._rejected_requests: int = 0
         self._load_config(config_path)
 
     # ------------------------------------------------------------------
@@ -117,6 +119,7 @@ class RateLimiter:
             raise ValueError(f"estimated_tokens must be >= 0, got {estimated_tokens}")
 
         with self._lock:
+            self._total_requests += 1
             quota = self.quotas.get(agent)
             if quota is None:
                 return (True, None)   # no limit configured → always allow
@@ -134,6 +137,7 @@ class RateLimiter:
             tpm_used = sum(tok for _, tok in window)
 
             if rpm_used >= quota.rpm or (tpm_used + estimated_tokens) >= quota.tpm:
+                self._rejected_requests += 1
                 return (False, quota.fallback)
 
             # Consume quota
@@ -156,8 +160,41 @@ class RateLimiter:
     # Observability
     # ------------------------------------------------------------------
 
-    def get_stats(self, agent: str) -> Dict:
-        """Return current-window usage counters for *agent*."""
+    def get_stats(self, agent: str = None) -> Dict:
+        """Return stats for the limiter.
+
+        When called without arguments (or with ``agent=None``), returns
+        aggregate counters across **all** agents::
+
+            {
+                'total_requests':    <int>,   # every check_and_consume call
+                'rejected_requests': <int>,   # calls that were over-quota
+                'rejection_rate':    <float>, # rejected / total  (0.0 when total == 0)
+            }
+
+        When called with an *agent* name, returns the current-window usage
+        counters for that specific agent::
+
+            {
+                'rpm_used':  <int>,
+                'tpm_used':  <int>,
+                'rpm_limit': <int>,
+                'tpm_limit': <int>,
+                'fallback':  <str | None>,
+            }
+        """
+        if agent is None:
+            with self._lock:
+                total = self._total_requests
+                rejected = self._rejected_requests
+            rejection_rate = (rejected / total) if total > 0 else 0.0
+            return {
+                "total_requests": total,
+                "rejected_requests": rejected,
+                "rejection_rate": rejection_rate,
+            }
+
+        # Per-agent stats (original behaviour)
         quota = self.quotas.get(agent, AgentQuota())
         with self._lock:
             window = self._windows.get(agent, deque())
