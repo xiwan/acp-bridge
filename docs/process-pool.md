@@ -34,9 +34,35 @@ When the pool is full and a new connection is needed:
 
 When system memory exceeds `pool.memory_limit_percent` (default: 80%), Bridge proactively evicts idle connections to free memory before the OS OOM killer intervenes.
 
+## Concurrency Safety
+
+As of v0.18.0, `get_or_create()` is protected by an `asyncio.Lock`. This prevents a race condition where concurrent requests could all pass the capacity check before any of them inserted, causing the pool to exceed `max_processes`. With the lock, concurrent requests are serialized at the pool level — one acquires a slot, the next sees the updated count.
+
+## Circuit Breaker
+
+Each agent has an automatic circuit breaker (three-state: CLOSED → OPEN → HALF_OPEN → CLOSED):
+
+- **CLOSED** (normal): calls pass through; failures are counted in a sliding window
+- **OPEN** (tripped): after 5 consecutive failures or 50% failure rate in the window, all calls are rejected immediately for 30 seconds
+- **HALF_OPEN** (probing): after the timeout, up to 3 test calls are allowed; success → CLOSED, failure → OPEN again
+
+Rate-limit errors (`429`) are intentionally excluded from the failure count — they indicate client-side throttling, not agent fault.
+
+Circuit breaker state is visible via the metrics system (see [Configuration](configuration.md) — Metrics section).
+
 ## Health Check
 
-Every 60 seconds, Bridge pings all idle connections. Unresponsive subprocesses are killed and their slots freed.
+Every 60 seconds, Bridge pings all idle connections. Unresponsive subprocesses are killed and their slots freed. Connections stuck in busy state beyond `pool.busy_timeout` (default: 360s) are also killed.
+
+## Automatic Fallback
+
+When an agent call fails, Bridge automatically tries the next agent in the fallback chain (configurable via `fallback-chain.yaml` or `PUT /fallback-chain`). Up to 3 attempts are made. Fallback selection uses a scoring algorithm that considers:
+
+- Circuit breaker state (OPEN agents are excluded)
+- Whether the agent has idle connections (1.5× bonus)
+- Success rate over the last hour
+- Average response time
+- Trend: declining success rate in the last 15 minutes incurs a penalty
 
 ## Ghost Cleanup
 

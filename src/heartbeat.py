@@ -43,9 +43,7 @@ class EnvCollector:
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._port = port
-        self._client = client_script or str(
-            Path(__file__).resolve().parent.parent / "skill" / "scripts" / "acp-client.sh"
-        )
+        self._client = Path(client_script).name if client_script else "acp-client.sh"
         self._job_mgr = job_mgr
         self._language = language
         self._shared_workdir = shared_workdir
@@ -134,6 +132,8 @@ class EnvCollector:
         agents_info = snapshot.get("agents", {})
         lines = []
         for name, info in agents_info.items():
+            if name not in self._enabled_agents and name != agent_name:
+                continue
             marker = " ← you" if name == agent_name else ""
             busy, idle = info.get("busy", 0), info.get("idle", 0)
             if busy and idle:

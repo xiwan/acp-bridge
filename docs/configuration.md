@@ -243,6 +243,66 @@ Available presets: `reader`, `executor`, `scout`, `reviewer`, `analyst`, `resear
 
 Dynamic harness agents can also be created at runtime via `POST /harness` — see [API Reference](api-reference.md).
 
+## Heartbeat (Agent Environment Awareness)
+
+The heartbeat system periodically pings agents with environment snapshots, enabling inter-agent collaboration.
+
+```yaml
+heartbeat:
+  enabled: true          # global switch
+  interval: 30           # seconds between auto heartbeat pings (0 = disable auto-ping)
+  language: "zh"         # prompt language: "en" or "zh"
+  # client_script: ""    # optional, defaults to "acp-client.sh"
+```
+
+Per-agent opt-in: add `heartbeat: true` to each agent that should participate. Agents without this flag are invisible to other agents during heartbeat.
+
+```yaml
+agents:
+  claude:
+    enabled: true
+    heartbeat: true      # participates in heartbeat
+    # ...
+  kiro:
+    enabled: true
+    # no heartbeat: true — hidden from other agents
+```
+
+The shared workspace (`server.public_workdir`, default `/tmp/acp-public`) is included in heartbeat prompts so agents know where to collaborate on files.
+
+See [Security](security.md) for heartbeat security considerations.
+
+## Metrics (Observability)
+
+Bridge includes a lightweight metrics layer. When `prometheus_client` is installed, it exposes Prometheus counters/histograms/gauges. Without it, all metrics are emitted as structured JSON logs.
+
+Tracked metrics:
+- `agent_calls_total` — agent call count by agent and status
+- `agent_call_duration_seconds` — call latency histogram
+- `fallback_triggered_total` — fallback attempts by agent pair
+- `fallback_exhausted_total` — fallback chain exhaustion count
+- `circuit_breaker_state` — current CB state per agent (0=closed, 1=half_open, 2=open)
+- `pool_connections` — connection count by agent and state (idle/busy)
+
+To enable the Prometheus HTTP endpoint, install `prometheus_client` and the metrics server starts on port 9090.
+
+## Rate Limiting (Per-Agent)
+
+Optional per-agent rate limiting via `rate-limits.yaml` in the project root:
+
+```yaml
+agents:
+  claude:
+    rpm: 30              # max requests per minute
+    tpm: 100000          # max tokens per minute
+    fallback: "kiro"     # redirect to this agent when limit hit
+  kiro:
+    rpm: 60
+    tpm: 200000
+```
+
+When an agent exceeds its RPM or TPM limit, the request is redirected to the configured fallback agent. If no fallback is configured or the fallback is also limited, the request is rejected with a rate-limit error.
+
 ## See Also
 
 - [Getting Started](getting-started.md) — installation and first run

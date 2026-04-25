@@ -47,12 +47,23 @@ Token supports `${ENV_VAR}` references in config — keep actual values in `.env
 - OpenClaw format includes auth headers; generic format sends plain JSON
 - Messages are auto-chunked at 1800 chars to avoid Discord API limits
 
+## Heartbeat & Environment Awareness
+
+The heartbeat system (`heartbeat.enabled: true`) periodically pings agents with environment snapshots — who's online, who's busy, recent activity. This enables inter-agent collaboration.
+
+### Security Considerations
+
+- **Path leakage**: heartbeat prompts include a client script command for inter-agent communication. As of v0.18.0, only the script basename is shown (e.g. `acp-client.sh`), never the absolute path. Previously, the full path (e.g. `/home/user/projects/acp-bridge/skill/scripts/acp-client.sh`) was exposed, revealing the project location to all agents.
+- **Agent visibility**: only agents with `heartbeat: true` in their config appear in heartbeat prompts. Agents without this flag (e.g. kiro) are invisible to other agents during heartbeat, preventing unwanted cross-agent interactions.
+- **`--trust-all-tools` + auto-permission**: agents with `--trust-all-tools` (like kiro) combined with Bridge's auto-reply to `session/request_permission` can execute any shell command. Even with `working_dir` set to `/tmp/ko`, agents can `cd` or use absolute paths to access any file the Bridge user can access. `working_dir` is a starting directory, **not a sandbox**.
+- **True isolation** requires running agents in Docker containers or Linux namespaces.
+
 ## Hardening Wishlist
 
 Contributions welcome:
 
 - Per-user tokens with scoped permissions
-- Rate limiting per token/IP
+- ~~Rate limiting per token/IP~~ → basic per-agent RPM/TPM rate limiting added in v0.18.0 (see [Configuration](configuration.md))
 - Audit logging (who called what, when)
 - mTLS helper / reverse proxy config examples
 

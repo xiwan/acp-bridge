@@ -6,6 +6,7 @@ import threading
 
 from .acp_client import AcpProcessPool
 from .fallback_policy import _agent_healthy, _state_lock
+from .metrics import metrics
 
 log = logging.getLogger("acp-bridge.agent_pool")
 
@@ -38,7 +39,11 @@ def get_pool_status() -> dict:
     with _pool_lock:
         if _pool is None:
             return {}
-        return _pool.stats
+        status = _pool.stats
+    for agent, count in status.get("by_agent", {}).items():
+        busy = sum(1 for (a, _), c in _pool._connections.items() if a == agent and c._busy)
+        metrics.record_pool_state(agent, idle=count - busy, busy=busy)
+    return status
 
 
 async def ping_agent(pool: AcpProcessPool, agent: str, timeout: float = 5) -> bool:

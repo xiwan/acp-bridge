@@ -2,9 +2,11 @@
 
 import logging
 import threading
+import time
 from typing import Any, Optional
 
 from .circuit_breaker import CircuitBreaker, CircuitState
+from .metrics import metrics
 from .stats import StatsCollector
 
 log = logging.getLogger("acp-bridge.fallback_policy")
@@ -114,6 +116,7 @@ def get_best_fallback(
     """
     if tried_agents is None:
         tried_agents = []
+    _t0 = time.time()
 
     with _state_lock:
         candidates = [a for a in FALLBACK_CHAIN.get(failed_agent, [])
@@ -134,6 +137,7 @@ def get_best_fallback(
             log.debug("fallback_filtered_open_breakers: agents=%s", open_breakers)
             candidates = [a for a in candidates if a not in open_breakers]
             if not candidates:
+                metrics.record_fallback_exhausted(failed_agent, tried_agents)
                 return None
 
         # Snapshot CB states for scoring (avoid holding lock during stats queries)
@@ -185,4 +189,5 @@ def get_best_fallback(
     log.info("fallback_decision: failed=%s tried=%s best=%s scores=%s",
               failed_agent, tried_agents, best,
               {a: score(a) for a in candidates[:3]})
+    metrics.record_fallback(failed_agent, best, duration=time.time() - _t0)
     return best

@@ -283,6 +283,7 @@ class AcpProcessPool:
         self._verbose = verbose
         self._connections: dict[tuple[str, str], AcpConnection] = {}
         self._memory_limit_pct: float = 80.0
+        self._lock = asyncio.Lock()
 
     @staticmethod
     def _agent_group(agent: str) -> str:
@@ -341,6 +342,10 @@ class AcpProcessPool:
         return conn
 
     async def get_or_create(self, agent: str, session_id: str, cwd: str = "", profile: dict | None = None) -> AcpConnection:
+        async with self._lock:
+            return await self._get_or_create_unlocked(agent, session_id, cwd, profile)
+
+    async def _get_or_create_unlocked(self, agent: str, session_id: str, cwd: str = "", profile: dict | None = None) -> AcpConnection:
         key = (agent, session_id)
         conn = self._connections.get(key)
 

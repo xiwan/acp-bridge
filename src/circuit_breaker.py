@@ -10,6 +10,11 @@ from typing import Any, Callable, Optional
 
 log = logging.getLogger("acp-bridge.circuit_breaker")
 
+try:
+    from .metrics import metrics as _metrics
+except Exception:
+    _metrics = None
+
 
 class CircuitState(Enum):
     CLOSED = "closed"
@@ -165,5 +170,10 @@ class CircuitBreaker:
         if new == CircuitState.OPEN:
             self.circuit_open_count += 1
         log.info("circuit_breaker: %s %s -> %s", self.name, old.value, new.value)
+        try:
+            if _metrics is not None:
+                _metrics.set_circuit_breaker_state(self.name, new.value)
+        except Exception:
+            pass
         if self.config.on_state_change:
             self.config.on_state_change(self.name, old, new)

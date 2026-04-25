@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS agent_stats (
     created_at   REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_stats_agent ON agent_stats(agent);
+CREATE INDEX IF NOT EXISTS idx_stats_agent_created ON agent_stats(agent, created_at);
 CREATE INDEX IF NOT EXISTS idx_stats_created ON agent_stats(created_at);
 
 CREATE TABLE IF NOT EXISTS fallback_stats (

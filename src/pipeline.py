@@ -307,10 +307,7 @@ class PipelineManager:
         shared_cwd = pl.context.get("shared_cwd", "")
 
         async def _exec_and_push(step, prompt, step_cwd):
-            saved = pl.context.get("shared_cwd", "")
-            pl.context["shared_cwd"] = step_cwd
-            await self._exec_step(pl, step, prompt)
-            pl.context["shared_cwd"] = saved
+            await self._exec_step(pl, step, prompt, cwd_override=step_cwd)
             await self._webhook_step(pl, step)
 
         tasks = []
@@ -330,10 +327,7 @@ class PipelineManager:
         shared_cwd = pl.context.get("shared_cwd", "")
 
         async def _race_step(step, prompt, step_cwd):
-            saved = pl.context.get("shared_cwd", "")
-            pl.context["shared_cwd"] = step_cwd
-            await self._exec_step(pl, step, prompt)
-            pl.context["shared_cwd"] = saved
+            await self._exec_step(pl, step, prompt, cwd_override=step_cwd)
             if step.status == "completed":
                 return step
             return None
@@ -536,12 +530,12 @@ class PipelineManager:
         msg = PipelineFormatter.format_turn(pl.pipeline_id, turn, agent, content, duration)
         await self._send_webhook(pl, msg)
 
-    async def _exec_step(self, pl: Pipeline, step: PipelineStep, prompt: str):
+    async def _exec_step(self, pl: Pipeline, step: PipelineStep, prompt: str, cwd_override: str | None = None):
         step.status = "running"
         step.started_at = time.time()
         step_idx = pl.steps.index(step)
         session_id = f"pipeline-{pl.pipeline_id}-{step.agent}-{step_idx}"
-        shared_cwd = pl.context.get("shared_cwd", "")
+        shared_cwd = cwd_override if cwd_override is not None else pl.context.get("shared_cwd", "")
 
         # Inject shared workspace hint for non-conversation modes
         if shared_cwd and pl.mode != "conversation":
@@ -550,11 +544,22 @@ class PipelineManager:
             prompt = ws_prompt.format(shared_cwd=shared_cwd) + "\n\n" + prompt
 
         cfg = self._agents_cfg.get(step.agent, {})
-        if cfg.get("mode") == "pty":
-            pty_cfg = {**cfg, "working_dir": shared_cwd} if shared_cwd else cfg
-            await self._exec_step_pty(step, prompt + get_prompt_suffix(), pty_cfg)
-        else:
-            await self._exec_step_acp(step, prompt + get_prompt_suffix(), session_id, cwd=shared_cwd)
+        timeout = step.timeout or cfg.get("idle_timeout", 90)
+        try:
+            if cfg.get("mode") == "pty":
+                pty_cfg = {**cfg, "working_dir": shared_cwd} if shared_cwd else cfg
+                await asyncio.wait_for(
+                    self._exec_step_pty(step, prompt + get_prompt_suffix(), pty_cfg),
+                    timeout=timeout)
+            else:
+                await asyncio.wait_for(
+                    self._exec_step_acp(step, prompt + get_prompt_suffix(), session_id, cwd=shared_cwd),
+                    timeout=timeout)
+        except asyncio.TimeoutError:
+            step.error = f"step timeout ({timeout}s)"
+            step.status = "failed"
+            log.warning("step_timeout: pipeline=%s agent=%s timeout=%ds",
+                        pl.pipeline_id, step.agent, timeout)
         step.completed_at = time.time()
         # Truncate oversized output to prevent OOM
         if len(step.result) > MAX_OUTPUT_SIZE:

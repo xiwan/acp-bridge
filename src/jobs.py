@@ -229,6 +229,31 @@ class JobManager:
             self._stats.record_fallback(job.original_agent, job.agent, tried_agents, False)
         return False
 
+    async def _stream_agent(self, job: Job, parts: list) -> bool:
+        """Stream a single agent call. Appends to parts, updates job status. Returns True on success."""
+        conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
+        try:
+            async for notification in conn.session_prompt(job.prompt + get_prompt_suffix()):
+                if "_prompt_result" in notification:
+                    if "error" in notification["_prompt_result"]:
+                        job.error = str(notification["_prompt_result"]["error"])
+                        job.status = "failed"
+                    else:
+                        job.status = "completed"
+                    break
+                event = transform_notification(notification)
+                if not event:
+                    continue
+                if event["type"] == "message.part":
+                    parts.append(event["content"])
+                elif event["type"] == "tool.done" and event.get("title"):
+                    job.tools.append(event["title"])
+        except Exception:
+            self._pool.remove(job.agent, job.session_id)
+            raise
+        job.result = "".join(parts)
+        return job.status == "completed"
+
     async def _run_acp(self, job: Job):
         if not job.original_agent:
             job.original_agent = job.agent
@@ -238,94 +263,52 @@ class JobManager:
             tried_agents.append(job.agent)
             parts = []
             try:
-                conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
-                prompt = job.prompt + get_prompt_suffix()
-                async for notification in conn.session_prompt(prompt):
-                    if "_prompt_result" in notification:
-                        if "error" in notification["_prompt_result"]:
-                            job.error = str(notification["_prompt_result"]["error"])
-                            job.status = "failed"
-                        else:
-                            job.status = "completed"
-                        break
-                    event = transform_notification(notification)
-                    if not event:
-                        continue
-                    if event["type"] == "message.part":
-                        parts.append(event["content"])
-                    elif event["type"] == "tool.done":
-                        title = event.get("title", "")
-                        if title:
-                            job.tools.append(title)
-                job.result = "".join(parts)
-                if job.status == "completed" and job.agent != job.original_agent:
-                    log.info("job_fallback_success: job=%s original=%s fallback=%s history=%s",
-                             job.job_id, job.original_agent, job.agent, tried_agents)
-                    if self._stats:
-                        self._stats.record_fallback(job.original_agent, job.agent, tried_agents, True)
-                return
+                success = await self._stream_agent(job, parts)
+                if success:
+                    if job.agent != job.original_agent:
+                        log.info("job_fallback_success: job=%s original=%s fallback=%s history=%s",
+                                 job.job_id, job.original_agent, job.agent, tried_agents)
+                        if self._stats:
+                            self._stats.record_fallback(job.original_agent, job.agent, tried_agents, True)
+                    return
+                # P1: prompt returned error — try fallback instead of giving up
+                if not self._select_fallback(job, tried_agents, attempt,
+                                             AcpError(job.error or "prompt error"), parts):
+                    return
+                continue
 
             except AgentTimeoutError as e:
                 log.warning("job_agent_timeout: job=%s agent=%s, retrying same agent",
                             job.job_id, job.agent)
                 try:
-                    conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
-                    async for notification in conn.session_prompt(job.prompt + get_prompt_suffix()):
-                        if "_prompt_result" in notification:
-                            if "error" in notification["_prompt_result"]:
-                                job.error = str(notification["_prompt_result"]["error"])
-                                job.status = "failed"
-                            else:
-                                job.status = "completed"
-                            break
-                        event = transform_notification(notification)
-                        if event and event["type"] == "message.part":
-                            parts.append(event["content"])
-                        elif event and event["type"] == "tool.done" and event.get("title"):
-                            job.tools.append(event["title"])
-                    job.result = "".join(parts)
+                    parts.clear()  # P2: don't mix old output into retry
+                    await self._stream_agent(job, parts)
                     return
                 except Exception:
                     log.warning("job_timeout_retry_failed: job=%s agent=%s, falling back",
                                 job.job_id, job.agent)
                     if not self._select_fallback(job, tried_agents, attempt, e, parts):
                         return
-                    continue
 
             except AgentRateLimitError as e:
                 log.warning("job_agent_rate_limited: job=%s agent=%s retry_after=%d",
                             job.job_id, job.agent, e.retry_after)
                 await asyncio.sleep(min(e.retry_after, 30))
                 try:
-                    conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
-                    async for notification in conn.session_prompt(job.prompt + get_prompt_suffix()):
-                        if "_prompt_result" in notification:
-                            if "error" in notification["_prompt_result"]:
-                                job.error = str(notification["_prompt_result"]["error"])
-                                job.status = "failed"
-                            else:
-                                job.status = "completed"
-                            break
-                        event = transform_notification(notification)
-                        if event and event["type"] == "message.part":
-                            parts.append(event["content"])
-                        elif event and event["type"] == "tool.done" and event.get("title"):
-                            job.tools.append(event["title"])
-                    job.result = "".join(parts)
+                    parts.clear()  # P2: don't mix old output into retry
+                    await self._stream_agent(job, parts)
                     return
                 except Exception:
                     log.warning("job_rate_limit_retry_failed: job=%s agent=%s, falling back",
                                 job.job_id, job.agent)
                     if not self._select_fallback(job, tried_agents, attempt, e, parts):
                         return
-                    continue
 
             except (PoolExhaustedError, AcpError) as e:
                 log.warning("job_agent_failed: job=%s agent=%s attempt=%d error=%s",
                             job.job_id, job.agent, attempt + 1, e)
                 if not self._select_fallback(job, tried_agents, attempt, e, parts):
                     return
-                continue
 
             except Exception as e:
                 job.error = str(e)

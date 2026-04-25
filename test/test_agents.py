@@ -372,16 +372,9 @@ class TestConcurrencyAndRaceConditions:
 
     @pytest.mark.asyncio
     async def test_concurrent_acquire_respects_pool_limit(self, small_pool):
-        """10 并发 get_or_create，pool max=3 → 暴露无锁 race: 实际会超发.
-
-        This test documents the current race condition in AcpProcessPool.get_or_create():
-        without an asyncio.Lock, concurrent coroutines all pass the capacity check before
-        any of them insert, allowing the pool to exceed max_processes.
-
-        After refactoring adds a lock, change the assertion to: ok_count <= 3.
-        """
+        """10 并发 get_or_create，pool max=3 → asyncio.Lock 保证最多 3 成功."""
         async def fake_spawn(agent, sid, cfg, **kw):
-            await asyncio.sleep(0)  # yield — lets other coroutines race past the check
+            await asyncio.sleep(0)  # yield — previously let coroutines race past the check
             return self._make_fake_conn(agent, sid, busy=True)
 
         small_pool._spawn = fake_spawn
@@ -395,13 +388,8 @@ class TestConcurrencyAndRaceConditions:
 
         results = await asyncio.gather(*(try_acquire(i) for i in range(10)))
         ok_count = results.count("ok")
-        # BUG (known): no lock → all 10 pass the capacity check concurrently.
-        # Current behavior: ok_count > 3 (pool overflows).
-        # TODO: after adding asyncio.Lock to get_or_create, flip to: assert ok_count <= 3
-        assert ok_count > 3, (
-            f"Expected race-condition overflow (>3), got {ok_count}. "
-            "If a lock was added, update this test to assert ok_count <= 3."
-        )
+        assert ok_count <= 3, f"should not exceed pool max=3, got {ok_count}"
+        assert "exhausted" in results, "some requests must be rejected"
 
     @pytest.mark.asyncio
     async def test_no_double_assign_under_race(self, small_pool):

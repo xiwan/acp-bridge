@@ -182,28 +182,24 @@ def test_context_template_render(tmp_path):
 
 @pytest.mark.asyncio
 async def test_timeout_per_step_enforcement(tmp_path):
-    """Step timeout is passed as idle_timeout to session_prompt.
+    """Step timeout is enforced via asyncio.wait_for wrapping _exec_step_acp.
 
-    pipeline._exec_step_acp doesn't enforce step.timeout itself —
-    it relies on session_prompt's idle_timeout. This test verifies
-    the timeout value flows through correctly.
+    A hanging agent triggers asyncio.TimeoutError → step.status='failed'.
     """
     mgr, pool = _mgr(tmp_path)
 
-    prompt_kwargs = {}
-
-    async def capture_conn(agent, sid, cwd=""):
+    async def hanging_conn(agent, sid, cwd=""):
         conn = AsyncMock(spec=AcpConnection)
-        async def fake_prompt(p, idle_timeout=300):
-            prompt_kwargs["idle_timeout"] = idle_timeout
-            yield {"_prompt_result": {"result": {"stopReason": "end"}}}
-        conn.session_prompt = fake_prompt
+        async def hang_forever(p, idle_timeout=300):
+            await asyncio.sleep(999)
+            yield {"_prompt_result": {"result": {"stopReason": "end"}}}  # never reached
+        conn.session_prompt = hang_forever
         return conn
 
-    pool.get_or_create = AsyncMock(side_effect=capture_conn)
+    pool.get_or_create = AsyncMock(side_effect=hanging_conn)
 
     pl = Pipeline(pipeline_id="t1", mode="sequence", steps=[
-        PipelineStep(agent="kiro", prompt_template="x"),
+        PipelineStep(agent="kiro", prompt_template="x", timeout=0.1),
     ], context={})
 
     with _TN, _PS:
@@ -213,9 +209,8 @@ async def test_timeout_per_step_enforcement(tmp_path):
                     with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
                         await mgr._run(pl)
 
-    # _exec_step_acp calls session_prompt with default idle_timeout=300 (not step.timeout)
-    # This documents current behavior — step.timeout (600) is NOT enforced
-    assert prompt_kwargs.get("idle_timeout") is not None
+    assert pl.steps[0].status == "failed"
+    assert "timeout" in pl.steps[0].error
 
 
 # ============================================================
