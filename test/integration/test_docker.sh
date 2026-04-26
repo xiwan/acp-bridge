@@ -7,7 +7,7 @@ PASS=0 FAIL=0
 IMAGE="light-acp-bridge"
 COMPOSE="docker/light/docker-compose.yml"
 BRIDGE="http://127.0.0.1:18010"
-REPORT_DIR="$(cd "$(dirname "$0")" && pwd)/reports"
+REPORT_DIR="$(cd "$(dirname "$0")/.." && pwd)/reports"
 mkdir -p "$REPORT_DIR"
 REPORT="$REPORT_DIR/docker-$(date +%Y%m%d-%H%M%S).txt"
 

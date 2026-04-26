@@ -1,7 +1,7 @@
 #!/bin/bash
 # OpenCode agent 测试
 set -uo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../lib.sh"
 
 echo "=== OpenCode 测试 ==="
 

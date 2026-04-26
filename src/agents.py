@@ -25,6 +25,7 @@ from .formatters import fmt
 from .heartbeat import EnvCollector
 from .sse import transform_notification
 from .stats import StatsCollector
+from .trace_impl import init_trace, get_trace, start_span, finish_span
 
 log = logging.getLogger("acp-bridge.agents")
 
@@ -251,21 +252,44 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
         else:
             session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, agent_name))
 
+        # Initialize trace with session_id
+        init_trace(session_id)
+        router_span = start_span(
+            operation="route",
+            request_id=session_id,
+            agent_name=agent_name,
+            agent_protocol="acp",
+        )
+
         MAX_FALLBACK_ATTEMPTS = 3
         tried_agents: list[str] = []
         original_agent = agent_name
         original_session_id = session_id
         current_agent = agent_name
 
-        for attempt in range(MAX_FALLBACK_ATTEMPTS):
+        try:
+          for attempt in range(MAX_FALLBACK_ATTEMPTS):
             tried_agents.append(current_agent)
+            # Start execute span for agent call
+            execute_span = start_span(
+                operation="execute",
+                request_id=session_id,
+                parent_span_id=router_span.span_id,
+                agent_name=current_agent,
+                agent_protocol="acp",
+            )
             try:
-                async for part in _call_acp_agent_internal(
-                    agent_name=current_agent, prompt=prompt, pool=pool,
-                    profile=profile, session_id=session_id, cwd=cwd,
-                    enrich_prompt=attempt == 0,
-                ):
-                    yield part
+                try:
+                    async for part in _call_acp_agent_internal(
+                        agent_name=current_agent, prompt=prompt, pool=pool,
+                        profile=profile, session_id=session_id, cwd=cwd,
+                        enrich_prompt=attempt == 0,
+                    ):
+                        yield part
+                    execute_span.finish(success=True)
+                except Exception:
+                    execute_span.finish(success=False, error_type="agent_error")
+                    raise
 
                 # Emit fallback info if we switched agents
                 if current_agent != original_agent:
@@ -334,6 +358,7 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
                                    "[error] all fallback agents unavailable (tried: {})",
                                    agent=original_agent, detail=",".join(tried_agents)),
                         content_type="text/plain")])
+                    router_span.finish(success=False, error_type="fallback_exhausted")
                     return
 
                 next_agent = get_best_fallback(current_agent, tried_agents, pool, _stats)
@@ -346,12 +371,23 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
                                    "[error] no fallback available for {} (tried: {})",
                                    agent=original_agent, detail=",".join(tried_agents)),
                         content_type="text/plain")])
+                    router_span.finish(success=False, error_type="no_fallback")
                     return
 
                 log.info("fallback: agent=%s -> %s (attempt %d/%d)",
                         current_agent, next_agent, attempt + 1, MAX_FALLBACK_ATTEMPTS)
                 session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{current_agent}:{session_id[:8]}"))
                 current_agent = next_agent
+
+        except Exception as e:
+            router_span.finish(success=False, error_type="unhandled_exception")
+            raise
+        finally:
+            # Record trace summary
+            trace_ctx = get_trace()
+            if trace_ctx:
+                summary = trace_ctx.to_summary()
+                log.info("trace_summary: %s", summary)
 
     return handler
 

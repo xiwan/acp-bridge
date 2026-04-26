@@ -8,12 +8,19 @@ import asyncio
 import time
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
-# TODO: adjust imports based on actual structure
-# from src.agents import AgentPool, AgentStats
+from unittest.mock import Mock, AsyncMock, patch, call
 from src.acp_client import AcpConnection, AcpError, AcpProcessPool, PoolExhaustedError
 from src.circuit_breaker import CircuitBreaker, CircuitState
 from src.exceptions import AgentModelError, AgentTimeoutError
+
+
+# ============================================================================
+# Mock helpers (from merged P0/P1 tests)
+# ============================================================================
+
+class MockCircuitBreaker:
+    def __init__(self, state: CircuitState):
+        self.state = state
 
 
 # ============================================================================
@@ -579,10 +586,407 @@ class TestConnectionLeakAndRetrySafety:
 
 
 # ============================================================================
-# TODO for Qwen:
+# P0: get_best_fallback — basic scenarios, CB filtering, pool state, stats
+# (merged from test_agents_p0.py)
 # ============================================================================
-# 1. Fill in fixture implementations (agent_pool, mock_agents, agent_stats)
-# 2. Add actual assertions to each test function
-# 3. Adjust imports based on actual module structure
-# 4. Add parametrize decorators for data-driven tests if needed
-# 5. Run `pytest test/test_agents.py -v` to validate
+
+# --- Basic scenarios ---
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_no_candidates_empty_fallback_chain(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    result = get_best_fallback('hermes')
+    assert result is None
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_no_candidates_all_tried(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    result = get_best_fallback('hermes', tried_agents=['claude', 'kiro'])
+    assert result is None
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'hermes': ['claude']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_single_candidate(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    result = get_best_fallback('hermes')
+    assert result == 'claude'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'hermes': ['claude', 'kiro', 'qwen']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_no_pool_no_stats_returns_first(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    result = get_best_fallback('hermes', pool=None, stats=None)
+    assert result == 'claude'
+
+# --- Circuit breaker filtering ---
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'hermes': ['claude', 'kiro', 'qwen']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+def test_filter_open_circuit_breakers(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    with patch('src.fallback_policy._circuit_breakers', {
+        'claude': MockCircuitBreaker(CircuitState.OPEN),
+        'kiro': MockCircuitBreaker(CircuitState.CLOSED),
+    }):
+        result = get_best_fallback('hermes', pool=None, stats=None)
+        assert result in ['kiro', 'qwen']
+        assert result != 'claude'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+def test_half_open_penalty(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    mock_stats.get_agent_stats = Mock(return_value={'success_rate': 0.95, 'avg_duration': 30.0})
+    with patch('src.fallback_policy._circuit_breakers', {
+        'claude': MockCircuitBreaker(CircuitState.HALF_OPEN),
+        'kiro': MockCircuitBreaker(CircuitState.CLOSED),
+    }):
+        result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+        assert result == 'kiro'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+def test_closed_circuit_breaker_normal_score(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    def get_stats_side_effect(agent, hours):
+        return {'claude': {'success_rate': 0.90, 'avg_duration': 20.0},
+                'kiro': {'success_rate': 0.85, 'avg_duration': 25.0}}.get(agent, {})
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats_side_effect)
+    with patch('src.fallback_policy._circuit_breakers', {
+        'claude': MockCircuitBreaker(CircuitState.CLOSED),
+        'kiro': MockCircuitBreaker(CircuitState.CLOSED),
+    }):
+        result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+        assert result == 'claude'
+
+# --- Pool state ---
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_has_idle_multiplier_1_5x(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_conn_claude = Mock(state='idle')
+    mock_conn_kiro = Mock(state='busy')
+    mock_pool = Mock()
+    mock_pool._connections = {('claude', 'conn1'): mock_conn_claude, ('kiro', 'conn2'): mock_conn_kiro}
+    mock_stats = Mock()
+    mock_stats.get_agent_stats = Mock(return_value={'success_rate': 0.80, 'avg_duration': 30.0})
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'claude'
+
+# --- Stats scoring ---
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_success_rate_1h_dominates(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        if hours == 1.0:
+            return {'claude': {'success_rate': 0.95, 'avg_duration': 50.0},
+                    'kiro': {'success_rate': 0.70, 'avg_duration': 10.0}}.get(agent, {})
+        else:
+            return {'success_rate': 0.95 if agent == 'claude' else 0.70, 'avg_duration': 30.0}
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'claude'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_avg_duration_affects_score(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        return {'claude': {'success_rate': 0.80, 'avg_duration': 10.0},
+                'kiro': {'success_rate': 0.80, 'avg_duration': 90.0}}.get(agent, {})
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'claude'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_trend_penalty_declining_success(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        if hours == 1.0:
+            return {'claude': {'success_rate': 0.90, 'avg_duration': 30.0},
+                    'kiro': {'success_rate': 0.90, 'avg_duration': 30.0}}.get(agent, {})
+        else:
+            return {'claude': {'success_rate': 0.90, 'avg_duration': 30.0},
+                    'kiro': {'success_rate': 0.60, 'avg_duration': 30.0}}.get(agent, {})
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'claude'
+
+# --- get_next_fallback ---
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'claude': ['opencode', 'qwen', 'kiro']})
+def test_get_next_fallback_skips_failed_agent():
+    from src.fallback_policy import get_next_fallback
+    result = get_next_fallback('claude', tried_agents=['claude'])
+    assert result == 'opencode'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'claude': ['opencode', 'qwen', 'kiro']})
+def test_get_next_fallback_all_tried_returns_none():
+    from src.fallback_policy import get_next_fallback
+    result = get_next_fallback('claude', tried_agents=['opencode', 'qwen', 'kiro'])
+    assert result is None
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', {'claude': ['opencode', 'qwen', 'kiro']})
+def test_get_next_fallback_no_tried():
+    from src.fallback_policy import get_next_fallback
+    result = get_next_fallback('claude', tried_agents=[])
+    assert result == 'opencode'
+
+# --- strip_ansi ---
+
+def test_strip_ansi_removes_escape_codes():
+    from src.agents import strip_ansi
+    assert strip_ansi('\x1b[31mhello\x1b[0m') == 'hello'
+
+
+# ============================================================================
+# P1: get_best_fallback — health checks, CB edge cases, pool multi-state, scoring
+# (merged from test_agents_p1.py)
+# ============================================================================
+
+# --- Health checks ---
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['unhealthy', 'claude', 'kiro']})
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_prefer_healthy_agent():
+    from src.fallback_policy import get_best_fallback
+    with patch('src.fallback_policy.is_agent_healthy') as mock_healthy:
+        mock_healthy.side_effect = lambda a: a != 'unhealthy'
+        result = get_best_fallback('hermes', pool=None, stats=None)
+        assert result == 'claude'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_fallback_to_unhealthy_if_no_healthy():
+    from src.fallback_policy import get_best_fallback
+    with patch('src.fallback_policy.is_agent_healthy', return_value=False):
+        result = get_best_fallback('hermes', pool=None, stats=None)
+        assert result == 'claude'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro', 'qwen']})
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_is_agent_healthy_integration():
+    from src.fallback_policy import get_best_fallback
+    with patch('src.fallback_policy.is_agent_healthy') as mock_healthy:
+        mock_healthy.return_value = True
+        get_best_fallback('hermes', pool=None, stats=None)
+        assert mock_healthy.call_count >= 3
+        mock_healthy.assert_any_call('claude')
+        mock_healthy.assert_any_call('kiro')
+
+# --- CB edge cases ---
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+def test_all_open_returns_none(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    with patch('src.fallback_policy._circuit_breakers', new={
+        'claude': MockCircuitBreaker(CircuitState.OPEN),
+        'kiro': MockCircuitBreaker(CircuitState.OPEN),
+    }):
+        result = get_best_fallback('hermes', pool=None, stats=None)
+        assert result is None
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+def test_circuit_breaker_priority(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        return {'claude': {'success_rate': 0.95, 'avg_duration': 30.0},
+                'kiro': {'success_rate': 0.70, 'avg_duration': 30.0}}.get(agent, {})
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    with patch('src.fallback_policy._circuit_breakers', new={
+        'claude': MockCircuitBreaker(CircuitState.HALF_OPEN),
+        'kiro': MockCircuitBreaker(CircuitState.CLOSED),
+    }):
+        result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+        assert result == 'kiro'
+
+# --- Pool multi-state ---
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro', 'qwen']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_multiple_idle_agents_compare_stats(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {('claude', 'c1'): Mock(state='idle'),
+                              ('kiro', 'c2'): Mock(state='idle'),
+                              ('qwen', 'c3'): Mock(state='idle')}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        return {'claude': {'success_rate': 0.85, 'avg_duration': 30.0},
+                'kiro': {'success_rate': 0.90, 'avg_duration': 30.0},
+                'qwen': {'success_rate': 0.80, 'avg_duration': 30.0}}.get(agent, {})
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'kiro'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_no_idle_still_selectable(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {('claude', 'c1'): Mock(state='busy'), ('kiro', 'c2'): Mock(state='busy')}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        return {'claude': {'success_rate': 0.95, 'avg_duration': 30.0},
+                'kiro': {'success_rate': 0.80, 'avg_duration': 30.0}}.get(agent, {})
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'claude'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_pool_connections_parsing(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {('claude', 'conn-123'): Mock(state='idle'), ('other', 'conn-456'): Mock(state='busy')}
+    mock_stats = Mock()
+    mock_stats.get_agent_stats = Mock(return_value={'success_rate': 0.80, 'avg_duration': 30.0})
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'claude'
+
+# --- Stats edge cases & scoring ---
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_trend_penalty_improving_success(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        if hours == 1.0:
+            return {'success_rate': 0.80, 'avg_duration': 30.0}
+        else:
+            return {'success_rate': 0.95, 'avg_duration': 30.0}
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result in ['claude', 'kiro']
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_no_stats_defaults_to_100_percent(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    mock_stats.get_agent_stats = Mock(return_value={})
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'claude'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_15min_window_reflects_recent(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        if agent == 'claude':
+            return {'success_rate': 0.90 if hours == 1.0 else 0.50, 'avg_duration': 30.0}
+        else:
+            return {'success_rate': 0.85, 'avg_duration': 30.0}
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'kiro'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_idle_high_success_vs_no_idle_perfect(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {('claude', 'c1'): Mock(state='idle'), ('kiro', 'c2'): Mock(state='busy')}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        return {'claude': {'success_rate': 0.90, 'avg_duration': 30.0},
+                'kiro': {'success_rate': 1.00, 'avg_duration': 30.0}}.get(agent, {})
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'claude'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+def test_half_open_idle_vs_closed_no_idle(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {('claude', 'c1'): Mock(state='idle'), ('kiro', 'c2'): Mock(state='busy')}
+    mock_stats = Mock()
+    mock_stats.get_agent_stats = Mock(return_value={'success_rate': 0.90, 'avg_duration': 30.0})
+    with patch('src.fallback_policy._circuit_breakers', new={
+        'claude': MockCircuitBreaker(CircuitState.HALF_OPEN),
+        'kiro': MockCircuitBreaker(CircuitState.CLOSED),
+    }):
+        result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+        assert result == 'kiro'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_high_success_slow_vs_medium_success_fast(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        return {'claude': {'success_rate': 0.95, 'avg_duration': 90.0},
+                'kiro': {'success_rate': 0.80, 'avg_duration': 10.0}}.get(agent, {})
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result == 'claude'
+
+@patch('src.fallback_policy.FALLBACK_CHAIN', new={'hermes': ['claude', 'kiro']})
+@patch('src.fallback_policy.is_agent_healthy', return_value=True)
+@patch('src.fallback_policy._circuit_breakers', new={})
+def test_stable_vs_declining_success(mock_healthy):
+    from src.fallback_policy import get_best_fallback
+    mock_pool = Mock()
+    mock_pool._connections = {}
+    mock_stats = Mock()
+    def get_stats(agent, hours):
+        if agent == 'claude':
+            return {'success_rate': 0.80, 'avg_duration': 30.0}
+        else:
+            return {'success_rate': 0.90 if hours == 1.0 else 0.70, 'avg_duration': 30.0}
+    mock_stats.get_agent_stats = Mock(side_effect=get_stats)
+    result = get_best_fallback('hermes', pool=mock_pool, stats=mock_stats)
+    assert result in ['claude', 'kiro']

@@ -7,6 +7,7 @@
 set -uo pipefail
 
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
+INT_DIR="$TEST_DIR/integration"
 export ACP_BRIDGE_URL="${1:-http://127.0.0.1:18010}"
 
 ONLY="${2:-}"
@@ -28,7 +29,6 @@ run_suite() {
     bash "$script"
     local rc=$?
 
-    # 从子脚本的输出中提取通过/失败数
     ((SUITES++))
     if [[ $rc -ne 0 ]]; then
         ((TOTAL_FAIL += rc))
@@ -40,19 +40,19 @@ echo "║   ACP Bridge 测试套件            ║"
 echo "║   Bridge: $ACP_BRIDGE_URL"
 echo "╚══════════════════════════════════╝"
 
-run_suite "$TEST_DIR/test_common.sh"
-run_suite "$TEST_DIR/test_tools.sh"
-run_suite "$TEST_DIR/test_jobs.sh"
-run_suite "$TEST_DIR/test_kiro.sh"
-run_suite "$TEST_DIR/test_claude.sh"
-run_suite "$TEST_DIR/test_codex.sh"
-run_suite "$TEST_DIR/test_qwen.sh"
-run_suite "$TEST_DIR/test_opencode.sh"
-run_suite "$TEST_DIR/test_hermes.sh"
-run_suite "$TEST_DIR/test_trae.sh"
-run_suite "$TEST_DIR/test_harness.sh"
-run_suite "$TEST_DIR/test_dynamic_harness.sh"
-run_suite "$TEST_DIR/test_pipeline.sh"
+run_suite "$INT_DIR/test_common.sh"
+run_suite "$INT_DIR/test_tools.sh"
+run_suite "$INT_DIR/test_jobs.sh"
+run_suite "$INT_DIR/test_kiro.sh"
+run_suite "$INT_DIR/test_claude.sh"
+run_suite "$INT_DIR/test_codex.sh"
+run_suite "$INT_DIR/test_qwen.sh"
+run_suite "$INT_DIR/test_opencode.sh"
+run_suite "$INT_DIR/test_hermes.sh"
+run_suite "$INT_DIR/test_trae.sh"
+run_suite "$INT_DIR/test_harness.sh"
+run_suite "$INT_DIR/test_dynamic_harness.sh"
+run_suite "$INT_DIR/test_pipeline.sh"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Trae Agent 测试 — PTY 模式，通过 LiteLLM/Bedrock
 set -uo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../lib.sh"
 
 echo "=== Trae 测试 ==="
 

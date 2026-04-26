@@ -16,8 +16,8 @@
 
 ```bash
 # 全部场景
-ACP_TOKEN=<token> bash test/scenes/run_all.sh
+bash test/integration/run_scenes.sh
 
 # 单个场景
-ACP_TOKEN=<token> bash test/scenes/scene_single_call.sh
+bash test/integration/scene_single_call.sh
 ```

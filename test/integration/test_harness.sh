@@ -1,7 +1,7 @@
 #!/bin/bash
 # Harness Factory agent 测试
 set -uo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../lib.sh"
 
 echo "=== Harness Factory 测试 ==="
 

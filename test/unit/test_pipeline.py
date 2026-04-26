@@ -628,3 +628,407 @@ class TestPipelineStats:
         result = manager.stats(hours=1)
         assert result["modes"]["sequence"]["total"] == 2
         assert result["modes"]["parallel"]["total"] == 1
+
+
+# ============================================================================
+# P0: PipelineManager — sequence, parallel, race, exec_step, error handling
+# (merged from test_pipeline_p0.py)
+# ============================================================================
+
+def _make_manager(tmp_path, agents_cfg=None):
+    pool = Mock()
+    pool._connections = {}
+    cfg = agents_cfg or {
+        "kiro": {"command": "echo", "working_dir": "/tmp", "description": "kiro"},
+        "claude": {"command": "echo", "working_dir": "/tmp", "description": "claude"},
+        "qwen": {"command": "echo", "working_dir": "/tmp", "description": "qwen"},
+    }
+    return PipelineManager(pool=pool, agents_cfg=cfg, db_path=str(tmp_path / "test.db")), pool
+
+
+def _mock_conn(text="ok"):
+    conn = AsyncMock(spec=AcpConnection)
+    async def fake_prompt(prompt, idle_timeout=300):
+        yield {"method": "x", "params": {"type": "message.part", "content": text}}
+        yield {"_prompt_result": {"result": {"stopReason": "end"}}}
+    conn.session_prompt = fake_prompt
+    return conn
+
+
+_PATCHES = [
+    patch("src.pipeline.get_prompt_suffix", return_value=""),
+    patch("src.pipeline.transform_notification", side_effect=lambda n: (
+        {"type": "message.part", "content": n["params"]["content"]}
+        if "params" in n and "type" in n.get("params", {}) else None
+    )),
+]
+
+
+@pytest.mark.asyncio
+async def test_submit_sequence_success(tmp_path):
+    mgr, pool = _make_manager(tmp_path)
+    call_order = []
+    async def tracking_get_or_create(agent, sid, cwd=""):
+        call_order.append(agent)
+        return _mock_conn(f"result_from_{agent}")
+    pool.get_or_create = AsyncMock(side_effect=tracking_get_or_create)
+    pl = Pipeline(pipeline_id="p1", mode="sequence", steps=[
+        PipelineStep(agent="kiro", prompt_template="step1", output_as="step1_out"),
+        PipelineStep(agent="claude", prompt_template="review {{step1_out}}"),
+    ], context={})
+    for p in _PATCHES: p.start()
+    try:
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
+                        await mgr._run(pl)
+    finally:
+        for p in _PATCHES: p.stop()
+    assert call_order == ["kiro", "claude"]
+    assert pl.context["step1_out"] == "result_from_kiro"
+    assert pl.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_submit_parallel_success(tmp_path):
+    mgr, pool = _make_manager(tmp_path)
+    pool.get_or_create = AsyncMock(side_effect=lambda a, s, cwd="": _mock_conn(f"out_{a}"))
+    pl = Pipeline(pipeline_id="p2", mode="parallel", steps=[
+        PipelineStep(agent="kiro", prompt_template="t1"),
+        PipelineStep(agent="claude", prompt_template="t2"),
+        PipelineStep(agent="qwen", prompt_template="t3"),
+    ], context={})
+    for p in _PATCHES: p.start()
+    try:
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
+                        await mgr._run(pl)
+    finally:
+        for p in _PATCHES: p.stop()
+    assert pl.status == "completed"
+    assert all(s.status == "completed" for s in pl.steps)
+
+
+@pytest.mark.asyncio
+async def test_submit_race_first_wins(tmp_path):
+    mgr, pool = _make_manager(tmp_path)
+    async def speed_get_or_create(agent, sid, cwd=""):
+        if agent == "qwen": await asyncio.sleep(0.05)
+        return _mock_conn(f"win_{agent}")
+    pool.get_or_create = AsyncMock(side_effect=speed_get_or_create)
+    pl = Pipeline(pipeline_id="p3", mode="race", steps=[
+        PipelineStep(agent="kiro", prompt_template="t"),
+        PipelineStep(agent="qwen", prompt_template="t"),
+    ], context={})
+    for p in _PATCHES: p.start()
+    try:
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
+                        await mgr._run(pl)
+    finally:
+        for p in _PATCHES: p.stop()
+    assert pl.status == "completed"
+    assert any(s.status == "completed" for s in pl.steps)
+
+
+@pytest.mark.asyncio
+async def test_exec_step_agent_success(tmp_path):
+    mgr, pool = _make_manager(tmp_path)
+    pool.get_or_create = AsyncMock(return_value=_mock_conn("agent_response"))
+    pl = Pipeline(pipeline_id="p4", mode="sequence", steps=[], context={"shared_cwd": "/tmp/ws"})
+    step = PipelineStep(agent="claude", prompt_template="test prompt")
+    pl.steps.append(step)
+    for p in _PATCHES: p.start()
+    try:
+        await mgr._exec_step(pl, step, "test prompt")
+    finally:
+        for p in _PATCHES: p.stop()
+    assert step.status == "completed"
+    assert step.result == "agent_response"
+
+
+@pytest.mark.asyncio
+async def test_exec_step_no_builtin_retry(tmp_path):
+    mgr, pool = _make_manager(tmp_path)
+    pool.get_or_create = AsyncMock(side_effect=AcpError("agent down"))
+    pl = Pipeline(pipeline_id="p5", mode="sequence", steps=[], context={"shared_cwd": "/tmp/ws"})
+    step = PipelineStep(agent="claude", prompt_template="x")
+    pl.steps.append(step)
+    for p in _PATCHES: p.start()
+    try:
+        await mgr._exec_step(pl, step, "x")
+    finally:
+        for p in _PATCHES: p.stop()
+    assert step.status == "failed"
+    assert "agent down" in step.error
+    assert pool.get_or_create.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_sequence_stops_on_step_failure(tmp_path):
+    mgr, pool = _make_manager(tmp_path)
+    async def fail_on_claude(agent, sid, cwd=""):
+        if agent == "claude": raise AcpError("claude down")
+        return _mock_conn("ok")
+    pool.get_or_create = AsyncMock(side_effect=fail_on_claude)
+    pl = Pipeline(pipeline_id="p6", mode="sequence", steps=[
+        PipelineStep(agent="kiro", prompt_template="s1"),
+        PipelineStep(agent="claude", prompt_template="s2"),
+        PipelineStep(agent="qwen", prompt_template="s3"),
+    ], context={})
+    for p in _PATCHES: p.start()
+    try:
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
+                        await mgr._run(pl)
+    finally:
+        for p in _PATCHES: p.stop()
+    assert pl.status == "failed"
+    assert pl.steps[0].status == "completed"
+    assert pl.steps[1].status == "failed"
+    assert pl.steps[2].status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_parallel_partial_failure(tmp_path):
+    mgr, pool = _make_manager(tmp_path)
+    async def selective(agent, sid, cwd=""):
+        if agent == "claude": raise AcpError("claude error")
+        return _mock_conn(f"ok_{agent}")
+    pool.get_or_create = AsyncMock(side_effect=selective)
+    pl = Pipeline(pipeline_id="p7", mode="parallel", steps=[
+        PipelineStep(agent="kiro", prompt_template="t1"),
+        PipelineStep(agent="claude", prompt_template="t2"),
+        PipelineStep(agent="qwen", prompt_template="t3"),
+    ], context={})
+    for p in _PATCHES: p.start()
+    try:
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
+                        await mgr._run(pl)
+    finally:
+        for p in _PATCHES: p.stop()
+    assert pl.status == "failed"
+    assert pl.steps[0].status == "completed"
+    assert pl.steps[1].status == "failed"
+    assert pl.steps[2].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_invalid_mode_raises_error(tmp_path):
+    mgr, pool = _make_manager(tmp_path)
+    pl = Pipeline(pipeline_id="p8", mode="invalid_mode", steps=[
+        PipelineStep(agent="kiro", prompt_template="x"),
+    ], context={})
+    with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+        with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+            with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                await mgr._run(pl)
+    assert pl.status == "failed"
+    assert "unknown mode" in pl.error
+
+
+# ============================================================================
+# P1: PipelineManager — conversation, webhook, cwd isolation, template, timeout
+# (merged from test_pipeline_p1.py)
+# ============================================================================
+
+def _mgr(tmp_path, webhook_url="", agents_cfg=None):
+    pool = Mock()
+    pool._connections = {}
+    cfg = agents_cfg or {
+        "kiro": {"command": "echo", "working_dir": "/tmp", "description": "kiro agent"},
+        "claude": {"command": "echo", "working_dir": "/tmp", "description": "claude agent"},
+        "qwen": {"command": "echo", "working_dir": "/tmp", "description": "qwen agent"},
+    }
+    return PipelineManager(pool=pool, agents_cfg=cfg, webhook_url=webhook_url,
+                           db_path=str(tmp_path / "test.db")), pool
+
+
+def _conn(text="ok"):
+    conn = AsyncMock(spec=AcpConnection)
+    async def prompt(p, idle_timeout=300):
+        yield {"method": "x", "params": {"type": "message.part", "content": text}}
+        yield {"_prompt_result": {"result": {"stopReason": "end"}}}
+    conn.session_prompt = prompt
+    return conn
+
+
+_TN = patch("src.pipeline.transform_notification", side_effect=lambda n: (
+    {"type": "message.part", "content": n["params"]["content"]}
+    if "params" in n and "type" in n.get("params", {}) else None
+))
+_PS = patch("src.pipeline.get_prompt_suffix", return_value="")
+_LP = patch("src.pipeline._load_prompt", return_value="Topic: {topic}\nAgent: {agent}\n{participants}\n{shared_cwd}")
+
+
+@pytest.mark.asyncio
+async def test_conversation_mode_multi_turn(tmp_path):
+    mgr, pool = _mgr(tmp_path)
+    turn_num = 0
+    async def get_conn(agent, sid, cwd=""):
+        nonlocal turn_num
+        turn_num += 1
+        return _conn(f"turn{turn_num} by {agent}")
+    pool.get_or_create = AsyncMock(side_effect=get_conn)
+    pl = Pipeline(pipeline_id="c1", mode="conversation", steps=[], context={
+        "participants": ["kiro", "claude"],
+        "topic": "design review",
+        "config": {"max_turns": 4, "stop_conditions": [], "a2a_rules": False},
+    })
+    with _TN, _PS, _LP:
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook_conversation_turn", new_callable=AsyncMock):
+                        await mgr._run(pl)
+    assert pl.status == "completed"
+    assert pl.context["turns"] == 4
+    assert len(pl.context["transcript"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_webhook_callback_on_step_complete(tmp_path):
+    mgr, pool = _mgr(tmp_path, webhook_url="https://hook.example.com/cb")
+    pool.get_or_create = AsyncMock(return_value=_conn("done"))
+    pl = Pipeline(pipeline_id="w1", mode="sequence", steps=[
+        PipelineStep(agent="kiro", prompt_template="s1"),
+        PipelineStep(agent="claude", prompt_template="s2"),
+    ], context={}, webhook_meta={"target": "user1"})
+    with _TN, _PS:
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr._sender, "send", new_callable=AsyncMock) as mock_send:
+                await mgr._run(pl)
+    assert pl.status == "completed"
+    assert mock_send.await_count == 4  # start + step1 + step2 + final
+
+
+@pytest.mark.asyncio
+async def test_shared_cwd_isolation(tmp_path):
+    mgr, pool = _mgr(tmp_path)
+    cwds_seen = []
+    async def track_cwd(agent, sid, cwd=""):
+        cwds_seen.append((agent, cwd))
+        return _conn("ok")
+    pool.get_or_create = AsyncMock(side_effect=track_cwd)
+    import os
+    shared = str(tmp_path / "workspace")
+    pl = Pipeline(pipeline_id="iso1", mode="parallel", steps=[
+        PipelineStep(agent="kiro", prompt_template="t1"),
+        PipelineStep(agent="claude", prompt_template="t2"),
+    ], context={})
+    def fake_make_cwd(p):
+        p.context["shared_cwd"] = shared
+        return shared
+    with _TN, _PS:
+        with patch.object(mgr, "_make_shared_cwd", side_effect=fake_make_cwd):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
+                        await mgr._run(pl)
+    agents_and_cwds = {a: c for a, c in cwds_seen}
+    assert agents_and_cwds["kiro"] == os.path.join(shared, "kiro")
+    assert agents_and_cwds["claude"] == os.path.join(shared, "claude")
+
+
+def test_context_template_render(tmp_path):
+    mgr, _ = _mgr(tmp_path)
+    assert mgr._render("Hello {{name}}", {"name": "world"}) == "Hello world"
+    assert mgr._render("{{a}}+{{b}}", {"a": "1", "b": "2"}) == "1+2"
+    assert mgr._render("{{missing}}", {}) == "{{missing}}"
+
+
+@pytest.mark.asyncio
+async def test_timeout_per_step_enforcement(tmp_path):
+    mgr, pool = _mgr(tmp_path)
+    async def hanging_conn(agent, sid, cwd=""):
+        conn = AsyncMock(spec=AcpConnection)
+        async def hang_forever(p, idle_timeout=300):
+            await asyncio.sleep(999)
+            yield {"_prompt_result": {"result": {"stopReason": "end"}}}
+        conn.session_prompt = hang_forever
+        return conn
+    pool.get_or_create = AsyncMock(side_effect=hanging_conn)
+    pl = Pipeline(pipeline_id="t1", mode="sequence", steps=[
+        PipelineStep(agent="kiro", prompt_template="x", timeout=0.1),
+    ], context={})
+    with _TN, _PS:
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
+                        await mgr._run(pl)
+    assert pl.steps[0].status == "failed"
+    assert "timeout" in pl.steps[0].error
+
+
+@pytest.mark.asyncio
+async def test_empty_steps_handling(tmp_path):
+    for mode in ("sequence", "parallel", "race"):
+        mgr, pool = _mgr(tmp_path)
+        pl = Pipeline(pipeline_id=f"empty-{mode}", mode=mode, steps=[], context={})
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    await mgr._run(pl)
+        if mode == "race":
+            assert pl.status == "failed"
+        else:
+            assert pl.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_step_output_size_limit(tmp_path):
+    mgr, pool = _mgr(tmp_path)
+    big_text = "x" * (2 * 1024 * 1024)
+    pool.get_or_create = AsyncMock(return_value=_conn(big_text))
+    pl = Pipeline(pipeline_id="big1", mode="sequence", steps=[
+        PipelineStep(agent="kiro", prompt_template="t"),
+    ], context={})
+    with _TN, _PS:
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
+                        await mgr._run(pl)
+    assert pl.status == "completed"
+    from src.pipeline import MAX_OUTPUT_SIZE
+    assert len(pl.steps[0].result) < len(big_text)
+
+
+@pytest.mark.asyncio
+async def test_cancel_pipeline_mid_execution(tmp_path):
+    mgr, pool = _mgr(tmp_path)
+    step_started = asyncio.Event()
+    async def slow_get_or_create(agent, sid, cwd=""):
+        if agent == "claude":
+            step_started.set()
+            await asyncio.sleep(10)
+        return _conn("ok")
+    pool.get_or_create = AsyncMock(side_effect=slow_get_or_create)
+    pl = Pipeline(pipeline_id="cancel1", mode="sequence", steps=[
+        PipelineStep(agent="kiro", prompt_template="s1"),
+        PipelineStep(agent="claude", prompt_template="s2"),
+        PipelineStep(agent="qwen", prompt_template="s3"),
+    ], context={})
+    with _TN, _PS:
+        with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+            with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
+                        task = asyncio.create_task(mgr._run(pl))
+                        await step_started.wait()
+                        task.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await task
+    assert pl.steps[0].status == "completed"
+    assert pl.steps[2].status == "pending"

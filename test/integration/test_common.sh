@@ -1,7 +1,7 @@
 #!/bin/bash
 # 公共测试 — 基础接口 + 错误处理
 set -uo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../lib.sh"
 
 echo "=== 公共测试 ==="
 

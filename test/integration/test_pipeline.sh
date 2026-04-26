@@ -1,7 +1,7 @@
 #!/bin/bash
 # Pipeline 集成测试 — 全模式 + 全 agent 覆盖 + shared_cwd 验证
 set -uo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../lib.sh"
 
 TOKEN="${ACP_TOKEN:-${ACP_BRIDGE_TOKEN:-}}"
 BASE="${ACP_BRIDGE_URL:-http://127.0.0.1:18010}"

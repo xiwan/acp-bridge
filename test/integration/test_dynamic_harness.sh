@@ -1,7 +1,7 @@
 #!/bin/bash
 # Dynamic Harness API 测试
 set -uo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../lib.sh"
 
 URL="$ACP_BRIDGE_URL"
 AUTH=(-H "Authorization: Bearer ${ACP_TOKEN:-}")

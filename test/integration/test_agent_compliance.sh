@@ -20,7 +20,7 @@
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/lib.sh"
+source "$SCRIPT_DIR/../lib.sh"
 
 [[ $# -eq 0 ]] && {
     echo "用法: $0 [--cwd <dir>] <command> [args...]"

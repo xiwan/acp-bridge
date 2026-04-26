@@ -10,6 +10,21 @@ from ..store import ChatStore
 
 
 def register(app, config: dict):
+    db_path = config.get("server", {}).get("db_path", "data/jobs.db")
+    chat_store = ChatStore(db_path)
+
+    @app.get("/messages")
+    async def get_messages(since: float = 0):
+        """Return messages with created_at > since.
+        BeamManager sends ms timestamps; auto-detect and convert."""
+        # Auto-detect ms vs seconds: if since > 1e10 it's milliseconds
+        since_sec = since / 1000.0 if since > 1e10 else since
+        rows = chat_store.load_since(since_sec)
+        return {
+            "messages": rows,
+            "nextSince": rows[-1]["created_at"] * 1000 if rows else since,
+        }
+
     static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
     if not os.path.isdir(static_dir):
         return
@@ -19,9 +34,6 @@ def register(app, config: dict):
     @app.get("/ui")
     async def ui():
         return FileResponse(os.path.join(static_dir, "index.html"))
-
-    db_path = config.get("server", {}).get("db_path", "data/jobs.db")
-    chat_store = ChatStore(db_path)
 
     class ChatMsg(BaseModel):
         session_id: str

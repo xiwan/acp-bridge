@@ -1,7 +1,7 @@
 #!/bin/bash
 # OpenClaw Tools Proxy 测试
 set -uo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../lib.sh"
 
 echo "=== Tools Proxy 测试 ==="
 

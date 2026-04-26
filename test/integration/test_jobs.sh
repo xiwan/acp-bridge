@@ -3,9 +3,9 @@
 # 用法: ACP_TOKEN=<token> bash test/test_jobs.sh
 # 前提: Bridge 运行在 Docker (light-acp-bridge-1)
 set -uo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../lib.sh"
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 COMPOSE="sudo docker compose -f $PROJECT_DIR/docker/light/docker-compose.yml"
 CONTAINER="light-acp-bridge-1"
 VENV_PY="/app/.venv/bin/python"

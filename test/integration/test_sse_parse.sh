@@ -4,7 +4,7 @@
 
 set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 CLIENT="$SCRIPT_DIR/skill/scripts/acp-client.sh"
 
 PASS=0 FAIL=0

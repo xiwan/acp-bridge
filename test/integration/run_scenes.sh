@@ -1,6 +1,6 @@
 #!/bin/bash
 # 场景测试统一入口
-# 用法: ACP_TOKEN=<token> bash test/scenes/run_all.sh [bridge_url]
+# 用法: 设置 ACP_TOKEN 后运行 bash test/integration/run_scenes.sh [bridge_url]
 set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

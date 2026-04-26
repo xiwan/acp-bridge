@@ -170,6 +170,14 @@ class ChatStore:
         )
         self._db.commit()
 
+    def load_since(self, since: float, limit: int = 200) -> list[dict]:
+        """Return messages with created_at > since, ordered by time ascending."""
+        rows = self._db.execute(
+            "SELECT * FROM chat_messages WHERE created_at > ? ORDER BY created_at ASC LIMIT ?",
+            (since, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def load_recent(self, limit: int = 200) -> list[dict]:
         rows = self._db.execute(
             "SELECT * FROM chat_messages ORDER BY created_at DESC LIMIT ?", (limit,)
