@@ -50,6 +50,7 @@ class EnvCollector:
         self._snapshot: str = ""
         self._ts: float = 0
         self._enabled_agents: set[str] = set()
+        self._interval: int = 0  # mutable, set by main.py
         for name, cfg in agents_cfg.items():
             if isinstance(cfg, dict) and cfg.get("heartbeat", False):
                 self._enabled_agents.add(name)
@@ -161,7 +162,8 @@ class EnvCollector:
                           port=self._port, client=self._client, context=context,
                           shared_workdir=self._shared_workdir)
 
-    def record(self, agent: str, prompt: str, response: str, silent: bool, duration: float):
+    def record(self, agent: str, prompt: str, response: str, silent: bool, duration: float,
+               snapshot: dict | None = None):
         """Record a heartbeat exchange to history."""
         self._history.append({
             "ts": time.time(),
@@ -170,32 +172,52 @@ class EnvCollector:
             "response": response,
             "silent": silent,
             "duration": round(duration, 1),
+            "snapshot": snapshot,
         })
 
 
 def register(app, env_collector: "EnvCollector", pool: AcpProcessPool):
     from starlette.responses import JSONResponse
 
+    _ALLOWED_INTERVALS = [60, 120, 300, 600]
+
     @app.get("/heartbeat")
     async def heartbeat_status():
         return JSONResponse({
             "enabled_agents": sorted(env_collector._enabled_agents),
+            "interval": env_collector._interval,
+            "allowed_intervals": _ALLOWED_INTERVALS,
             "snapshot": env_collector.get_snapshot(),
         })
+
+    @app.put("/heartbeat/interval")
+    async def set_heartbeat_interval(req: dict):
+        interval = req.get("interval")
+        if interval not in _ALLOWED_INTERVALS:
+            return JSONResponse(
+                {"error": f"interval must be one of {_ALLOWED_INTERVALS}"},
+                status_code=400)
+        old = env_collector._interval
+        env_collector._interval = interval
+        log.info("heartbeat_interval_changed: %d -> %d", old, interval)
+        return JSONResponse({"interval": interval, "previous": old})
 
     @app.get("/heartbeat/logs")
     async def heartbeat_logs():
         """View recent heartbeat exchanges."""
         entries = []
         for h in reversed(env_collector._history):
-            entries.append({
+            entry = {
                 "ts": h["ts"],
                 "agent": h["agent"],
                 "silent": h["silent"],
                 "duration": h["duration"],
                 "response": h["response"] if not h["silent"] else None,
                 "prompt_preview": h["prompt"][:1000],
-            })
+            }
+            if h.get("snapshot"):
+                entry["snapshot"] = h["snapshot"]
+            entries.append(entry)
         return JSONResponse({"total": len(entries), "logs": entries})
 
     @app.post("/heartbeat/context")

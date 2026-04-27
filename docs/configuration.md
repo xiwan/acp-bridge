@@ -221,6 +221,26 @@ litellm_settings:
   drop_params: true    # required — Codex sends params Bedrock doesn't support
 ```
 
+#### Auto Prompt Caching (Recommended)
+
+LiteLLM can auto-inject `cache_control` checkpoints for Bedrock Claude models, reducing input costs by up to 90%. Add `cache_control_injection_points` to your model config:
+
+```yaml
+model_list:
+  - model_name: "bedrock/anthropic.claude-sonnet-4-20250514-v1:0"
+    litellm_params:
+      model: "bedrock/anthropic.claude-sonnet-4-20250514-v1:0"
+      aws_region_name: "us-west-2"
+      cache_control_injection_points:
+        - location: message
+          role: system        # cache system prompts
+        - location: message
+          role: user
+          index: 0            # cache first user message (often contains long context)
+```
+
+This works for all Claude models on Bedrock — no application code changes needed.
+
 LiteLLM uses the EC2 instance's AWS credentials (IAM Role or `~/.aws/credentials`) to access Bedrock. The `master_key` is just the proxy's own auth token.
 
 ### Start LiteLLM
@@ -235,6 +255,29 @@ LITELLM_API_KEY="sk-litellm-bedrock" litellm --config ~/.codex/litellm-config.ya
 ACP Bridge ──(PTY)──► codex exec ──(HTTP)──► LiteLLM :4000 ──(Bedrock API)──► Kimi K2.5
 ```
 
+### Cost Optimization: Prompt Caching + Region Selection
+
+Claude 4.x models (Sonnet 4.6, Opus 4.6, etc.) on Bedrock are **only available via cross-region inference profiles** — there is no direct regional endpoint option. Cost optimization should focus on prompt caching and model selection instead.
+
+**1. Auto-inject prompt caching** — LiteLLM can automatically add `cache_control` checkpoints for Bedrock Claude, reducing repeated input costs by up to 90%:
+
+```yaml
+model_list:
+  - model_name: "bedrock/anthropic.claude-sonnet-4-6"
+    litellm_params:
+      model: "bedrock/us.anthropic.claude-sonnet-4-6"
+      aws_region_name: "us-west-2"
+      drop_params: true
+      additional_drop_params: ["top_p"]
+      cache_control_injection_points:
+        - location: message
+          role: system        # cache system prompts (largest, most stable)
+```
+
+**2. Use `us.` (US) profiles instead of `global.`** — US-scoped profiles route within US regions only, while `global.` profiles may route to more expensive regions. If your EC2 is in a US region, prefer `us.` prefix.
+
+**3. Prefer Sonnet over Opus for routine tasks** — Opus costs ~5x more per token. Reserve Opus for tasks that genuinely need it (complex reasoning, long-horizon agentic work).
+
 ## Harness Factory Profiles
 
 [Harness Factory](https://github.com/xiwan/harness-factory) agents are configured via `profile` in the agent entry. The profile controls tool permissions, model selection, and system prompt.
@@ -245,7 +288,7 @@ Dynamic harness agents can also be created at runtime via `POST /harness` — se
 
 ## Heartbeat (Agent Environment Awareness)
 
-The heartbeat system periodically pings agents with environment snapshots, enabling inter-agent collaboration.
+The heartbeat system periodically checks agent process health via lightweight JSON-RPC pings (no LLM calls). Environment context is injected lazily into actual user requests via a stable prefix, maximizing prompt cache hits.
 
 ```yaml
 heartbeat:
@@ -254,6 +297,8 @@ heartbeat:
   language: "zh"         # prompt language: "en" or "zh"
   # client_script: ""    # optional, defaults to "acp-client.sh"
 ```
+
+Auto heartbeat pings are **zero-cost** — they only verify the agent process is alive without sending prompts to the LLM. To send a full LLM heartbeat prompt manually, use `POST /heartbeat/{agent_name}`.
 
 Per-agent opt-in: add `heartbeat: true` to each agent that should participate. Agents without this flag are invisible to other agents during heartbeat.
 

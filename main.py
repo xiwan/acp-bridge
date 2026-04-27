@@ -339,43 +339,47 @@ def main():
             stats_collector.delete_old()
 
     heartbeat_interval = heartbeat_cfg.get("interval", 0)
+    if env_collector:
+        env_collector._interval = heartbeat_interval
 
     async def _heartbeat_ping_agent(agent_name: str):
-        """Ping a single agent — designed to run concurrently."""
+        """Lightweight ping — check process alive, no LLM prompt (saves tokens)."""
         import uuid
-        from src.sse import transform_notification
         cfg = agents_cfg.get(agent_name, {})
         if not isinstance(cfg, dict) or cfg.get("mode") != "acp":
             return
-        prompt = env_collector.build_heartbeat_prompt(agent_name)
         session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"heartbeat:{agent_name}"))
         existing = pool._connections.get((agent_name, session_id))
-        if existing and existing._busy:
-            log.info("heartbeat_skip: agent=%s still busy", agent_name)
+        if not existing:
+            return  # no session yet — nothing to keep alive
+        if existing._busy:
+            log.debug("heartbeat_skip: agent=%s still busy", agent_name)
             return
         t0 = time.time()
         try:
-            conn = await pool.get_or_create(agent_name, session_id,
-                                            cwd=cfg.get("working_dir", "/tmp"))
-            parts = []
-            async for notification in conn.session_prompt(prompt):
-                if "_prompt_result" in notification:
-                    break
-                event = transform_notification(notification)
-                if event and event["type"] == "message.part":
-                    parts.append(event["content"])
-            response = "".join(parts).strip()
-            silent = "[SILENT]" in response.upper() or not response
-            env_collector.record(agent_name, prompt, response, silent, time.time() - t0)
-            log.info("heartbeat_auto: agent=%s silent=%s dur=%.1fs",
-                     agent_name, silent, time.time() - t0)
+            ok = await existing.ping(timeout=10)
+            status = "alive" if ok else "dead"
+            env_collector.record(agent_name, "[PING]", status,
+                                 silent=True, duration=time.time() - t0,
+                                 snapshot=env_collector.get_snapshot())
+            if not ok:
+                log.warning("heartbeat_ping: agent=%s dead, removing", agent_name)
+                pool.remove(agent_name, session_id)
+                await existing.kill()
+            else:
+                log.debug("heartbeat_ping: agent=%s alive dur=%.1fs",
+                          agent_name, time.time() - t0)
         except Exception as e:
-            log.warning("heartbeat_auto: agent=%s error=%s", agent_name, e)
+            log.warning("heartbeat_ping: agent=%s error=%s", agent_name, e)
 
     async def heartbeat_loop():
-        """Independent heartbeat loop — fixed interval, fire-and-forget per agent."""
+        """Independent heartbeat loop — dynamic interval, fire-and-forget per agent."""
         while True:
-            await asyncio.sleep(heartbeat_interval)
+            interval = env_collector._interval if env_collector else heartbeat_interval
+            if interval <= 0:
+                await asyncio.sleep(10)
+                continue
+            await asyncio.sleep(interval)
             if not env_collector:
                 continue
             env_collector.refresh()
