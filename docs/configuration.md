@@ -293,24 +293,30 @@ The heartbeat system periodically checks agent process health via lightweight JS
 ```yaml
 heartbeat:
   enabled: true          # global switch
-  interval: 30           # seconds between auto heartbeat pings (0 = disable auto-ping)
+  interval: 60           # seconds between auto heartbeat pings (0 = disable auto-ping)
   language: "zh"         # prompt language: "en" or "zh"
   # client_script: ""    # optional, defaults to "acp-client.sh"
 ```
 
-Auto heartbeat pings are **zero-cost** — they only verify the agent process is alive without sending prompts to the LLM. To send a full LLM heartbeat prompt manually, use `POST /heartbeat/{agent_name}`.
+Each heartbeat sends an LLM prompt with environment info (online agents, recent jobs) so agents maintain situational awareness and can initiate collaboration. Agents that have nothing to do reply `[SILENT]`.
 
-Per-agent opt-in: add `heartbeat: true` to each agent that should participate. Agents without this flag are invisible to other agents during heartbeat.
+**ACP mode only**: Heartbeat requires a persistent JSON-RPC connection, so only `mode: "acp"` agents are supported. PTY-mode agents (e.g. Codex, Trae) run as one-shot subprocesses and cannot participate in heartbeat.
+
+**Dynamic interval**: Use `PUT /heartbeat/interval` to adjust the heartbeat frequency at runtime without restarting. Allowed values: `60`, `120`, `300`, `600` seconds.
+
+Per-agent opt-in: add `heartbeat: true` to each ACP agent that should participate. Agents without this flag are invisible to other agents during heartbeat.
 
 ```yaml
 agents:
+  hermes:
+    enabled: true
+    heartbeat: true      # participates in heartbeat (ACP mode)
   claude:
     enabled: true
-    heartbeat: true      # participates in heartbeat
-    # ...
-  kiro:
+    heartbeat: false     # too expensive for periodic heartbeat
+  codex:
     enabled: true
-    # no heartbeat: true — hidden from other agents
+    heartbeat: false     # PTY mode — heartbeat not supported
 ```
 
 The shared workspace (`server.public_workdir`, default `/tmp/acp-public`) is included in heartbeat prompts so agents know where to collaborate on files.
