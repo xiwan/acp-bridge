@@ -350,7 +350,7 @@ def main():
         if not isinstance(cfg, dict) or cfg.get("mode") != "acp":
             return
         prompt = env_collector.build_heartbeat_prompt(agent_name)
-        session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"heartbeat:{agent_name}"))
+        session_id = env_collector.heartbeat_session_id(agent_name)
         existing = pool._connections.get((agent_name, session_id))
         if existing and existing._busy:
             log.info("heartbeat_skip: agent=%s still busy", agent_name)
@@ -370,8 +370,10 @@ def main():
             silent = "[SILENT]" in response.upper() or not response
             env_collector.record(agent_name, prompt, response, silent, time.time() - t0,
                                  snapshot=env_collector.get_snapshot())
-            log.info("heartbeat_auto: agent=%s silent=%s dur=%.1fs",
-                     agent_name, silent, time.time() - t0)
+            env_collector.increment_round(agent_name)
+            log.info("heartbeat_auto: agent=%s silent=%s dur=%.1fs round=%d",
+                     agent_name, silent, time.time() - t0,
+                     env_collector._round_counter.get(agent_name, 0))
         except Exception as e:
             log.warning("heartbeat_auto: agent=%s error=%s", agent_name, e)
 
@@ -386,6 +388,10 @@ def main():
             if not env_collector:
                 continue
             env_collector.refresh()
+            # Skip if nothing changed and no injected contexts
+            if not env_collector.snapshot_changed() and not env_collector._injected_contexts:
+                log.debug("heartbeat_skip: snapshot unchanged")
+                continue
             for a in sorted(env_collector._enabled_agents):
                 asyncio.create_task(_heartbeat_ping_agent(a))
 

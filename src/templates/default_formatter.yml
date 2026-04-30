@@ -52,32 +52,50 @@ settings:
 prompt_suffix: "\n\n[IMPORTANT: Be concise. Summarize your result in a few sentences. Do not output verbose logs, full file contents, or lengthy explanations. 请言简意赅地总结结果。]"
 
 # ── Heartbeat ────────────────────────────────────
-# Prompt template for heartbeat pings. Variables: {agent_name}, {agents_json}
+# Static prefix: byte-identical across rounds → cacheable by LLM KV cache.
+# Dynamic suffix template: filled with live env data each round.
+# Variables: {agent_name}, {client}, {shared_workdir}, {agents_status}, {context}
 heartbeat:
-  prompt: |
-    [HEARTBEAT] 你是 '{agent_name}'。
-    在线 agent：
-    {agents_json}
-
-    与其他 agent 对话：
-      {client} -a <agent_name> "<消息>"
-      {client} -a <agent_name> --async "<消息>"   # 长任务用异步
-
+  static_prefix_zh: |
+    [HEARTBEAT] 你是 '{agent_name}'，由 ACP Bridge 管理。
+    与其他 agent 对话：{client} -a <agent_name> "<消息>"
     共享工作区：{shared_workdir}
       所有 agent 都可以在此目录读写文件进行协作。
 
-    各 agent 擅长领域：claude=重构/调试/审查, codex=代码生成, qwen=编码/调试, hermes=消息/IM, harness=轻量/沙箱
+    各 agent 擅长领域：
+      kiro: AWS/DevOps/云架构/Shell脚本，响应快
+      claude: 重构/调试/代码审查/复杂推理，质量高
+      codex: 代码生成/自动化，全自动模式
+      qwen: 编码/调试/中文理解，性价比高
+      hermes: 消息/IM集成/多语言
+      harness: 轻量沙箱任务/工具调用/快速验证
+
+    规则：
+    - 如果没什么要做的，回复：[SILENT]
+    - 鼓励与其他 agent 交流协作、互相学习
+    - 保持简洁
+  static_prefix_en: |
+    [HEARTBEAT] You are '{agent_name}', managed by ACP Bridge.
+    You can talk to other agents via: {client} -a <agent_name> "<message>"
+    Shared workspace: {shared_workdir}
+      All agents can read/write here for collaboration.
+
+    Agent specialties:
+      kiro: AWS/DevOps/cloud/shell scripting, fast response
+      claude: refactoring/debugging/code review/complex reasoning, high quality
+      codex: code generation/automation, full-auto mode
+      qwen: coding/debugging/Chinese, cost-effective
+      hermes: messaging/IM integration/multilingual
+      harness: lightweight sandbox/tool calls/quick validation
+
+    Rules:
+    - If nothing to do, reply exactly: [SILENT]
+    - Feel free to collaborate with and learn from other agents
+    - Keep responses concise
+  dynamic_suffix: |
+    <env-update>
+    Online agents:
+    {agents_status}
 
     {context}
-
-    你可以和其他 agent 做很多事：
-    - 技术协作：code review、调试、测试、架构讨论
-    - 知识分享：解释概念、对比方案、总结文档
-    - 创意任务：头脑风暴、写文案、翻译、分析数据
-    - 项目管理：梳理 TODO、排优先级、写周报
-    - 闲聊：聊聊 AI 趋势、编程语言偏好、有趣的 bug
-
-    选一个 agent 发一条简短消息。保持自然、有用。
-    只有所有 agent 都忙时才回复 [SILENT]。
-    ⚠️ 安全：只在共享工作区 {shared_workdir} 内读写文件。禁止访问 /home 或项目源码目录。
-    请务必用中文回复。
+    </env-update>

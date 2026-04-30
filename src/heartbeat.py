@@ -11,27 +11,8 @@ from .formatters import get_template
 
 log = logging.getLogger("acp-bridge.heartbeat")
 
-_DEFAULT_HEARTBEAT_PROMPT = (
-    "[HEARTBEAT] You are '{agent_name}'.\n"
-    "Online agents:\n{agents_json}\n\n"
-    "To talk to another agent:\n"
-    '  {client} -a <agent_name> "<message>"\n\n'
-    "Shared workspace: {shared_workdir}\n"
-    "  All agents can read/write here for collaboration.\n\n"
-    "If nothing to do, reply: [SILENT]"
-)
-
-_HEARTBEAT_PROMPT_ZH = (
-    "[HEARTBEAT] 你是 '{agent_name}'。\n"
-    "在线 agent：\n{agents_json}\n\n"
-    "与其他 agent 对话：\n"
-    '  {client} -a <agent_name> "<消息>"\n\n'
-    "共享工作区：{shared_workdir}\n"
-    "  所有 agent 都可以在此目录读写文件进行协作。\n\n"
-    "如果没什么要做的，回复：[SILENT]"
-)
-
-_HEARTBEAT_PROMPTS = {"en": _DEFAULT_HEARTBEAT_PROMPT, "zh": _HEARTBEAT_PROMPT_ZH}
+# Session rotation: new session every N rounds to prevent unbounded history growth
+HEARTBEAT_ROUNDS_PER_SESSION = 10
 
 
 class EnvCollector:
@@ -58,6 +39,10 @@ class EnvCollector:
         self._history: deque[dict] = deque(maxlen=50)
         # Injected contexts — human-in-the-loop directives with TTL
         self._injected_contexts: list[dict] = []
+        # Session rotation counter — per agent
+        self._round_counter: dict[str, int] = {}
+        # Last snapshot hash — for diff-based skip
+        self._last_snapshot_hash: str = ""
         self.refresh()
 
     def _agent_profile(self, agent: str) -> dict:
@@ -103,6 +88,25 @@ class EnvCollector:
             return {}
         return {"agents": json.loads(self._snapshot), "ts": self._ts}
 
+    def heartbeat_session_id(self, agent_name: str) -> str:
+        """Return a session_id that rotates every HEARTBEAT_ROUNDS_PER_SESSION rounds."""
+        import uuid
+        count = self._round_counter.get(agent_name, 0)
+        epoch = count // HEARTBEAT_ROUNDS_PER_SESSION
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"heartbeat:{agent_name}:{epoch}"))
+
+    def increment_round(self, agent_name: str) -> None:
+        self._round_counter[agent_name] = self._round_counter.get(agent_name, 0) + 1
+
+    def snapshot_changed(self) -> bool:
+        """Return True if the snapshot changed since last check."""
+        import hashlib
+        h = hashlib.md5(self._snapshot.encode()).hexdigest()
+        if h == self._last_snapshot_hash:
+            return False
+        self._last_snapshot_hash = h
+        return True
+
     @staticmethod
     def _sanitize(text: str) -> str:
         """Strip absolute paths to avoid leaking project locations."""
@@ -134,8 +138,8 @@ class EnvCollector:
                         lines.append(f"  ✅ {j.agent} completed {ago}s ago: {prompt_preview}")
         return "Recent activity:\n" + "\n".join(lines) if lines else "Recent activity: none"
 
-    def build_heartbeat_prompt(self, agent_name: str) -> str:
-        self.refresh()
+    def _build_agents_status(self, agent_name: str) -> str:
+        """Build agent status lines from current snapshot."""
         snapshot = self.get_snapshot()
         agents_info = snapshot.get("agents", {})
         lines = []
@@ -153,14 +157,26 @@ class EnvCollector:
             else:
                 state = "available"
             lines.append(f"  {name}: {state}{marker}")
-        agents_json = "\n".join(lines)
-        context = self._build_context()
+        return "\n".join(lines)
 
-        tpl = get_template("heartbeat", "prompt",
-                           _HEARTBEAT_PROMPTS.get(self._language, _DEFAULT_HEARTBEAT_PROMPT))
-        return tpl.format(agent_name=agent_name, agents_json=agents_json,
-                          port=self._port, client=self._client, context=context,
+    def build_static_prefix(self, agent_name: str) -> str:
+        """Static part of heartbeat prompt — identical across rounds, cacheable.
+        Reads from YAML template (editable), falls back to built-in default."""
+        fallback = ""
+        tpl = get_template("heartbeat", f"static_prefix_{self._language}", fallback)
+        return tpl.format(agent_name=agent_name, client=self._client,
                           shared_workdir=self._shared_workdir)
+
+    def build_heartbeat_prompt(self, agent_name: str) -> str:
+        """Full prompt = static prefix + dynamic env update suffix."""
+        self.refresh()
+        prefix = self.build_static_prefix(agent_name)
+        agents_status = self._build_agents_status(agent_name)
+        context = self._build_context()
+        # Dynamic part from YAML template
+        suffix_tpl = get_template("heartbeat", "dynamic_suffix", "")
+        dynamic = suffix_tpl.format(agents_status=agents_status, context=context)
+        return prefix + dynamic
 
     def record(self, agent: str, prompt: str, response: str, silent: bool, duration: float,
                snapshot: dict | None = None):
@@ -247,7 +263,6 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool):
     @app.post("/heartbeat/{agent_name}")
     async def heartbeat_ping(agent_name: str):
         from .acp_client import AcpError, PoolExhaustedError
-        import uuid
 
         if agent_name not in env_collector._agents_cfg:
             return JSONResponse({"error": f"agent not found: {agent_name}"}, status_code=404)
@@ -258,7 +273,7 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool):
 
         prompt = env_collector.build_heartbeat_prompt(agent_name)
 
-        session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"heartbeat:{agent_name}"))
+        session_id = env_collector.heartbeat_session_id(agent_name)
         try:
             conn = await pool.get_or_create(agent_name, session_id,
                                             cwd=cfg.get("working_dir", "/tmp"))
@@ -284,6 +299,7 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool):
 
         log.info("heartbeat_ping: agent=%s silent=%s len=%d dur=%.1fs", agent_name, silent, len(response), duration)
         env_collector.record(agent_name, prompt, response, silent, duration)
+        env_collector.increment_round(agent_name)
 
         return JSONResponse({
             "agent": agent_name,
