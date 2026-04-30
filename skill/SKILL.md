@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.18.4 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/openclaw/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.18.5 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/openclaw/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -296,5 +296,6 @@ curl -X DELETE "$ACP_BRIDGE_URL/harness/<name>" -H "Authorization: Bearer $ACP_T
 - [references/orchestration-patterns.md](references/orchestration-patterns.md) — Preset templates for 2–5 agent orchestration
 - [references/async-jobs.md](references/async-jobs.md) — Async jobs, target format, callback, monitoring
 - [references/troubleshooting.md](references/troubleshooting.md) — Error diagnosis
+- [references/usage.md](references/usage.md) — LiteLLM usage tracking, token/cache stats
 - [scripts/acp-client.sh](scripts/acp-client.sh) — Bash client used by `/cli` and `/chat`
 - [AGENT.md](../AGENT.md) — First-time setup guide

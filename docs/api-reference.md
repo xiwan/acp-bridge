@@ -236,6 +236,60 @@ Agent call statistics: total calls, durations, tool usage by category.
 
 Web UI chat interface (requires `--ui` flag or `server.ui: true`).
 
+## LiteLLM Proxy & Usage Tracking
+
+### `ANY /litellm/{path}` — LiteLLM Proxy
+
+Transparent pass-through to the LiteLLM instance. Forwards any GET/POST request.
+
+```bash
+curl -s http://localhost:18010/litellm/v1/chat/completions \
+  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"bedrock/deepseek.v3.2","messages":[{"role":"user","content":"hi"}],"max_tokens":10}'
+```
+
+### `GET /usage` — Aggregated Usage Stats
+
+Query token usage, cache rates, and per-model breakdown.
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `hours` | `24` | Time window |
+| `model` | | Filter by model name |
+
+```bash
+curl -s http://localhost:18010/usage -H "Authorization: Bearer $ACP_BRIDGE_TOKEN"
+```
+
+Response:
+
+```json
+{
+  "hours": 24.0,
+  "calls": 5,
+  "input_tokens": 120,
+  "output_tokens": 85,
+  "total_tokens": 205,
+  "cached_tokens": 40,
+  "cache_rate_pct": 33.3,
+  "avg_duration_s": 0.82,
+  "by_model": [
+    {"model": "bedrock/deepseek.v3.2", "calls": 3, "input_tokens": 60, ...}
+  ]
+}
+```
+
+### `GET /usage/recent` — Recent Call Details
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `limit` | `20` | Number of records |
+
+### `POST /internal/llm-callback` (no auth)
+
+Receives `StandardLoggingPayload` from LiteLLM `generic_api` callback. Not intended for direct use.
+
 ## Request Tracing
 
 All requests receive an `X-Request-Id` response header. Pass your own via the request header to stitch traces across services (e.g. OpenClaw → Bridge → agent logs).

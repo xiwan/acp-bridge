@@ -278,6 +278,10 @@ def main():
     os.environ["ACP_UPLOAD_DIR"] = upload_dir
     files_routes.register(app, upload_dir)
 
+    # --- LiteLLM proxy + usage tracking ---
+    from src.routes import litellm_proxy as litellm_routes
+    litellm_routes.register(app, litellm_cfg)
+
     # --- Stats ---
     stats_collector = StatsCollector()
     stats_routes.register(app, stats_collector)
