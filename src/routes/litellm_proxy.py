@@ -87,15 +87,7 @@ def register(app, litellm_cfg: dict):
         except Exception:
             return JSONResponse({"raw": resp.text}, status_code=resp.status_code)
 
-        # Record usage directly from proxy response (cache tokens are here)
-        if path.endswith("chat/completions") and "usage" in data:
-            req_model = ""
-            try:
-                req_model = json.loads(body).get("model", "")
-            except Exception:
-                pass
-            _record_usage(req_model or data.get("model", ""), data["usage"], duration)
-
+        # Usage recording is handled by LiteLLM callback → /internal/llm-callback
         return JSONResponse(data, status_code=resp.status_code)
 
     @app.get("/usage")
@@ -164,11 +156,14 @@ def register(app, litellm_cfg: dict):
             input_tokens = entry.get("prompt_tokens") or entry.get("total_tokens", 0)
             output_tokens = entry.get("completion_tokens", 0)
             total_tokens = entry.get("total_tokens", 0)
-            # Cache tokens live in hidden_params.usage_object.prompt_tokens_details
-            usage_obj = (entry.get("hidden_params") or {}).get("usage_object") or {}
-            ptd = (usage_obj.get("prompt_tokens_details") or {})
-            cached = ptd.get("cached_tokens", 0) or 0
-            cache_creation = usage_obj.get("cache_creation_input_tokens", 0) or 0
+            # Cache tokens: direct (custom callback) or hidden_params (generic_api)
+            cached = entry.get("cached_tokens", 0) or 0
+            cache_creation = entry.get("cache_creation_tokens", 0) or 0
+            if not cached and not cache_creation:
+                usage_obj = (entry.get("hidden_params") or {}).get("usage_object") or {}
+                ptd = (usage_obj.get("prompt_tokens_details") or {})
+                cached = ptd.get("cached_tokens", 0) or 0
+                cache_creation = usage_obj.get("cache_creation_input_tokens", 0) or 0
             # Duration
             duration = 0.0
             if entry.get("response_time"):
