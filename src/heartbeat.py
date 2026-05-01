@@ -170,7 +170,7 @@ class EnvCollector:
     def build_heartbeat_prompt(self, agent_name: str) -> list[dict]:
         """Full prompt = static prefix (cached) + dynamic env update suffix.
 
-        Returns a list of ACP Parts. The static prefix Part carries a cachePoint
+        Returns a list of ACP Parts. The static prefix Part carries cache_control
         so LLM providers can reuse KV cache across rounds.
         """
         self.refresh()
@@ -180,7 +180,7 @@ class EnvCollector:
         suffix_tpl = get_template("heartbeat", "dynamic_suffix", "")
         dynamic = suffix_tpl.format(agents_status=agents_status, context=context)
         return [
-            {"type": "text", "text": prefix, "cachePoint": {"type": "ephemeral"}},
+            {"type": "text", "text": prefix, "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": dynamic},
         ]
 
