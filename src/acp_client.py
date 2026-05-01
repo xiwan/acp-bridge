@@ -186,17 +186,18 @@ class AcpConnection:
         finally:
             self._unsubscribe(sub_id)
 
-    async def session_prompt(self, prompt: str, idle_timeout: float = 300) -> AsyncIterator[dict]:
+    async def session_prompt(self, prompt: "str | list[dict]", idle_timeout: float = 300) -> AsyncIterator[dict]:
         self._busy = True
         self.last_active = time.time()
         last_event_time = time.time()
         sub_id, q = self._subscribe()
         req_id = self._next_id()
+        parts = prompt if isinstance(prompt, list) else [{"type": "text", "text": prompt}]
         msg = {
             "jsonrpc": "2.0", "id": req_id, "method": "session/prompt",
             "params": {
                 "sessionId": self.acp_session_id,
-                "prompt": [{"type": "text", "text": prompt}],
+                "prompt": parts,
             },
         }
         fut: asyncio.Future[dict] = asyncio.get_event_loop().create_future()
@@ -393,6 +394,14 @@ class AcpProcessPool:
         cwd = cwd_override or cfg.get("working_dir", "/tmp")
         os.makedirs(cwd, exist_ok=True)
 
+        env = os.environ.copy()
+        agent_env = cfg.get("env", {})
+        for k, v in agent_env.items():
+            if v == "" or v is None:
+                env.pop(k, None)
+            else:
+                env[k] = str(v)
+
         log.info("spawning: agent=%s session=%s cmd=%s %s rebuild=%s", agent, session_id, command, acp_args, is_rebuild)
         proc = await asyncio.create_subprocess_exec(
             command, *acp_args,
@@ -400,6 +409,7 @@ class AcpProcessPool:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            env=env,
             start_new_session=True,  # create process group so we can kill the whole tree
             limit=1024 * 1024,  # 1MB line buffer (default 64KB too small for large agent responses)
         )

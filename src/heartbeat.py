@@ -167,24 +167,31 @@ class EnvCollector:
         return tpl.format(agent_name=agent_name, client=self._client,
                           shared_workdir=self._shared_workdir)
 
-    def build_heartbeat_prompt(self, agent_name: str) -> str:
-        """Full prompt = static prefix + dynamic env update suffix."""
+    def build_heartbeat_prompt(self, agent_name: str) -> list[dict]:
+        """Full prompt = static prefix (cached) + dynamic env update suffix.
+
+        Returns a list of ACP Parts. The static prefix Part carries a cachePoint
+        so LLM providers can reuse KV cache across rounds.
+        """
         self.refresh()
         prefix = self.build_static_prefix(agent_name)
         agents_status = self._build_agents_status(agent_name)
         context = self._build_context()
-        # Dynamic part from YAML template
         suffix_tpl = get_template("heartbeat", "dynamic_suffix", "")
         dynamic = suffix_tpl.format(agents_status=agents_status, context=context)
-        return prefix + dynamic
+        return [
+            {"type": "text", "text": prefix, "cachePoint": {"type": "ephemeral"}},
+            {"type": "text", "text": dynamic},
+        ]
 
-    def record(self, agent: str, prompt: str, response: str, silent: bool, duration: float,
+    def record(self, agent: str, prompt: "str | list[dict]", response: str, silent: bool, duration: float,
                snapshot: dict | None = None):
         """Record a heartbeat exchange to history."""
+        prompt_text = "".join(p.get("text", "") for p in prompt) if isinstance(prompt, list) else prompt
         self._history.append({
             "ts": time.time(),
             "agent": agent,
-            "prompt": prompt,
+            "prompt": prompt_text,
             "response": response,
             "silent": silent,
             "duration": round(duration, 1),
