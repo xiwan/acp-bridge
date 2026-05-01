@@ -87,7 +87,15 @@ def register(app, litellm_cfg: dict):
         except Exception:
             return JSONResponse({"raw": resp.text}, status_code=resp.status_code)
 
-        # Usage recording is handled by LiteLLM callback → /internal/llm-callback
+        # Record usage directly from proxy response (cache tokens are here)
+        if path.endswith("chat/completions") and "usage" in data:
+            req_model = ""
+            try:
+                req_model = json.loads(body).get("model", "")
+            except Exception:
+                pass
+            _record_usage(req_model or data.get("model", ""), data["usage"], duration)
+
         return JSONResponse(data, status_code=resp.status_code)
 
     @app.get("/usage")
