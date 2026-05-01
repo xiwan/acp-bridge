@@ -151,17 +151,16 @@ def register(app, litellm_cfg: dict):
         entries = body if isinstance(body, list) else [body]
         recorded = 0
         for entry in entries:
-            # LiteLLM StandardLoggingPayload has usage at top level or nested
-            usage = entry.get("usage") or {}
             model = entry.get("model") or entry.get("model_id") or ""
-            # Top-level fields in StandardLoggingPayload
-            input_tokens = usage.get("prompt_tokens") or entry.get("prompt_tokens") or entry.get("total_tokens", 0)
-            output_tokens = usage.get("completion_tokens") or entry.get("completion_tokens", 0)
-            total_tokens = usage.get("total_tokens") or entry.get("total_tokens", 0)
-            cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or \
-                     entry.get("cache_hit_tokens", 0) or entry.get("cache_read_input_tokens", 0)
-            cache_creation = (usage.get("prompt_tokens_details") or {}).get("cache_creation_tokens", 0) or \
-                             entry.get("cache_creation_input_tokens", 0)
+            # StandardLoggingPayload: tokens at top level
+            input_tokens = entry.get("prompt_tokens") or entry.get("total_tokens", 0)
+            output_tokens = entry.get("completion_tokens", 0)
+            total_tokens = entry.get("total_tokens", 0)
+            # Cache tokens live in hidden_params.usage_object.prompt_tokens_details
+            usage_obj = (entry.get("hidden_params") or {}).get("usage_object") or {}
+            ptd = (usage_obj.get("prompt_tokens_details") or {})
+            cached = ptd.get("cached_tokens", 0) or 0
+            cache_creation = usage_obj.get("cache_creation_input_tokens", 0) or 0
             # Duration
             duration = 0.0
             if entry.get("response_time"):
