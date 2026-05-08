@@ -41,6 +41,7 @@ A multi-agent orchestration platform that exposes local CLI agents (Kiro, Claude
 | **IM-driven development** | Send a Discord/Feishu message → agent executes → result pushed back to chat |
 | **Async code tasks** | Submit a refactor or review job, go grab coffee, get notified when it's done |
 | **Multi-agent orchestration** | Chain agents in sequence, race them in parallel, or let them debate in [conversation mode](docs/pipelines.md) |
+| **Composable pipelines** | Chain conversation → parallel across shared workspace; pause/inject for human-in-the-loop control |
 | **Prompt-as-a-service** | Define reusable [prompt templates](docs/api-reference.md); non-technical users pick a template and fill in variables |
 | **Agent marketplace** | Same [`harness-factory`](https://github.com/xiwan/harness-factory) binary + different profiles = code reviewer, DevOps helper, translator — all behind one API |
 
@@ -106,7 +107,7 @@ curl -s -X POST http://localhost:18010/runs \
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.18.9
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.19.0
 
 ## Contributing
 

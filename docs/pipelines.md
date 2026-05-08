@@ -21,6 +21,103 @@
 - Conversation: agents take turns in a multi-round discussion
 - Harness Factory support: profile-driven lightweight agents via [harness-factory](https://github.com/xiwan/harness-factory) — same binary, different profiles, different agents
 
+## Composable Pipelines (v0.19.0)
+
+Pipelines can be **composed** across multiple API calls by sharing a workspace directory. This enables multi-phase workflows without hardcoding the flow.
+
+### Workspace Inheritance
+
+Pass `shared_cwd` in `context` to reuse a previous pipeline's workspace:
+
+```bash
+# Phase 1: agents discuss game design
+curl -X POST http://localhost:18010/pipelines \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "mode": "conversation",
+    "participants": ["kiro", "claude", "harness"],
+    "topic": "设计一个贪吃蛇游戏，讨论架构和分工",
+    "config": {"max_turns": 8, "stop_conditions": ["DONE"], "output_schema": true}
+  }'
+# Returns: {"pipeline_id": "abc-123", "shared_cwd": "/tmp/acp-pipelines/conversation/conv-abc12345"}
+
+# Phase 2: parallel implementation — inherits the same workspace
+curl -X POST http://localhost:18010/pipelines \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "mode": "parallel",
+    "context": {"shared_cwd": "/tmp/acp-pipelines/conversation/conv-abc12345"},
+    "steps": [
+      {"agent": "kiro", "prompt": "Implement the frontend based on the design in this workspace"},
+      {"agent": "claude", "prompt": "Implement the backend based on the design in this workspace"}
+    ]
+  }'
+```
+
+### Structured Output Extraction
+
+Set `output_schema` in conversation config to extract JSON from the final agent turn:
+
+```json
+"config": {"output_schema": true, "stop_conditions": ["DONE"]}
+```
+
+The agent's last turn should contain a JSON block (in \`\`\`json fences or inline). Bridge extracts it into `pipeline.context.output`, accessible via `GET /pipelines/{id}`.
+
+### Auto-Chain (`next`)
+
+Define `next` in context to auto-trigger the next pipeline on completion — no manual API call needed:
+
+```json
+{
+  "mode": "conversation",
+  "participants": ["kiro", "claude"],
+  "topic": "设计贪吃蛇游戏并分工",
+  "config": {"max_turns": 8, "stop_conditions": ["DONE"], "output_schema": true},
+  "context": {
+    "next": {
+      "mode": "parallel",
+      "steps_from_output": true,
+      "step_prompt_template": "在 {shared_cwd} 中实现 {module}，负责文件: {files}"
+    }
+  }
+}
+```
+
+- `next.mode` — next pipeline mode (sequence/parallel/race/conversation)
+- `next.steps` — static steps (if known ahead of time)
+- `next.steps_from_output` — dynamically generate steps from `output.tasks[]`
+- `next.step_prompt_template` — template for each generated step (vars: `{shared_cwd}`, `{module}`, `{files}`, `{agent}`)
+
+The next pipeline automatically inherits `shared_cwd` and `output`. Chain result is stored in `next_pipeline_id`.
+
+### Human-in-the-Loop
+
+#### Pause / Resume
+
+```bash
+POST /pipelines/{id}/pause     # Pause before next turn
+POST /pipelines/{id}/resume    # Resume execution
+```
+
+#### Inject Message
+
+```bash
+POST /pipelines/{id}/inject
+{"message": "用 Phaser.js 框架，不要用 Canvas 原生 API"}
+```
+
+Injected messages appear as `[Human]` turns in the transcript. The next agent responds to the injected message. If the pipeline is paused, inject auto-resumes it.
+
+### Artifacts
+
+List files created by agents in the shared workspace:
+
+```bash
+GET /pipelines/{id}/artifacts
+# Returns: {"shared_cwd": "...", "files": [{"path": "game.js", "size": 1234}, ...]}
+```
+
 ## Architecture — Interaction Modes
 
 ```

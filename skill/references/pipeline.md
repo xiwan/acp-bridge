@@ -53,12 +53,52 @@ curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/pipelines/<id>"
 
 # List all
 curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/pipelines"
+
+# List artifacts in shared workspace
+curl -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/pipelines/<id>/artifacts"
 ```
 
 Response fields: `pipeline_id`, `mode`, `status`, `steps` (or `participants` /
 `topic` / `initial_context` / `config` / `turns` / `stop_reason` / `transcript`
-for conversation), `shared_cwd`, `duration`.
+for conversation), `shared_cwd`, `paused`, `output`, `duration`.
 `transcript` is an array of `{turn, agent, content, duration}`.
+
+## Composable Pipelines (v0.19.0)
+
+### Workspace Inheritance
+
+Pass `shared_cwd` in `context` to reuse a previous pipeline's workspace:
+
+```bash
+# Phase 2 inherits Phase 1's workspace
+curl -s -X POST "$ACP_BRIDGE_URL/pipelines" \
+  -H "Authorization: Bearer $ACP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "parallel",
+    "context": {"shared_cwd": "<previous pipeline shared_cwd>"},
+    "steps": [...]
+  }'
+```
+
+### Output Extraction
+
+Set `"output_schema": true` in conversation config — Bridge extracts JSON from the final agent turn into `output` field.
+
+### Human-in-the-Loop
+
+```bash
+# Pause conversation
+POST /pipelines/<id>/pause
+
+# Resume
+POST /pipelines/<id>/resume
+
+# Inject message (auto-resumes if paused)
+POST /pipelines/<id>/inject  {"message": "Use Phaser.js"}
+```
+
+Injected messages appear as `[Human]` turns in transcript.
 
 ## Reply Format
 

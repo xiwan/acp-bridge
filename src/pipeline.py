@@ -1,6 +1,7 @@
 """Multi-agent pipeline — sequence, parallel, race execution."""
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -65,6 +66,12 @@ class Pipeline:
     completed_at: float = 0
     error: str = ""
     webhook_meta: dict = field(default_factory=dict)
+    # Human-in-the-loop controls
+    _gate: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    _inject_queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
+
+    def __post_init__(self):
+        self._gate.set()  # starts unpaused
 
     def to_dict(self) -> dict:
         d = {
@@ -79,6 +86,7 @@ class Pipeline:
         if self.error:
             d["error"] = self.error
         d["shared_cwd"] = self.context.get("shared_cwd", "")
+        d["paused"] = not self._gate.is_set()
         if self.mode == "conversation":
             d["participants"] = self.context.get("participants", [])
             d["topic"] = self.context.get("topic", "")
@@ -86,6 +94,8 @@ class Pipeline:
             d["config"] = self.context.get("config", {})
             d["turns"] = self.context.get("turns", 0)
             d["stop_reason"] = self.context.get("stop_reason", "")
+            if self.context.get("output"):
+                d["output"] = self.context["output"]
         return d
 
 
@@ -104,7 +114,12 @@ class PipelineManager:
         self._store = PipelineStore(db_path)
 
     def _make_shared_cwd(self, pl: Pipeline) -> str:
-        """Create and return a shared workspace directory for the pipeline."""
+        """Create and return a shared workspace directory for the pipeline.
+        If context already contains a valid shared_cwd, reuse it (enables cross-pipeline inheritance).
+        """
+        existing = pl.context.get("shared_cwd", "")
+        if existing and os.path.isdir(existing):
+            return existing
         base = self._agents_cfg.get("_public_workdir",
                    self._agents_cfg.get("_conversation_workdir", "/tmp/acp-pipelines"))
         if pl.mode == "conversation":
@@ -228,6 +243,57 @@ class PipelineManager:
         log.info("pipeline_done: id=%s status=%s duration=%.1fs",
                  pl.pipeline_id, pl.status, pl.completed_at - pl.created_at)
         await self._webhook(pl)
+
+        # --- Auto-chain: if `next` is defined and pipeline succeeded, submit next ---
+        if pl.status == "completed" and pl.context.get("next"):
+            await self._auto_chain(pl)
+
+    async def _auto_chain(self, pl: Pipeline):
+        """Auto-submit the next pipeline, inheriting shared_cwd and output."""
+        next_def = pl.context["next"]
+        if not isinstance(next_def, dict) or "mode" not in next_def:
+            log.warning("auto_chain_skip: invalid next definition in pipeline=%s", pl.pipeline_id)
+            return
+
+        # Build context: inherit shared_cwd + output from current pipeline
+        next_context = next_def.get("context", {}).copy()
+        next_context.setdefault("shared_cwd", pl.context.get("shared_cwd", ""))
+        if pl.context.get("output"):
+            next_context.setdefault("output", pl.context["output"])
+
+        # Build steps — support dynamic steps from output
+        steps = next_def.get("steps", [])
+        if not steps and next_def.get("steps_from_output") and pl.context.get("output"):
+            # Generate steps from conversation output (e.g. tasks array)
+            output = pl.context["output"]
+            tasks = output.get("tasks", []) if isinstance(output, dict) else []
+            for task in tasks:
+                agent = task.get("agent", "")
+                module = task.get("module", "")
+                files = task.get("files", [])
+                if agent:
+                    prompt_tpl = next_def.get("step_prompt_template",
+                                              "在 {shared_cwd} 中实现 {module}，负责文件: {files}")
+                    prompt = prompt_tpl.format(
+                        shared_cwd=next_context.get("shared_cwd", ""),
+                        module=module, files=", ".join(files) if files else module,
+                        agent=agent)
+                    steps.append({"agent": agent, "prompt": prompt})
+
+        if not steps:
+            log.warning("auto_chain_skip: no steps resolved for pipeline=%s", pl.pipeline_id)
+            return
+
+        next_pl = self.submit(
+            mode=next_def["mode"],
+            steps=steps,
+            context=next_context,
+            webhook_meta=pl.webhook_meta.copy(),
+        )
+        pl.context["next_pipeline_id"] = next_pl.pipeline_id
+        self._store.save(pl)
+        log.info("auto_chain: %s -> %s mode=%s steps=%d",
+                 pl.pipeline_id, next_pl.pipeline_id, next_def["mode"], len(steps))
 
     _CHUNK_SIZE = 1800
 
@@ -380,6 +446,7 @@ class PipelineManager:
         stop_conditions = config.get("stop_conditions", ["DONE"])
         no_progress_threshold = config.get("no_progress_threshold", 2)
         a2a_rules = config.get("a2a_rules", True)
+        output_schema = config.get("output_schema")  # optional JSON schema hint
         solo = pl.context.get("solo", {})
 
         shared_cwd = pl.context.get("shared_cwd", "")  # already created by _run
@@ -409,10 +476,39 @@ class PipelineManager:
         seen_agents = set()
 
         for turn in range(1, max_turns + 1):
+            # --- Human-in-the-loop: pause gate ---
+            if not pl._gate.is_set():
+                pl.status = "paused"
+                self._store.save(pl)
+                log.info("conv_paused: pipeline=%s turn=%d", pl.pipeline_id, turn)
+                await pl._gate.wait()
+                pl.status = "running"
+
+            # --- Human-in-the-loop: inject message ---
+            injected = None
+            if not pl._inject_queue.empty():
+                injected = await pl._inject_queue.get()
+
             current_agent = participants[agent_index]
             session_id = f"conv-{pl.pipeline_id}-{current_agent}"
             first_turn_for_agent = current_agent not in seen_agents
             seen_agents.add(current_agent)
+
+            if injected:
+                # Injected message replaces this turn — record as [Human] turn
+                output = injected
+                duration = 0.0
+                current_agent_label = "Human"
+                transcript.append({"turn": turn, "agent": current_agent_label,
+                                   "content": output, "duration": duration})
+                self._store.save_turn(pl.pipeline_id, turn, current_agent_label, output, duration)
+                log.info("conv_inject: pipeline=%s turn=%d content=%s",
+                         pl.pipeline_id, turn, output[:80])
+                await self._webhook_conversation_turn(pl, turn, current_agent_label, output, duration)
+                last_output = output
+                last_agent = current_agent_label
+                # Don't advance agent_index — next turn same agent responds to human
+                continue
 
             # Build prompt — each agent gets topic+rules on their first turn
             # PTY agents get it every turn (no session memory)
@@ -479,6 +575,11 @@ class PipelineManager:
 
         pl.context["transcript"] = transcript
         pl.context["turns"] = len(transcript)
+
+        # --- Output extraction: extract structured JSON from final turn ---
+        if output_schema and transcript:
+            self._extract_output(pl, transcript)
+
         pl.status = "completed"
 
     async def _exec_conversation_turn(self, agent: str, session_id: str,
@@ -529,6 +630,34 @@ class PipelineManager:
             return
         msg = PipelineFormatter.format_turn(pl.pipeline_id, turn, agent, content, duration)
         await self._send_webhook(pl, msg)
+
+    _JSON_BLOCK_RE = re.compile(r'```json\s*\n(.*?)\n```', re.DOTALL)
+    _JSON_OBJ_RE = re.compile(r'(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})', re.DOTALL)
+
+    def _extract_output(self, pl: Pipeline, transcript: list[dict]):
+        """Extract structured JSON output from the final agent turn (not Human)."""
+        # Find last non-Human turn
+        for entry in reversed(transcript):
+            if entry["agent"] == "Human":
+                continue
+            content = entry["content"]
+            # Try ```json block first
+            m = self._JSON_BLOCK_RE.search(content)
+            if m:
+                try:
+                    pl.context["output"] = json.loads(m.group(1))
+                    return
+                except json.JSONDecodeError:
+                    pass
+            # Fallback: find JSON object in text
+            m = self._JSON_OBJ_RE.search(content)
+            if m:
+                try:
+                    pl.context["output"] = json.loads(m.group(1))
+                    return
+                except json.JSONDecodeError:
+                    pass
+            break  # only check the last agent turn
 
     async def _exec_step(self, pl: Pipeline, step: PipelineStep, prompt: str, cwd_override: str | None = None):
         step.status = "running"

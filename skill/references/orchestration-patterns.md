@@ -59,3 +59,90 @@ For more than 5 agents, compose two of these or fall back to ad-hoc planning.
 4. Keep default config unless the user overrides (turns / timeout / stop).
 
 Concrete API payload shapes live in [pipeline.md](pipeline.md).
+
+## Composable Multi-Phase Template: `discuss-then-build`
+
+> 适用场景：多 agent 协作开发（游戏、应用、项目），先讨论设计再分头实现。
+
+### 流程概览
+
+```
+conversation (讨论+分工) ──► parallel (分头实现) ──► sequence (集成+review)
+         │                        │                        │
+    共享 shared_cwd ─────────────────────────────────────────
+```
+
+### Phase 1: Conversation — 讨论设计 & 角色分工
+
+一次 API 调用，conversation 结束后自动触发 parallel 实现：
+
+```json
+{
+  "mode": "conversation",
+  "participants": ["kiro", "claude", "harness"],
+  "topic": "设计一个贪吃蛇游戏。讨论技术架构、模块划分，并分配每人负责的模块。最终以 JSON 输出分工方案，格式：{\"tasks\":[{\"agent\":\"...\",\"module\":\"...\",\"files\":[\"...\"]}]}。讨论结束时输出 STATUS: CONSENSUS",
+  "config": {
+    "max_turns": 8,
+    "stop_conditions": ["DONE", "CONSENSUS"],
+    "output_schema": true,
+    "a2a_rules": true
+  },
+  "context": {
+    "next": {
+      "mode": "parallel",
+      "steps_from_output": true,
+      "step_prompt_template": "在 {shared_cwd} 中实现 {module}，负责文件: {files}。完成后执行 wc -c 确认文件非空。"
+    }
+  }
+}
+```
+
+**自动流程**：conversation 达成共识 → 提取 output JSON → 生成 parallel steps → 自动执行
+
+**人类介入点**（可选，不影响自动流程）：
+- `POST /pipelines/{id}/pause` — 暂停观察讨论方向
+- `POST /pipelines/{id}/inject {"message": "用 Phaser.js，不要原生 Canvas"}` — 注入决策
+
+### Phase 2（手动模式）: Parallel — 分头实现
+
+如果不用 `next` 自动链，也可以手动触发：
+
+```json
+{
+  "mode": "parallel",
+  "context": {"shared_cwd": "<Phase 1 返回的 shared_cwd>"},
+  "steps": [
+    {"agent": "kiro", "prompt": "在 {{shared_cwd}} 中实现前端游戏界面"},
+    {"agent": "claude", "prompt": "在 {{shared_cwd}} 中实现游戏逻辑"}
+  ]
+}
+```
+
+### Phase 3 (可选): Sequence — 集成 & Review
+
+```json
+{
+  "mode": "sequence",
+  "context": {"shared_cwd": "<同一个 shared_cwd>"},
+  "steps": [
+    {"agent": "kiro", "prompt": "集成 {{shared_cwd}} 中的前后端代码，确保可运行"},
+    {"agent": "harness", "prompt": "review {{shared_cwd}} 中所有代码，输出质量报告"}
+  ]
+}
+```
+
+### 查看产出
+
+```bash
+GET /pipelines/{id}/artifacts  # 列出 workspace 中的文件
+```
+
+### 变体
+
+| 变体 | 区别 |
+|------|------|
+| 全自动 | 不 pause，三个 phase 脚本串起来 |
+| 人类拍板 | Phase 1 结束后人工确认分工再启动 Phase 2 |
+| 跳过讨论 | 直接 parallel，prompt 里写死分工 |
+| 单 phase | 只用 conversation，agents 边讨论边在 shared_cwd 写代码 |
+| 竞速选方案 | Phase 1 用 race 让多 agent 各出方案，人选最优再进 Phase 2 |

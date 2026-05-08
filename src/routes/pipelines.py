@@ -88,6 +88,71 @@ def register(app, pipeline_mgr: PipelineManager | None,
             d["transcript"] = pipeline_mgr.get_transcript(pipeline_id)
         return d
 
+    @app.post("/pipelines/{pipeline_id}/pause")
+    async def pause_pipeline(pipeline_id: str = PathParam(...)):
+        if not pipeline_mgr:
+            return JSONResponse({"error": "pipeline not available"}, status_code=503)
+        pl = pipeline_mgr.get(pipeline_id)
+        if not pl:
+            return JSONResponse({"error": "pipeline not found"}, status_code=404)
+        if pl.mode != "conversation":
+            return JSONResponse({"error": "pause only supported for conversation mode"}, status_code=400)
+        if pl.status not in ("running", "paused"):
+            return JSONResponse({"error": f"cannot pause pipeline in status: {pl.status}"}, status_code=400)
+        pl._gate.clear()
+        return {"pipeline_id": pipeline_id, "paused": True}
+
+    @app.post("/pipelines/{pipeline_id}/resume")
+    async def resume_pipeline(pipeline_id: str = PathParam(...)):
+        if not pipeline_mgr:
+            return JSONResponse({"error": "pipeline not available"}, status_code=503)
+        pl = pipeline_mgr.get(pipeline_id)
+        if not pl:
+            return JSONResponse({"error": "pipeline not found"}, status_code=404)
+        pl._gate.set()
+        return {"pipeline_id": pipeline_id, "paused": False}
+
+    @app.post("/pipelines/{pipeline_id}/inject")
+    async def inject_message(pipeline_id: str = PathParam(...), req: dict = {}):
+        if not pipeline_mgr:
+            return JSONResponse({"error": "pipeline not available"}, status_code=503)
+        pl = pipeline_mgr.get(pipeline_id)
+        if not pl:
+            return JSONResponse({"error": "pipeline not found"}, status_code=404)
+        if pl.mode != "conversation":
+            return JSONResponse({"error": "inject only supported for conversation mode"}, status_code=400)
+        message = req.get("message", "").strip()
+        if not message:
+            return JSONResponse({"error": "message is required"}, status_code=400)
+        await pl._inject_queue.put(message)
+        # Auto-resume if paused
+        if not pl._gate.is_set():
+            pl._gate.set()
+        return {"pipeline_id": pipeline_id, "injected": True, "message": message[:100]}
+
+    @app.get("/pipelines/{pipeline_id}/artifacts")
+    async def list_artifacts(pipeline_id: str = PathParam(...)):
+        import os
+        if not pipeline_mgr:
+            return JSONResponse({"error": "pipeline not available"}, status_code=503)
+        pl = pipeline_mgr.get(pipeline_id)
+        if not pl:
+            return JSONResponse({"error": "pipeline not found"}, status_code=404)
+        shared_cwd = pl.context.get("shared_cwd", "")
+        if not shared_cwd or not os.path.isdir(shared_cwd):
+            return {"pipeline_id": pipeline_id, "shared_cwd": shared_cwd, "files": []}
+        files = []
+        for root, dirs, filenames in os.walk(shared_cwd):
+            # Skip hidden dirs
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for f in filenames:
+                if f.startswith("."):
+                    continue
+                full = os.path.join(root, f)
+                rel = os.path.relpath(full, shared_cwd)
+                files.append({"path": rel, "size": os.path.getsize(full)})
+        return {"pipeline_id": pipeline_id, "shared_cwd": shared_cwd, "files": files}
+
     @app.get("/pipelines")
     async def list_pipelines():
         if not pipeline_mgr:
