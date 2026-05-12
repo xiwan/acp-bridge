@@ -89,7 +89,7 @@ Rules:
 - **Never** show plan for a `/cli` single call or `/chat` forward — execute immediately
 - If orchestration needs 2–5 agents, **pick a preset template** from [orchestration-patterns.md](orchestration-patterns.md) first
 - **Sync/async hard rule**: estimated >60s → mode field is `async`
-- Confirmation keyword: **`yes` only** (also `go / 执行 / 确认 / 是`)
+- Confirmation keyword: **`yes` only** (also `go / execute / confirm`)
 
 ## Step 4 — On `yes`, execute and relay the ID
 

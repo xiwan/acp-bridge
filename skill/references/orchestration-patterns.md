@@ -62,25 +62,25 @@ Concrete API payload shapes live in [pipeline.md](pipeline.md).
 
 ## Composable Multi-Phase Template: `discuss-then-build`
 
-> 适用场景：多 agent 协作开发（游戏、应用、项目），先讨论设计再分头实现。
+> Use case: multi-agent collaborative development (games, apps, projects) — discuss design first, then implement in parallel.
 
-### 流程概览
+### Flow Overview
 
 ```
-conversation (讨论+分工) ──► parallel (分头实现) ──► sequence (集成+review)
-         │                        │                        │
-    共享 shared_cwd ─────────────────────────────────────────
+conversation (discuss + assign) ──► parallel (implement) ──► sequence (integrate + review)
+         │                              │                          │
+    shared_cwd ────────────────────────────────────────────────────
 ```
 
-### Phase 1: Conversation — 讨论设计 & 角色分工
+### Phase 1: Conversation — Design Discussion & Role Assignment
 
-一次 API 调用，conversation 结束后自动触发 parallel 实现：
+Single API call; conversation auto-triggers parallel implementation on completion:
 
 ```json
 {
   "mode": "conversation",
   "participants": ["kiro", "claude", "harness"],
-  "topic": "设计一个贪吃蛇游戏。讨论技术架构、模块划分，并分配每人负责的模块。最终以 JSON 输出分工方案，格式：{\"tasks\":[{\"agent\":\"...\",\"module\":\"...\",\"files\":[\"...\"]}]}。讨论结束时输出 STATUS: CONSENSUS",
+  "topic": "Design a snake game. Discuss architecture, module breakdown, and assign each person a module. Output final assignment as JSON: {\"tasks\":[{\"agent\":\"...\",\"module\":\"...\",\"files\":[\"...\"]}]}. When done output STATUS: CONSENSUS",
   "config": {
     "max_turns": 8,
     "stop_conditions": ["DONE", "CONSENSUS"],
@@ -91,58 +91,58 @@ conversation (讨论+分工) ──► parallel (分头实现) ──► sequenc
     "next": {
       "mode": "parallel",
       "steps_from_output": true,
-      "step_prompt_template": "在 {shared_cwd} 中实现 {module}，负责文件: {files}。完成后执行 wc -c 确认文件非空。"
+      "step_prompt_template": "Implement {module} in {shared_cwd}, responsible files: {files}. After completion run wc -c to confirm non-empty."
     }
   }
 }
 ```
 
-**自动流程**：conversation 达成共识 → 提取 output JSON → 生成 parallel steps → 自动执行
+**Auto flow**: conversation reaches consensus → extract output JSON → generate parallel steps → auto-execute
 
-**人类介入点**（可选，不影响自动流程）：
-- `POST /pipelines/{id}/pause` — 暂停观察讨论方向
-- `POST /pipelines/{id}/inject {"message": "用 Phaser.js，不要原生 Canvas"}` — 注入决策
+**Human intervention points** (optional):
+- `POST /pipelines/{id}/pause` — pause to observe discussion direction
+- `POST /pipelines/{id}/inject {"message": "Use Phaser.js, not raw Canvas"}` — inject decision
 
-### Phase 2（手动模式）: Parallel — 分头实现
+### Phase 2 (manual mode): Parallel — Implement
 
-如果不用 `next` 自动链，也可以手动触发：
+If not using `next` auto-chain, trigger manually:
 
 ```json
 {
   "mode": "parallel",
-  "context": {"shared_cwd": "<Phase 1 返回的 shared_cwd>"},
+  "context": {"shared_cwd": "<Phase 1 shared_cwd>"},
   "steps": [
-    {"agent": "kiro", "prompt": "在 {{shared_cwd}} 中实现前端游戏界面"},
-    {"agent": "claude", "prompt": "在 {{shared_cwd}} 中实现游戏逻辑"}
+    {"agent": "kiro", "prompt": "Implement frontend game UI in {{shared_cwd}}"},
+    {"agent": "claude", "prompt": "Implement game logic in {{shared_cwd}}"}
   ]
 }
 ```
 
-### Phase 3 (可选): Sequence — 集成 & Review
+### Phase 3 (optional): Sequence — Integration & Review
 
 ```json
 {
   "mode": "sequence",
-  "context": {"shared_cwd": "<同一个 shared_cwd>"},
+  "context": {"shared_cwd": "<same shared_cwd>"},
   "steps": [
-    {"agent": "kiro", "prompt": "集成 {{shared_cwd}} 中的前后端代码，确保可运行"},
-    {"agent": "harness", "prompt": "review {{shared_cwd}} 中所有代码，输出质量报告"}
+    {"agent": "kiro", "prompt": "Integrate frontend and backend code in {{shared_cwd}}, ensure it runs"},
+    {"agent": "harness", "prompt": "Review all code in {{shared_cwd}}, output quality report"}
   ]
 }
 ```
 
-### 查看产出
+### View Artifacts
 
 ```bash
-GET /pipelines/{id}/artifacts  # 列出 workspace 中的文件
+GET /pipelines/{id}/artifacts  # list files in workspace
 ```
 
-### 变体
+### Variants
 
-| 变体 | 区别 |
-|------|------|
-| 全自动 | 不 pause，三个 phase 脚本串起来 |
-| 人类拍板 | Phase 1 结束后人工确认分工再启动 Phase 2 |
-| 跳过讨论 | 直接 parallel，prompt 里写死分工 |
-| 单 phase | 只用 conversation，agents 边讨论边在 shared_cwd 写代码 |
-| 竞速选方案 | Phase 1 用 race 让多 agent 各出方案，人选最优再进 Phase 2 |
+| Variant | Difference |
+|---------|-----------|
+| Fully automatic | No pause, three phases scripted together |
+| Human approval | After Phase 1, human confirms assignment before Phase 2 |
+| Skip discussion | Direct parallel, assignment hardcoded in prompts |
+| Single phase | Conversation only, agents discuss and write code in shared_cwd |
+| Race for proposals | Phase 1 uses race for multiple proposals, human picks best, then Phase 2 |

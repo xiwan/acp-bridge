@@ -116,8 +116,8 @@ Agents don't know where files are unless you tell them. Downstream steps
 (especially QA) will loop on `fs_search` trying to locate files.
 
 ```
-❌  "用 fs_read 读取 sudoku.html"
-✅  "用 fs_read 读取 {{shared_cwd}}/sudoku.html"
+❌  "Read sudoku.html with fs_read"
+✅  "Read {{shared_cwd}}/sudoku.html with fs_read"
 ```
 
 ### 2. Verify artifacts on disk, not agent self-report
@@ -125,8 +125,8 @@ Agents don't know where files are unless you tell them. Downstream steps
 Agents often claim "saved successfully" but the file is 0 bytes or missing.
 
 ```
-❌  "写完后确认文件已保存"
-✅  "写完后执行 wc -c output.html 确认文件大于 N 字节"
+❌  "Confirm file saved after writing"
+✅  "After writing, run wc -c output.html to confirm file > N bytes"
 ```
 
 ### 3. Chain summaries, not raw output
@@ -136,9 +136,9 @@ Agents often claim "saved successfully" but the file is 0 bytes or missing.
 tokens. Two mitigations:
 
 - When artifact is on disk, let the next agent **read the file** instead of
-  receiving a text blob: `"读取 {{shared_cwd}}/PRD.md"` rather than `"PRD 内容：{{prd}}"`
+  receiving a text blob: `"Read {{shared_cwd}}/PRD.md"` rather than `"PRD content: {{prd}}"`
 - When text relay is needed, instruct the agent to end with a clean summary:
-  `"完成后用 --- 分隔，写 200 字以内摘要"`
+  `"After completion, separate with --- and write a summary under 200 words"`
 
 ### 4. Match preset to task verb
 
@@ -152,7 +152,7 @@ Read-only preset + write task → agent loops or produces 0-byte file.
 
 ### 5. QA / review steps: specify tool + strong model
 
-- Tell it which tool: `"使用 fs_read（不是 fs_search）读取文件"`
+- Tell it which tool: `"Use fs_read (not fs_search) to read the file"`
 - Large files (>10KB) need large context — specify `"model": "claude-sonnet"`
   instead of `"auto"`
 - Add read-only constraint if QA should not modify files
@@ -190,16 +190,16 @@ QA to misinterpret artifacts, and wastes tokens on implicit translation.
   "steps": [
     {
       "agent": "<write-capable>",
-      "prompt": "<task>。完成后执行 wc -c <file> 确认非空。",
+      "prompt": "<task>. After completion run wc -c <file> to confirm non-empty.",
       "output_as": "summary1"
     },
     {
       "agent": "<write-capable>",
-      "prompt": "读取 {{shared_cwd}}/<prev-file>，<task>。完成后执行 wc -c <file> 确认非空。"
+      "prompt": "Read {{shared_cwd}}/<prev-file>, <task>. After completion run wc -c <file> to confirm non-empty."
     },
     {
       "agent": "<review-capable>",
-      "prompt": "用 fs_read 读取 {{shared_cwd}}/<file> 完整源码，逐项验收。直接输出报告，不要保存文件。"
+      "prompt": "Use fs_read to read {{shared_cwd}}/<file> full source, review item by item. Output report directly, do not save files."
     }
   ]
 }
@@ -208,20 +208,20 @@ QA to misinterpret artifacts, and wastes tokens on implicit translation.
 Key: write steps verify with `wc -c`; read steps use `{{shared_cwd}}/filename`;
 chain via file on disk rather than `{{var}}`; QA step no `output_as`.
 
-### 10. OpenGame pipeline 约束
+### 10. OpenGame pipeline constraints
 
-OpenGame agent 内部有路径沙箱，只能写入 session cwd。
+OpenGame agent has an internal path sandbox — can only write to session cwd.
 
-- **`shared_cwd` 必须设为 `/tmp/opengame`** — 否则 OpenGame 写文件会被拦截，导致 idle timeout
-- **timeout 建议 300-900s** — 简单游戏 30-60s，复杂游戏 3-5 分钟
-- **harness 部署步骤用 shell_exec** — 直接执行 `aws s3 cp`，不要用 fs_read 读跨目录文件
+- **`shared_cwd` must be `/tmp/opengame`** — otherwise OpenGame file writes get blocked, causing idle timeout
+- **timeout recommended 300-900s** — simple games 30-60s, complex games 3-5 minutes
+- **harness deploy step uses shell_exec** — run `aws s3 cp` directly, do not use fs_read for cross-directory files
 
 ```json
 {
   "mode": "sequence",
   "steps": [
-    {"agent": "opengame", "prompt": "<游戏描述>，游戏名: <name>", "timeout": 300},
-    {"agent": "harness", "prompt": "部署 /tmp/opengame/<name>.html 到 S3。执行: aws s3 cp /tmp/opengame/<name>.html s3://opengame-demo-summit-2026/<name>/index.html --content-type text/html --region us-east-1 && aws cloudfront create-invalidation --distribution-id E3MU4MKLH39XO9 --paths \"/<name>/*\"。报告 URL: https://d1x0y8igxbg2j0.cloudfront.net/<name>/", "timeout": 60}
+    {"agent": "opengame", "prompt": "<game description>, game name: <name>", "timeout": 300},
+    {"agent": "harness", "prompt": "Deploy /tmp/opengame/<name>.html to S3. Run: aws s3 cp /tmp/opengame/<name>.html s3://opengame-demo-summit-2026/<name>/index.html --content-type text/html --region us-east-1 && aws cloudfront create-invalidation --distribution-id E3MU4MKLH39XO9 --paths \"/<name>/*\". Report URL: https://d1x0y8igxbg2j0.cloudfront.net/<name>/", "timeout": 60}
   ],
   "context": {"shared_cwd": "/tmp/opengame"}
 }
