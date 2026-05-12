@@ -108,120 +108,40 @@ After completion: show each step's result with agent name.
 
 ## Prompt Best Practices
 
-Lessons from 20+ real pipeline runs. Apply when crafting `steps[].prompt`.
+### 1. Use absolute paths: `{{shared_cwd}}/filename` — agents won't find files otherwise
 
-### 1. Always give absolute paths via `{{shared_cwd}}`
+### 2. Verify with `wc -c` — agents claim success but file may be empty
 
-Agents don't know where files are unless you tell them. Downstream steps
-(especially QA) will loop on `fs_search` trying to locate files.
+### 3. Chain via file on disk, not `{{var}}` — avoids passing noisy tool logs downstream
 
-```
-❌  "Read sudoku.html with fs_read"
-✅  "Read {{shared_cwd}}/sudoku.html with fs_read"
-```
+### 4. Match preset to verb: write/create → `developer`/`operator`/`admin`; read/review → any
 
-### 2. Verify artifacts on disk, not agent self-report
+### 5. QA steps: specify `fs_read` explicitly + strong model for large files
 
-Agents often claim "saved successfully" but the file is 0 bytes or missing.
+### 6. Static agents (kiro/claude) for writing; harness for reading — harness has sandbox + model quirks
 
-```
-❌  "Confirm file saved after writing"
-✅  "After writing, run wc -c output.html to confirm file > N bytes"
-```
+### 7. Avoid PTY (Codex) in later sequence steps — no session memory, 300s idle timeout
 
-### 3. Chain summaries, not raw output
+### 8. One language per pipeline — mixing wastes tokens on implicit translation
 
-`output_as` captures the agent's full reply — including model failover noise
-(`[model xxx failed, switching to yyy]`) and tool logs. This wastes downstream
-tokens. Two mitigations:
-
-- When artifact is on disk, let the next agent **read the file** instead of
-  receiving a text blob: `"Read {{shared_cwd}}/PRD.md"` rather than `"PRD content: {{prd}}"`
-- When text relay is needed, instruct the agent to end with a clean summary:
-  `"After completion, separate with --- and write a summary under 200 words"`
-
-### 4. Match preset to task verb
-
-| Task verb | Need | Wrong preset |
-|-----------|------|--------------|
-| write / save / create | `developer` `writer` `admin` | `reader` `reviewer` |
-| read / review / analyze | any | — |
-| run command | `executor` `operator` `developer` | `reader` `writer` |
-
-Read-only preset + write task → agent loops or produces 0-byte file.
-
-### 5. QA / review steps: specify tool + strong model
-
-- Tell it which tool: `"Use fs_read (not fs_search) to read the file"`
-- Large files (>10KB) need large context — specify `"model": "claude-sonnet"`
-  instead of `"auto"`
-- Add read-only constraint if QA should not modify files
-
-### 6. Static agents for writing, harness for reading
-
-Static agents (kiro/claude) have reliable tool use and no sandbox restrictions.
-Harness agents have sandboxed `fs` (limited to `shared_cwd`) and model
-compatibility varies — some models emit tool calls in formats harness-factory
-doesn't recognize, resulting in no actual execution.
-
-| Task type | Best choice | Why |
-|-----------|-------------|-----|
-| Write files, run commands | static `kiro` / `claude` | Reliable tool use, no sandbox |
-| Read/review/analyze within `shared_cwd` | harness (`reviewer` / `analyst`) | Sandboxed, read-only, cheap |
-| Generate code, write tests | static `claude` | Needs fs_write + shell |
-
-Typical pattern: static agent produces artifacts → harness agent reviews them.
-
-### 7. Avoid PTY agents (Codex) in later sequence steps
-
-PTY has no session memory and 300s idle timeout. Put Codex in step 1 or use
-it in `parallel` / `race`. Later steps with accumulated context → timeout.
-
-### 8. Keep prompt language consistent
-
-One language per pipeline. Mixing causes agents to switch output language,
-QA to misinterpret artifacts, and wastes tokens on implicit translation.
-
-### 9. Recommended sequence template
+### 9. Sequence template
 
 ```json
-{
-  "mode": "sequence",
-  "steps": [
-    {
-      "agent": "<write-capable>",
-      "prompt": "<task>. After completion run wc -c <file> to confirm non-empty.",
-      "output_as": "summary1"
-    },
-    {
-      "agent": "<write-capable>",
-      "prompt": "Read {{shared_cwd}}/<prev-file>, <task>. After completion run wc -c <file> to confirm non-empty."
-    },
-    {
-      "agent": "<review-capable>",
-      "prompt": "Use fs_read to read {{shared_cwd}}/<file> full source, review item by item. Output report directly, do not save files."
-    }
-  ]
-}
+{"mode": "sequence", "steps": [
+  {"agent": "<writer>", "prompt": "<task>. Run wc -c <file> to confirm.", "output_as": "s1"},
+  {"agent": "<writer>", "prompt": "Read {{shared_cwd}}/<file>, <task>. Run wc -c to confirm."},
+  {"agent": "<reviewer>", "prompt": "fs_read {{shared_cwd}}/<file>, review. Output report only."}
+]}
 ```
 
-Key: write steps verify with `wc -c`; read steps use `{{shared_cwd}}/filename`;
-chain via file on disk rather than `{{var}}`; QA step no `output_as`.
+### 10. OpenGame constraints
 
-### 10. OpenGame pipeline constraints
-
-OpenGame agent has an internal path sandbox — can only write to session cwd.
-
-- **`shared_cwd` must be `/tmp/opengame`** — otherwise OpenGame file writes get blocked, causing idle timeout
-- **timeout recommended 300-900s** — simple games 30-60s, complex games 3-5 minutes
-- **harness deploy step uses shell_exec** — run `aws s3 cp` directly, do not use fs_read for cross-directory files
+- **`shared_cwd` must be `/tmp/opengame`** — internal sandbox blocks other paths, causing idle timeout
+- **timeout 300-900s** — complex games take 3-5 min
+- **harness deploy uses shell_exec** — `aws s3 cp` directly
 
 ```json
-{
-  "mode": "sequence",
-  "steps": [
-    {"agent": "opengame", "prompt": "<game description>, game name: <name>", "timeout": 300},
-    {"agent": "harness", "prompt": "Deploy /tmp/opengame/<name>.html to S3. Run: aws s3 cp /tmp/opengame/<name>.html s3://opengame-demo-summit-2026/<name>/index.html --content-type text/html --region us-east-1 && aws cloudfront create-invalidation --distribution-id E3MU4MKLH39XO9 --paths \"/<name>/*\". Report URL: https://d1x0y8igxbg2j0.cloudfront.net/<name>/", "timeout": 60}
-  ],
-  "context": {"shared_cwd": "/tmp/opengame"}
-}
+{"mode": "sequence", "steps": [
+  {"agent": "opengame", "prompt": "<game desc>, game name: <name>", "timeout": 300},
+  {"agent": "harness", "prompt": "Deploy /tmp/opengame/<name>.html to S3. Run: aws s3 cp /tmp/opengame/<name>.html s3://opengame-demo-summit-2026/<name>/index.html --content-type text/html --region us-east-1 && aws cloudfront create-invalidation --distribution-id E3MU4MKLH39XO9 --paths \"/<name>/*\". Report URL: https://d1x0y8igxbg2j0.cloudfront.net/<name>/", "timeout": 60}
+], "context": {"shared_cwd": "/tmp/opengame"}}

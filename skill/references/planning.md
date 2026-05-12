@@ -1,161 +1,111 @@
 # Planning Workflow
 
-For natural-language tasks, pick **single call** / **pipeline** / **async job** / **chat**, then confirm before heavy execution.
+Classify → pick agents → present plan → execute.
 
 ## Step 1 — Classify intent
 
 | Signal | Route |
 |--------|-------|
-| Single verb, one agent, Q&A, **≤60s** | **Single call** — `/cli xx "..."` directly, no confirm |
-| Multiple verbs/agents, "first X then Y", "A and B discuss" | **Pipeline** — go to Step 2 |
-| Ongoing development, needs context | **Chat** — `/chat ko` |
-| **>60s** / long task / IM push / "notify me when done" | **Async job** — `POST /jobs` (see [async-jobs.md](async-jobs.md)) |
+| Single verb, one agent, ≤60s | `/cli xx "..."` directly, no plan |
+| Multiple agents / "first X then Y" / "discuss" | Pipeline → Step 2 |
+| Ongoing development, needs context | `/chat ko` |
+| >60s / long task / "notify me" | Async `POST /jobs` |
 
-**Duration estimation** (round up; prefer higher):
+Rule: estimated >60s → **must be async**. Multi-agent pipelines and conversations are always >60s.
 
-| Task shape | Estimate |
-|------------|----------|
-| One-liner Q&A, single-file read/write | <30s |
-| Single-agent review of a large file, medium code snippet | 30–60s |
-| Multi-agent pipeline (any mode) | **>60s, async** |
-| Conversation mode (2+ agents) | **>60s, async** |
-| Shell exec, grep many files, run tests | **>60s, async** |
-| User says "wait / need it now" + trivial task | Keep sync |
+## Step 2 — Pick agents
 
-## Step 2 — Pick agents (static + on-demand)
+Two sources:
+- **Static agents**: kiro, claude, codex, qwen, opencode, hermes, harness, opengame
+- **Dynamic harness** (`POST /harness`): specialized roles with preset permissions
 
-Two sources — consider **both** before orchestrating:
+Key rule: steps that **write files or run shell** → use static agents (kiro/claude) or harness with write-capable preset (developer/operator/admin). Read-only tasks → harness (reviewer/analyst/reader).
 
-| Source | When to use |
-|--------|-------------|
-| Static agents (kiro/claude/codex/qwen/opencode/hermes/harness…) | General tasks, known strengths, fast |
-| Harness-factory dynamic agents (`POST /harness`) | Specific permission set, specialized role, or multiple distinct presets collaborating |
+Fetch live list: `curl -s -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/agents" | jq '.agents[].name'`
 
-Fetch the live list:
+For preset details see [harness-presets.md](harness-presets.md).
 
-```bash
-curl -s -H "Authorization: Bearer $ACP_TOKEN" "$ACP_BRIDGE_URL/agents" | jq '.agents[].name'
-```
-
-For harness capability & model binding, see [harness-presets.md](harness-presets.md).
-
-**Capability–task gate (run before proceeding to Step 3):**
-
-For every step that involves persisting artifacts, verify the chosen preset has `Write? = yes`. If not:
-- Swap to a write-capable preset (`developer` / `writer` / `operator` / `admin`) or static `claude`, or
-- Rewrite the task to "return the content in your reply; no file writes"
-
-Task verbs that imply persistence: *write · save · produce a …doc · create …md · output …file · generate a PRD / report / code file*. If any such verb exists on a no-write preset → **STOP and revise**.
-
-**Agent selection rule for pipelines:**
-
-| Task type | Best agent | Why |
-|-----------|-----------|-----|
-| Write files, run commands, generate code | static `kiro` / `claude` | Reliable tool use, no sandbox restriction |
-| Read / review / analyze within shared_cwd | harness (`reviewer` / `analyst` / `reader`) | Sandboxed, read-only, cost-effective |
-| QA / verify artifacts | harness (read-only) or static agent | Depends on whether source is inside shared_cwd |
-
-**Typical pipeline pattern**: static agent produces artifacts → harness agent reviews them.
-
-Harness agents are sandboxed to `shared_cwd` and model compatibility varies. For any step that **must** write to disk or run shell commands, **always prefer static agents**. See [pipeline.md](pipeline.md) § Best Practices.
-
-## Step 3 — Present the plan (don't execute yet)
+## Step 3 — Present the plan
 
 ```
 📋 Execution plan
 
 **Decision summary**
-- Execution mode: sync / async (async = IM push; **>60s must be async**)
-- Agent count: single / multiple (N)
-- Task dependency: sequential / independent / shared
-- Orchestration mode: sequence | parallel | race | conversation | —
+- Execution mode: sync / async
+- Agent count: N
+- Orchestration: sequence | parallel | race | conversation | —
 - Max turns: N (conversation only; else —)
-- Timeout: N seconds (default 600)
-- Push target: Discord channel / Feishu user / — (async only)
+- Timeout: Ns
+- Push target: channel / —
 
 **Steps**
 
 | # | Agent | Task | Output var |
 |---|-------|------|-----------|
-| 1 | kiro | Review src/agents.py | review |
-| 2 | claude | Based on {{review}}, write pytest tests | — |
+| 1 | ... | ... | ... |
 
 Reply `yes` to execute.
 ```
 
 Rules:
-- **All 7 decision-summary lines are mandatory** — write `—` when n/a
-- **Always** show plan for pipeline / harness creation / async job / single-agent tasks estimated >30s
-- **Never** show plan for a `/cli` single call or `/chat` forward — execute immediately
-- If orchestration needs 2–5 agents, **pick a preset template** from [orchestration-patterns.md](orchestration-patterns.md) first
-- **Sync/async hard rule**: estimated >60s → mode field is `async`
-- Confirmation keyword: **`yes` only** (also `go / execute / confirm`)
+- All decision-summary lines mandatory (write `—` when n/a)
+- Show plan for pipeline / harness creation / async job / tasks >30s
+- Never show plan for single `/cli` call — execute immediately
+- For 2–5 agents, pick a template from [orchestration-patterns.md](orchestration-patterns.md)
+- Confirmation keyword: `yes` (also `go / execute / confirm`)
 
-## Step 4 — On `yes`, execute and relay the ID
+## Step 4 — Execute and relay ID
 
-Every execution response must echo the **full** ID (do not truncate):
-
-| Task | Required fields |
-|------|----------------|
+| Task | Echo |
+|------|------|
 | Async job | `job_id` |
 | Pipeline | `pipeline_id` |
-| Dynamic harness creation | returned `name`, `preset`, `model` |
-| Sync `/cli` | Show agent output directly |
+| Dynamic harness | `name`, `preset`, `model` |
+| Sync `/cli` | Agent output directly |
 
-For **pipeline / conversation completion**, append a **duration breakdown**:
+For pipeline completion, append duration: `⏱️ kiro 5.3s · claude 8.5s · total 31.9s`
 
-```
-⏱️  kiro 5.3s · claude 8.5s · total 31.9s   (6 turns, stop: MAX_TURNS)
-```
+## Step 4.1 — On failure
 
-## Step 4.1 — On failure, suggest a fallback
+Surface error verbatim + one line guidance. See [troubleshooting.md](troubleshooting.md).
 
-Surface the error verbatim **and** add one line of guidance. See [troubleshooting.md](troubleshooting.md) for the full diagnosis table.
+- `agent timeout` on PTY → swap to ACP agent
+- `[loop detected]` → preset can't write; use static agent
+- Instant completion with raw XML → model incompatible; use `deepseek-v3` or `claude-sonnet`
+- Identical failure twice → stop and ask
 
-Key rules:
-- `agent timeout` on PTY → swap to ACP agent (kiro/claude)
-- `[loop detected]` on harness → preset can't write; use static agent or rewrite prompt
-- Harness completes instantly with raw XML/markdown tool calls → model incompatible; specify `deepseek-v3` or `claude-sonnet`
-- "Retry" with no new direction → re-run **once**; if identical failure, stop and ask
-
-## Step 5 — Mode cheatsheet
-
-**Judge dependency first** (mode follows from it):
+## Step 5 — Mode selection
 
 ```
-Does task B need task A's output?
- ├─ YES (strict chain)            → sequence  (or conversation if multi-turn dialog)
- ├─ NO (independent, can diverge) → parallel / race
- └─ PARTIAL (share workspace)     → conversation  (or parallel + aggregate)
+Does B need A's output?
+ YES → sequence (or conversation for dialog)
+ NO  → parallel / race
 ```
-
-Anti-pattern: if tasks are **independent**, do NOT pick `sequence` just because the user said "first X, then Y" — confirm "are B's inputs from A, or just shared context?"
 
 | User says | Mode |
 |-----------|------|
 | "first X, then Y" | `sequence` |
 | "same time" / "parallel" | `parallel` |
 | "whoever is fastest" | `race` |
-| "discuss" / "debate" | `conversation` (default 6, max 12 turns) |
+| "discuss" / "debate" | `conversation` (default 6 turns) |
 
-## Step 6 — Common intent → plan quick lookup
+## Step 6 — Quick lookup
 
-| Intent | Suggested plan |
-|--------|----------------|
+| Intent | Plan |
+|--------|------|
 | "review this code" | Single `/cli ko` or `/cli cc` |
-| "review then write tests" | sequence: harness(`reviewer`) → claude writes tests |
-| "compare kiro's and claude's" | parallel: kiro + claude |
+| "review then write tests" | sequence: reviewer → claude |
+| "compare answers" | parallel: kiro + claude |
 | "have X and Y discuss" | conversation, 2 participants |
-| "build a weather-query agent" | `POST /harness` with `operator` preset |
-| "write PRD then implement" | sequence: claude writes PRD → claude implements |
+| "build an agent" | `POST /harness` |
 
-## Step 7 — Clarification heuristics
+## Step 7 — Clarification
 
-Ask **one** short question, not a list. Prefer defaults over interrogation:
+Ask **one** short question, not a list. Prefer defaults over interrogation.
 
 | Missing | Action |
 |---------|--------|
-| No agent | "Which one? kiro for coding, claude for review" |
-| Collaboration unclear | "Sequential relay or parallel+aggregate?" |
+| No agent specified | "Which one? kiro for coding, claude for review" |
+| Collaboration unclear | "Sequential or parallel?" |
 | Vague verb | "Review, refactor, or write tests?" |
-| Other details | **Don't ask** — use defaults |
+| Other details | Don't ask — use defaults |
