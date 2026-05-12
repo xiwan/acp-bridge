@@ -207,3 +207,21 @@ QA to misinterpret artifacts, and wastes tokens on implicit translation.
 
 Key: write steps verify with `wc -c`; read steps use `{{shared_cwd}}/filename`;
 chain via file on disk rather than `{{var}}`; QA step no `output_as`.
+
+### 10. OpenGame pipeline 约束
+
+OpenGame agent 内部有路径沙箱，只能写入 session cwd。
+
+- **`shared_cwd` 必须设为 `/tmp/opengame`** — 否则 OpenGame 写文件会被拦截，导致 idle timeout
+- **timeout 建议 300-900s** — 简单游戏 30-60s，复杂游戏 3-5 分钟
+- **harness 部署步骤用 shell_exec** — 直接执行 `aws s3 cp`，不要用 fs_read 读跨目录文件
+
+```json
+{
+  "mode": "sequence",
+  "steps": [
+    {"agent": "opengame", "prompt": "<游戏描述>，游戏名: <name>", "timeout": 300},
+    {"agent": "harness", "prompt": "部署 /tmp/opengame/<name>.html 到 S3。执行: aws s3 cp /tmp/opengame/<name>.html s3://opengame-demo-summit-2026/<name>/index.html --content-type text/html --region us-east-1 && aws cloudfront create-invalidation --distribution-id E3MU4MKLH39XO9 --paths \"/<name>/*\"。报告 URL: https://d1x0y8igxbg2j0.cloudfront.net/<name>/", "timeout": 60}
+  ],
+  "context": {"shared_cwd": "/tmp/opengame"}
+}
