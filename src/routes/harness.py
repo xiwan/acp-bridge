@@ -108,16 +108,24 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
         # Build agent config
         base_args = harness_base_cfg.get("acp_args", []) if harness_base_cfg else []
         skills_dir = harness_base_cfg.get("profile", {}).get("resources", {}).get("skills_dir", "") if harness_base_cfg else ""
+        working_dir = f"/tmp/{name}"
         agent_cfg = {
             "command": _binary,
             "acp_args": base_args + extra_acp_args,
-            "working_dir": f"/tmp/{name}",
+            "working_dir": working_dir,
             "mode": "acp",
             "profile": profile,
         }
         # Inherit skills_dir from base harness config
         if skills_dir:
             profile.setdefault("resources", {})
+            profile["resources"].setdefault("skills_dir", skills_dir)
+            # Also symlink skills into working_dir for preset mode (reads from cwd/skills/)
+            import os
+            target_link = os.path.join(working_dir, "skills")
+            os.makedirs(working_dir, exist_ok=True)
+            if not os.path.exists(target_link):
+                os.symlink(skills_dir, target_link)
             profile["resources"].setdefault("skills_dir", skills_dir)
 
         # Inject into process pool
