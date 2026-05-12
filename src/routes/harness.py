@@ -107,6 +107,7 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
 
         # Build agent config
         base_args = harness_base_cfg.get("acp_args", []) if harness_base_cfg else []
+        skills_dir = harness_base_cfg.get("profile", {}).get("resources", {}).get("skills_dir", "") if harness_base_cfg else ""
         agent_cfg = {
             "command": _binary,
             "acp_args": base_args + extra_acp_args,
@@ -114,6 +115,10 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
             "mode": "acp",
             "profile": profile,
         }
+        # Inherit skills_dir from base harness config
+        if skills_dir:
+            profile.setdefault("resources", {})
+            profile["resources"].setdefault("skills_dir", skills_dir)
 
         # Inject into process pool
         pool._config[name] = agent_cfg
