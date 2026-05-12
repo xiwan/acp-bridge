@@ -119,6 +119,31 @@ class AcpConnection:
                         data = json.dumps(reply) + "\n"
                         self.proc.stdin.write(data.encode())
                         asyncio.ensure_future(self.proc.stdin.drain())
+                    # Auto-reply fs requests (e.g. opengame ACP)
+                    elif msg.get("method") == "fs/read_text_file" and msg_id is not None:
+                        path = msg.get("params", {}).get("path", "")
+                        try:
+                            content = open(path).read()
+                            reply = {"jsonrpc": "2.0", "id": msg_id, "result": {"content": content}}
+                        except Exception as e:
+                            reply = {"jsonrpc": "2.0", "id": msg_id, "result": {"content": f"ERROR: ENOENT: {path}"}}
+                        data = json.dumps(reply) + "\n"
+                        self.proc.stdin.write(data.encode())
+                        asyncio.ensure_future(self.proc.stdin.drain())
+                    elif msg.get("method") == "fs/write_text_file" and msg_id is not None:
+                        params = msg.get("params", {})
+                        path = params.get("path", "")
+                        content = params.get("content", "")
+                        try:
+                            os.makedirs(os.path.dirname(path), exist_ok=True) if os.path.dirname(path) else None
+                            with open(path, "w") as f:
+                                f.write(content)
+                            reply = {"jsonrpc": "2.0", "id": msg_id, "result": {}}
+                        except Exception as e:
+                            reply = {"jsonrpc": "2.0", "id": msg_id, "error": {"code": -1, "message": str(e)}}
+                        data = json.dumps(reply) + "\n"
+                        self.proc.stdin.write(data.encode())
+                        asyncio.ensure_future(self.proc.stdin.drain())
                     for q in self._notification_queues.values():
                         q.put_nowait(msg)
         except Exception as e:
@@ -159,12 +184,21 @@ class AcpConnection:
         self._start_reader()
         result = await self._send_request("initialize", {
             "protocolVersion": 1,
-            "clientCapabilities": {},
+            "clientCapabilities": {
+                "fs": {"readTextFile": True, "writeTextFile": True},
+            },
             "clientInfo": {"name": "acp-bridge", "version": _VERSION},
         })
         log.info("initialized: agent=%s version=%s",
                  result.get("agentInfo", {}).get("name"),
                  result.get("agentInfo", {}).get("version"))
+        # Auto-authenticate if agent requires it and OPENAI_API_KEY is set
+        auth_methods = result.get("authMethods", [])
+        if auth_methods:
+            method_ids = [m.get("id") for m in auth_methods]
+            if "openai" in method_ids:
+                await self._send_request("authenticate", {"methodId": "openai"})
+                log.info("auto-authenticated: method=openai")
         return result
 
     async def session_new(self, cwd: str, profile: dict | None = None) -> str:

@@ -11,6 +11,7 @@
 | [Kiro CLI](https://github.com/aws/kiro-cli) | AWS | ✅ Native | `acp` | ✅ Integrated | 7/7 | `curl -fsSL https://cli.kiro.dev/install \| bash` |
 | [Claude Code](https://github.com/anthropics/claude-code) | Anthropic | ✅ Native | `acp` | ✅ Integrated | 5/5 | `npm i -g @agentclientprotocol/claude-agent-acp` |
 | [Qwen Code](https://www.npmjs.com/package/@anthropic-ai/qwen-code) | Alibaba | ✅ `--acp` | `acp` | ✅ Integrated | 6/6 | `npm i -g @anthropic-ai/qwen-code` |
+| [OpenGame](https://github.com/leigest519/OpenGame) | Open Source | ✅ `--acp` | `acp` | ✅ Integrated | — | See [repo](https://github.com/leigest519/OpenGame) |
 | [OpenAI Codex](https://github.com/openai/codex) | OpenAI | ❌ | `pty` | ✅ Integrated | 6/6 | `npm i -g @openai/codex` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google | 🧪 Experimental | — | 🟡 Planned | — | — |
 | [Copilot CLI](https://docs.github.com/en/copilot/reference/acp-server) | GitHub | ✅ `--acp` | — | 🟡 Planned | — | — |
@@ -87,6 +88,17 @@ agents:
 - Dynamic creation at runtime via `POST /harness`
 - Built-in model registry with `"auto"` random selection and error fallback
 - Presets: `reader`, `executor`, `scout`, `reviewer`, `analyst`, `researcher`, `developer`, `writer`, `operator`, `admin`
+- External skills via `skills_dir` in profile config (e.g. `s3-deploy` for static file deployment)
+
+### OpenGame
+
+- Fork of Qwen Code, specialized for AI web game generation
+- Uses `--acp` flag (same ACP protocol as Qwen Code)
+- Requires `QWEN_CODE_NO_RELAUNCH=1` to prevent subprocess relaunch in non-TTY
+- Requires `authenticate(openai)` call before `session/new` — Bridge handles this automatically
+- Requires `fs` client capability — Bridge provides `readTextFile` and `writeTextFile`
+- Generated files written to `working_dir` (default `/tmp/opengame/`)
+- Works well in sequence pipeline with harness for auto-deployment to S3
 
 ### Hermes Agent
 

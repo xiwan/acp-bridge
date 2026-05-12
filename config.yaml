@@ -54,7 +54,7 @@ security:
 
 litellm:
   url: "http://localhost:4000"
-  required_by: ["codex", "qwen", "harness"]
+  required_by: ["codex", "qwen", "opengame", "harness"]
   env:
     LITELLM_API_KEY: "${LITELLM_API_KEY}"
 
@@ -188,6 +188,33 @@ agents:
       links:
         - {type: "source-code", url: "https://github.com/QwenLM/qwen-code"}
         - {type: "documentation", url: "https://qwenlm.github.io/qwen-code-docs"}
+  opengame:
+    enabled: true
+    mode: "acp"
+    command: "node"
+    acp_args: ["/home/ec2-user/githubs/OpenGame/packages/cli/dist/index.js", "--acp"]
+    working_dir: "/tmp/opengame"
+    idle_ttl: 0
+    description: "OpenGame - AI-powered web game generator from a prompt"
+    heartbeat: false
+    env:
+      QWEN_CODE_NO_RELAUNCH: "1"
+      OPENAI_API_KEY: "${LITELLM_API_KEY}"
+      OPENAI_BASE_URL: "http://localhost:4000/v1"
+      OPENAI_MODEL: "bedrock/anthropic.claude-sonnet-4-6"
+      OPENGAME_REASONING_PROVIDER: "openai-compat"
+      OPENGAME_REASONING_API_KEY: "${LITELLM_API_KEY}"
+      OPENGAME_REASONING_BASE_URL: "http://localhost:4000/v1"
+      OPENGAME_REASONING_MODEL: "bedrock/anthropic.claude-sonnet-4-6"
+    metadata:
+      author: {name: "OpenGame Team", url: "https://github.com/leigest519/OpenGame"}
+      license: "Apache-2.0"
+      programming_language: "TypeScript"
+      natural_languages: ["en", "zh"]
+      domains: ["game-generation", "web-games", "creative"]
+      tags: ["opengame", "h5-game", "ai-generation"]
+      links:
+        - {type: "source-code", url: "https://github.com/leigest519/OpenGame"}
   opencode:
     enabled: true
     mode: "acp"
@@ -240,7 +267,7 @@ agents:
     profile:
       tools:
         fs: { permissions: [read, write, list, search] }
-        shell: { allowlist: [echo, ls, cat, date] }
+        shell: { allowlist: [echo, ls, cat, date, aws, curl] }
       orchestration: free
       resources:
         timeout: 120s

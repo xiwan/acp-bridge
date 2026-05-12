@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.19.0 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/openclaw/agent Task/任务/编排/Orchestration or anything similar"
+description: "v0.19.1 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/openclaw/opengame/agent Task/任务/编排/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -59,7 +59,7 @@ Commentary allowed *after* full output, separated with `---` and prefixed `💬 
 
 ## Commands (aliases)
 
-`./cli <prompt>` (default agent) · `./cli ko|cc|cx|qw|oc|hm|hf "..."` (kiro / claude / codex / qwen / opencode / hermes / harness) · `/chat ko|cc [--cwd <path>]` (enter) · `/chat end|status` · `/upload <file>` · `/hb [status|logs|ping|ctx]` (heartbeat)
+`./cli <prompt>` (default agent) · `./cli ko|cc|cx|qw|oc|hm|hf|og "..."` (kiro / claude / codex / qwen / opencode / hermes / harness / opengame) · `/chat ko|cc [--cwd <path>]` (enter) · `/chat end|status` · `/upload <file>` · `/hb [status|logs|ping|ctx]` (heartbeat)
 
 ## References
 
