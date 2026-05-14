@@ -95,6 +95,7 @@ curl -s -X POST http://localhost:18010/runs \
 | [Testing](docs/testing.md) | Agent compliance tests, integration test suite |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and fixes |
 | [Agent Spec](AGENT_SPEC.md) | ACP JSON-RPC protocol for writing new agents |
+| [MCP Server](mcp-server/README.md) | Use Bridge agents from any MCP client (Claude Desktop, Kiro, Cursor) |
 
 ## Video Tutorials
 
@@ -107,7 +108,7 @@ curl -s -X POST http://localhost:18010/runs \
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.19.1
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.20.0
 
 ## Contributing
 

@@ -34,3 +34,4 @@ test/scratch/
 .DS_Store
 design/
 test/reports/
+mcp-server/.venv
