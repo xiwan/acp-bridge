@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -16,9 +15,8 @@ from .exceptions import AgentModelError, AgentRateLimitError, AgentTimeoutError
 from .formatters import get_formatter, get_prompt_suffix
 from .sse import transform_notification
 from .store import JobStore
+from .utils import run_pty_subprocess
 from .webhook import WebhookSender, chunk_text
-
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
 
 log = logging.getLogger("acp-bridge.jobs")
 
@@ -328,58 +326,18 @@ class JobManager:
 
     async def _run_pty(self, job: Job):
         cfg = self._pty_configs[job.agent]
-        command = cfg["command"]
-        args = cfg.get("args", [])
-        idle_timeout = cfg.get("idle_timeout", 300)
-        max_duration = cfg.get("max_duration", 600)
-        env = os.environ.copy()
-        env.update({"TERM": "dumb", "NO_COLOR": "1", "LANG": "en_US.UTF-8"})
-        env.update(cfg.get("env", {}))
-        parts = []
-        _t0 = time.time()
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                command, *args, job.prompt,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.DEVNULL,
-                cwd=job.cwd or cfg.get("working_dir", "/tmp"),
-                env=env,
-            )
-            while True:
-                if time.time() - _t0 > max_duration:
-                    log.warning("pty_max_duration: job=%s cmd=%s dur=%ds", job.job_id, command, max_duration)
-                    proc.kill()
-                    await proc.wait()
-                    job.error = f"agent exceeded max_duration ({max_duration}s)"
-                    job.status = "failed"
-                    return
-                try:
-                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=idle_timeout)
-                except asyncio.TimeoutError:
-                    log.warning("pty_timeout: job=%s cmd=%s idle=%ds", job.job_id, command, idle_timeout)
-                    proc.kill()
-                    await proc.wait()
-                    job.error = f"agent timeout (idle {idle_timeout}s)"
-                    job.status = "failed"
-                    return
-                except (asyncio.LimitOverrunError, ValueError):
-                    log.warning("pty_line_too_long: job=%s cmd=%s", job.job_id, command)
-                    continue
-                if not line:
-                    break
-                text = ANSI_RE.sub("", line.decode()).rstrip("\n")
-                if text:
-                    parts.append(text + "\n")
-            await proc.wait()
-            job.status = "completed" if proc.returncode == 0 else "failed"
-            if proc.returncode != 0:
-                stderr = (await proc.stderr.read()).decode().strip()
-                job.error = stderr or f"exit code {proc.returncode}"
-        except Exception as e:
-            job.error = str(e)
-            job.status = "failed"
-        job.result = "".join(parts)
+        result = await run_pty_subprocess(
+            command=cfg["command"],
+            args=cfg.get("args", []),
+            prompt=job.prompt,
+            cwd=job.cwd or cfg.get("working_dir", "/tmp"),
+            env_overrides=cfg.get("env"),
+            idle_timeout=cfg.get("idle_timeout", 300),
+            max_duration=cfg.get("max_duration", 600),
+        )
+        job.status = result.status
+        job.result = result.output
+        job.error = result.error
 
     MAX_WEBHOOK_RETRIES = 5
 

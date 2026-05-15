@@ -38,6 +38,7 @@ class StatsCollector:
     def __init__(self, db_path: str = "data/jobs.db"):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(db_path, check_same_thread=False)
+        self._db.execute("PRAGMA journal_mode=WAL")
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
         self._lock = threading.Lock()

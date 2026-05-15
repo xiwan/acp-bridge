@@ -150,6 +150,16 @@ def get_best_fallback(
     if not pool and not stats:
         return candidates[0]
 
+    # Pre-compute idle agents set (O(N) once instead of O(N) per candidate)
+    idle_agents: set[str] = set()
+    if pool:
+        try:
+            for (a, _), conn in list(pool._connections.items()):
+                if conn.state == "idle":
+                    idle_agents.add(a)
+        except RuntimeError:
+            pass
+
     # Pre-fetch stats for all candidates (P1 fix: avoid repeated queries in score())
     stats_cache: dict[str, tuple[dict, dict]] = {}
     if stats:
@@ -162,15 +172,7 @@ def get_best_fallback(
     def score(agent: str) -> float:
         cb_weight = 0.5 if cb_states[agent] == CircuitState.HALF_OPEN else 1.0
 
-        has_idle = False
-        if pool:
-            try:
-                for (a, _), conn in list(pool._connections.items()):
-                    if a == agent and conn.state == "idle":
-                        has_idle = True
-                        break
-            except RuntimeError:
-                pass
+        has_idle = agent in idle_agents
 
         s_1h, s_15m = stats_cache.get(agent, ({}, {}))
         rate_1h = s_1h.get("success_rate", 1.0)

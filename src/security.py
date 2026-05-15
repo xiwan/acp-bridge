@@ -30,6 +30,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         self.rate_window = rate_window
         self.max_body = max_body
         self._hits: dict[str, list[float]] = {}  # ip -> [timestamps]
+        self._purge_counter: int = 0
 
     def _ip_allowed(self, ip: str) -> bool:
         if not self._plain_ips and not self._networks:
@@ -54,6 +55,13 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             return False
         hits.append(now)
         self._hits[ip] = hits
+        # Periodic purge of stale IPs (every 1000 requests)
+        self._purge_counter += 1
+        if self._purge_counter >= 1000:
+            self._purge_counter = 0
+            stale_ips = [k for k, v in self._hits.items() if not v or v[-1] < cutoff]
+            for k in stale_ips:
+                del self._hits[k]
         return True
 
     async def dispatch(self, request: Request, call_next):

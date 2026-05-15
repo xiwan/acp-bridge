@@ -74,6 +74,19 @@ class AcpConnection:
         self._reader_task = asyncio.create_task(self._read_loop())
         self._stderr_task = asyncio.create_task(self._drain_stderr())
 
+    def _auto_reply(self, msg_id: int, result: dict) -> None:
+        """Send a JSON-RPC response back to the agent subprocess."""
+        reply = {"jsonrpc": "2.0", "id": msg_id, "result": result}
+        data = json.dumps(reply) + "\n"
+        self.proc.stdin.write(data.encode())
+        asyncio.ensure_future(self.proc.stdin.drain())
+
+    def _auto_reply_error(self, msg_id: int, code: int, message: str) -> None:
+        reply = {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
+        data = json.dumps(reply) + "\n"
+        self.proc.stdin.write(data.encode())
+        asyncio.ensure_future(self.proc.stdin.drain())
+
     async def _drain_stderr(self) -> None:
         try:
             while True:
@@ -113,23 +126,16 @@ class AcpConnection:
                     if msg.get("method") == "session/request_permission" and msg_id is not None:
                         log.info("auto-allow permission: %s",
                                  msg.get("params", {}).get("toolCall", {}).get("title", "?"))
-                        reply = {"jsonrpc": "2.0", "id": msg_id,
-                                 "result": {"outcome": {"outcome": "selected",
-                                                        "optionId": "proceed_always"}}}
-                        data = json.dumps(reply) + "\n"
-                        self.proc.stdin.write(data.encode())
-                        asyncio.ensure_future(self.proc.stdin.drain())
+                        self._auto_reply(msg_id, {"outcome": {"outcome": "selected",
+                                                              "optionId": "proceed_always"}})
                     # Auto-reply fs requests (e.g. opengame ACP)
                     elif msg.get("method") == "fs/read_text_file" and msg_id is not None:
                         path = msg.get("params", {}).get("path", "")
                         try:
                             content = open(path).read()
-                            reply = {"jsonrpc": "2.0", "id": msg_id, "result": {"content": content}}
+                            self._auto_reply(msg_id, {"content": content})
                         except Exception as e:
-                            reply = {"jsonrpc": "2.0", "id": msg_id, "result": {"content": f"ERROR: ENOENT: {path}"}}
-                        data = json.dumps(reply) + "\n"
-                        self.proc.stdin.write(data.encode())
-                        asyncio.ensure_future(self.proc.stdin.drain())
+                            self._auto_reply(msg_id, {"content": f"ERROR: ENOENT: {path}"})
                     elif msg.get("method") == "fs/write_text_file" and msg_id is not None:
                         params = msg.get("params", {})
                         path = params.get("path", "")
@@ -138,12 +144,9 @@ class AcpConnection:
                             os.makedirs(os.path.dirname(path), exist_ok=True) if os.path.dirname(path) else None
                             with open(path, "w") as f:
                                 f.write(content)
-                            reply = {"jsonrpc": "2.0", "id": msg_id, "result": {}}
+                            self._auto_reply(msg_id, {})
                         except Exception as e:
-                            reply = {"jsonrpc": "2.0", "id": msg_id, "error": {"code": -1, "message": str(e)}}
-                        data = json.dumps(reply) + "\n"
-                        self.proc.stdin.write(data.encode())
-                        asyncio.ensure_future(self.proc.stdin.drain())
+                            self._auto_reply_error(msg_id, -1, str(e))
                     for q in self._notification_queues.values():
                         q.put_nowait(msg)
         except Exception as e:
@@ -249,8 +252,9 @@ class AcpConnection:
                     notification = await asyncio.wait_for(q.get(), timeout=1.0)
                     if notification is None:
                         break
-                    last_event_time = time.time()
-                    self.last_active = time.time()
+                    now = time.time()
+                    last_event_time = now
+                    self.last_active = now
                     yield notification
                 except asyncio.TimeoutError:
                     continue
@@ -319,6 +323,7 @@ class AcpProcessPool:
         self._connections: dict[tuple[str, str], AcpConnection] = {}
         self._memory_limit_pct: float = 80.0
         self._lock = asyncio.Lock()
+        self._pids_dirty: bool = False
 
     @staticmethod
     def _agent_group(agent: str) -> str:
@@ -479,6 +484,7 @@ class AcpProcessPool:
             conn = self._connections.pop(key)
             log.info("cleanup idle: agent=%s session=%s", key[0], key[1])
             await conn.kill()
+        self.flush_pids()
 
     @staticmethod
     def _mem_used_pct() -> float:
@@ -548,13 +554,21 @@ class AcpProcessPool:
             log.info("shutdown: killing agent=%s session=%s", key[0], key[1])
             await conn.kill()
         self._connections.clear()
+        self.flush_pids()
 
     _pidfile = Path("/tmp/acp-bridge-pids")
 
     def _save_pids(self) -> None:
-        """Persist managed subprocess PIDs to disk for ghost cleanup across restarts."""
+        """Mark pids as dirty — actual write happens in flush_pids()."""
+        self._pids_dirty = True
+
+    def flush_pids(self) -> None:
+        """Write managed subprocess PIDs to disk (called periodically by cleanup loop)."""
+        if not self._pids_dirty:
+            return
         pids = {str(c.proc.pid) for c in self._connections.values()}
         self._pidfile.write_text("\n".join(pids) + "\n" if pids else "")
+        self._pids_dirty = False
 
     def cleanup_ghosts(self) -> int:
         """Kill orphaned agent processes recorded by a previous Bridge run."""

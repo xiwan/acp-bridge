@@ -14,13 +14,13 @@ from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
 from .formatters import PipelineFormatter, get_template, get_prompt_suffix
 from .sse import transform_notification
 from .store import PipelineStore
+from .utils import run_pty_subprocess
 from .webhook import WebhookSender, chunk_text
 
 log = logging.getLogger("acp-bridge.pipeline")
 
 AGENT_ICONS = {"kiro": "🟢", "claude": "🟣", "codex": "🔵", "qwen": "🟠", "opencode": "⚪"}
 _SEPARATOR = get_template("components", "separator", "━━━━━━━━━━━━━━━━━━━━")
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
 MAX_OUTPUT_SIZE = 1 * 1024 * 1024  # 1 MB — truncate step output beyond this
 MENTION_RE = re.compile(r"@(\w+)")
 _VAR_RE = re.compile(r"\{\{(\w+)\}\}")
@@ -161,6 +161,15 @@ class PipelineManager:
 
     def get_transcript(self, pipeline_id: str) -> list[dict]:
         return self._store.load_transcript(pipeline_id)
+
+    def cleanup(self, max_age: float = 3600) -> int:
+        """Remove completed pipelines older than max_age from in-memory cache."""
+        now = time.time()
+        stale = [pid for pid, pl in self._pipelines.items()
+                 if pl.completed_at > 0 and now - pl.completed_at > max_age]
+        for pid in stale:
+            del self._pipelines[pid]
+        return len(stale)
 
     def list_all(self, limit: int = 50) -> list[Pipeline]:
         seen = set(self._pipelines.keys())
@@ -724,53 +733,18 @@ class PipelineManager:
         step.result = "".join(parts)
 
     async def _exec_step_pty(self, step: PipelineStep, prompt: str, cfg: dict):
-        command = cfg["command"]
-        args = cfg.get("args", [])
-        idle_timeout = cfg.get("idle_timeout", 300)
-        max_duration = cfg.get("max_duration", 600)
-        env = os.environ.copy()
-        env.update({"TERM": "dumb", "NO_COLOR": "1", "LANG": "en_US.UTF-8"})
-        env.update(cfg.get("env", {}))
-        parts = []
-        _t0 = time.time()
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                command, *args, prompt,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.DEVNULL,
-                cwd=cfg.get("working_dir", "/tmp"), env=env,
-            )
-            while True:
-                if time.time() - _t0 > max_duration:
-                    proc.kill()
-                    await proc.wait()
-                    step.error = f"agent exceeded max_duration ({max_duration}s)"
-                    step.status = "failed"
-                    return
-                try:
-                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=idle_timeout)
-                except asyncio.TimeoutError:
-                    proc.kill()
-                    await proc.wait()
-                    step.error = f"agent timeout (idle {idle_timeout}s)"
-                    step.status = "failed"
-                    return
-                except (asyncio.LimitOverrunError, ValueError):
-                    continue
-                if not line:
-                    break
-                text = ANSI_RE.sub("", line.decode()).rstrip("\n")
-                if text:
-                    parts.append(text + "\n")
-            await proc.wait()
-            step.status = "completed" if proc.returncode == 0 else "failed"
-            if proc.returncode != 0:
-                stderr = (await proc.stderr.read()).decode().strip()
-                step.error = stderr or f"exit code {proc.returncode}"
-        except Exception as e:
-            step.error = str(e)
-            step.status = "failed"
-        step.result = "".join(parts)
+        result = await run_pty_subprocess(
+            command=cfg["command"],
+            args=cfg.get("args", []),
+            prompt=prompt,
+            cwd=cfg.get("working_dir", "/tmp"),
+            env_overrides=cfg.get("env"),
+            idle_timeout=cfg.get("idle_timeout", 300),
+            max_duration=cfg.get("max_duration", 600),
+        )
+        step.status = result.status
+        step.result = result.output
+        step.error = result.error
 
     @staticmethod
     def _render(template: str, context: dict) -> str:

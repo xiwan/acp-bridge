@@ -6,6 +6,12 @@
 
 set -uo pipefail
 
+# Auto-load .env if token not already set
+if [[ -z "${ACP_TOKEN:-}" ]]; then
+  _env="$(cd "$(dirname "$0")/.." && pwd)/.env"
+  [[ -f "$_env" ]] && set -a && source "$_env" && set +a
+fi
+
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
 INT_DIR="$TEST_DIR/integration"
 export ACP_BRIDGE_URL="${1:-http://127.0.0.1:18010}"

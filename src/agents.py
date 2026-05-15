@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import re
 import time
 import uuid
 from collections.abc import AsyncGenerator
@@ -26,6 +25,7 @@ from .heartbeat import EnvCollector
 from .sse import transform_notification
 from .stats import StatsCollector
 from .trace_impl import init_trace, get_trace, start_span, finish_span
+from .utils import strip_ansi
 
 log = logging.getLogger("acp-bridge.agents")
 
@@ -56,13 +56,6 @@ def get_circuit_breaker(agent: str) -> CircuitBreaker:
             )
             log.info("circuit_breaker_created: agent=%s", agent)
         return _circuit_breakers[agent]
-
-
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?25[hl]")
-
-
-def strip_ansi(text: str) -> str:
-    return ANSI_RE.sub("", text)
 
 
 async def _execute_agent_call(

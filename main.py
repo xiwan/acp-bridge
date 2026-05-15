@@ -145,7 +145,7 @@ def main():
             litellm_env = litellm_cfg.get("env", {})
             api_key = litellm_env.get("LITELLM_API_KEY", "")
             headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-            resp = httpx.get(f"{litellm_url}/health/liveliness", timeout=15, headers=headers)
+            resp = httpx.get(f"{litellm_url}/health/liveliness", timeout=5, headers=headers)
             resp.raise_for_status()
             log.info("litellm: reachable at %s", litellm_url)
             for name in required_by:
@@ -337,9 +337,12 @@ def main():
                 await pool.health_check(busy_timeout=busy_timeout)
                 await pool.cleanup_idle(ttl_hours * 3600)
                 await pool.memory_evict()
+                pool.flush_pids()
                 pool.cleanup_ghosts()
             if job_mgr:
                 job_mgr.cleanup()
+            if pipeline_mgr:
+                pipeline_mgr.cleanup()
             stats_collector.delete_old()
 
     heartbeat_interval = heartbeat_cfg.get("interval", 0)
