@@ -61,6 +61,17 @@ def register(app, job_mgr: JobManager | None, webhook_account_id: str, webhook_d
             return JSONResponse({"error": "job not found"}, status_code=404)
         return Response(content=job.result or "", media_type="text/markdown; charset=utf-8")
 
+    @app.get("/jobs/{job_id}/live")
+    async def get_job_live(job_id: str = PathParam(...)):
+        if not job_mgr:
+            return JSONResponse({"error": "no pool configured"}, status_code=500)
+        job = job_mgr.get(job_id)
+        if not job:
+            return JSONResponse({"error": "job not found"}, status_code=404)
+        content = job.result if job.status in ("completed", "failed") else "".join(job._live_parts)
+        return {"job_id": job_id, "agent": job.agent, "status": job.status,
+                "content": content, "parts_count": len(job._live_parts)}
+
     @app.get("/jobs")
     async def list_jobs():
         if not job_mgr:

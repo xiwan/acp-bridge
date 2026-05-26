@@ -118,6 +118,68 @@ GET /pipelines/{id}/artifacts
 # Returns: {"shared_cwd": "...", "files": [{"path": "game.js", "size": 1234}, ...]}
 ```
 
+## Live Observability (v0.21.0)
+
+Three ways to follow a running pipeline in real time, choose by use case:
+
+### 1. SSE event stream — recommended for programmatic clients
+
+Subscribe to lifecycle events as they happen. Stream auto-closes on `pipeline_done`.
+
+```bash
+curl -sN http://localhost:18010/pipelines/{id}/events \
+  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN"
+```
+
+Event types:
+
+| event | data |
+|-------|------|
+| `pipeline_started` | `{pipeline_id, mode, steps, shared_cwd, agents}` |
+| `step_started` | `{index, agent, prompt_preview}` |
+| `step_completed` | `{index, agent, duration, status, result_preview}` |
+| `step_failed` | `{index, agent, duration, status, error}` |
+| `pipeline_done` | `{pipeline_id, status, duration, error}` |
+| `heartbeat` | `{ts}` (every 15s during running steps) |
+
+**Late-connect replay**: connecting to a pipeline that already started (or finished) replays the full event history first, then streams live (or closes if already done). This means clients don't need to subscribe before submitting.
+
+**Quick CLI**: `tools/pipeline-events.sh <pid>` wraps the SSE stream with human-readable output.
+
+```
+[06:29:10] 🚀 pipeline_started  mode=sequence steps=3  harness → opengame → kiro
+[06:29:11] ▶️  step_started     idx=0 agent=harness
+[06:29:18] ✅ step_completed   idx=0 agent=harness dur=6.8s  | <preview>
+[06:29:19] ▶️  step_started     idx=1 agent=opengame
+[...]
+```
+
+### 2. Polling — for shell scripts
+
+```bash
+GET /pipelines/{id}                       # full status snapshot
+GET /pipelines/{id}/steps/{idx}/live      # streaming buffer of a running step
+```
+
+CLI helper: `tools/pipeline-watch.sh <pid> [interval]` polls and prints transitions only.
+
+### 3. Webhook push — for IM integration
+
+Add `target` and `channel` to the pipeline submission:
+
+```json
+{
+  "mode": "sequence",
+  "target": "channel:1469723146134356173",
+  "channel": "discord",
+  "steps": [...]
+}
+```
+
+Each step completion immediately posts a formatted message to your IM channel via the configured `webhook.url`. See [webhooks.md](webhooks.md) for the payload format.
+
+---
+
 ## Architecture — Interaction Modes
 
 ```

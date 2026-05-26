@@ -45,6 +45,7 @@ class Job:
     output_tokens: int = 0
     cost_usd: float = 0.0
     model_name: str = ""
+    _live_parts: list = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict:
         d = {"job_id": self.job_id, "agent": self.agent, "session_id": self.session_id,
@@ -229,6 +230,7 @@ class JobManager:
 
     async def _stream_agent(self, job: Job, parts: list) -> bool:
         """Stream a single agent call. Appends to parts, updates job status. Returns True on success."""
+        job._live_parts = parts
         conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
         try:
             async for notification in conn.session_prompt(job.prompt + get_prompt_suffix()):

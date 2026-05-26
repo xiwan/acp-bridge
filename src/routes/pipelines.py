@@ -1,7 +1,10 @@
 """Pipeline endpoints — submit, query, list."""
 
+import asyncio
+import json
+
 from fastapi import Path as PathParam
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from ..pipeline import PipelineManager
@@ -129,6 +132,71 @@ def register(app, pipeline_mgr: PipelineManager | None,
         if not pl._gate.is_set():
             pl._gate.set()
         return {"pipeline_id": pipeline_id, "injected": True, "message": message[:100]}
+
+    @app.get("/pipelines/{pipeline_id}/events")
+    async def stream_pipeline_events(pipeline_id: str = PathParam(...)):
+        """Server-Sent Events stream of pipeline lifecycle events.
+
+        On connect: replay history (events already emitted), then stream live.
+        Stream closes after `pipeline_done` event.
+        Heartbeat every 15s keeps proxies/load balancers from killing the connection.
+        """
+        if not pipeline_mgr:
+            return JSONResponse({"error": "pipeline not available"}, status_code=503)
+        pl = pipeline_mgr.get(pipeline_id)
+        if not pl:
+            return JSONResponse({"error": "pipeline not found"}, status_code=404)
+
+        async def gen():
+            # 1. Replay history
+            for evt in list(pl._event_history):
+                yield f"event: {evt['event']}\ndata: {json.dumps(evt['data'])}\n\n"
+
+            # 2. If already finished, close immediately
+            if pl.status in ("completed", "failed"):
+                return
+
+            # 3. Subscribe to live stream
+            q: asyncio.Queue = asyncio.Queue(maxsize=1000)
+            pl._event_subs.add(q)
+            try:
+                while True:
+                    try:
+                        evt = await asyncio.wait_for(q.get(), timeout=15.0)
+                    except asyncio.TimeoutError:
+                        # Heartbeat keeps connection alive
+                        import time as _t
+                        yield f"event: heartbeat\ndata: {json.dumps({'ts': _t.time()})}\n\n"
+                        continue
+                    if evt is None:
+                        # End-of-stream sentinel posted by _run on completion
+                        return
+                    yield f"event: {evt['event']}\ndata: {json.dumps(evt['data'])}\n\n"
+            finally:
+                pl._event_subs.discard(q)
+
+        return StreamingResponse(
+            gen(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",  # disable nginx buffering
+            },
+        )
+
+    @app.get("/pipelines/{pipeline_id}/steps/{step_index}/live")
+    async def get_step_live(pipeline_id: str = PathParam(...), step_index: int = PathParam(...)):
+        if not pipeline_mgr:
+            return JSONResponse({"error": "pipeline not available"}, status_code=503)
+        pl = pipeline_mgr.get(pipeline_id)
+        if not pl:
+            return JSONResponse({"error": "pipeline not found"}, status_code=404)
+        if step_index < 0 or step_index >= len(pl.steps):
+            return JSONResponse({"error": "step index out of range"}, status_code=400)
+        step = pl.steps[step_index]
+        content = step.result if step.status in ("completed", "failed") else "".join(step._live_parts)
+        return {"pipeline_id": pipeline_id, "step": step_index, "agent": step.agent,
+                "status": step.status, "content": content, "parts_count": len(step._live_parts)}
 
     @app.get("/pipelines/{pipeline_id}/artifacts")
     async def list_artifacts(pipeline_id: str = PathParam(...)):

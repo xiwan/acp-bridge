@@ -43,6 +43,7 @@ class PipelineStep:
     error: str = ""
     started_at: float = 0
     completed_at: float = 0
+    _live_parts: list = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict:
         d = {"agent": self.agent, "status": self.status}
@@ -69,6 +70,10 @@ class Pipeline:
     # Human-in-the-loop controls
     _gate: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
     _inject_queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
+    # SSE event stream (v0.21.0): _event_history is replayed to late subscribers,
+    # _event_subs is the set of live asyncio.Queues fed by _emit_event().
+    _event_history: list = field(default_factory=list, repr=False)
+    _event_subs: set = field(default_factory=set, repr=False)
 
     def __post_init__(self):
         self._gate.set()  # starts unpaused
@@ -227,6 +232,13 @@ class PipelineManager:
         try:
             shared_cwd = self._make_shared_cwd(pl)
             log.info("pipeline_cwd: id=%s mode=%s cwd=%s", pl.pipeline_id, pl.mode, shared_cwd)
+            self._emit_event(pl, "pipeline_started", {
+                "pipeline_id": pl.pipeline_id,
+                "mode": pl.mode,
+                "steps": len(pl.steps),
+                "shared_cwd": shared_cwd,
+                "agents": [s.agent for s in pl.steps],
+            })
             await self._webhook_start(pl)
             if pl.mode == "sequence":
                 await self._run_sequence(pl)
@@ -251,6 +263,18 @@ class PipelineManager:
         self._store.save(pl)
         log.info("pipeline_done: id=%s status=%s duration=%.1fs",
                  pl.pipeline_id, pl.status, pl.completed_at - pl.created_at)
+        self._emit_event(pl, "pipeline_done", {
+            "pipeline_id": pl.pipeline_id,
+            "status": pl.status,
+            "duration": round(pl.completed_at - pl.created_at, 1),
+            "error": pl.error,
+        })
+        # Signal end-of-stream to live subscribers
+        for q in list(pl._event_subs):
+            try:
+                q.put_nowait(None)
+            except asyncio.QueueFull:
+                pass
         await self._webhook(pl)
 
         # --- Auto-chain: if `next` is defined and pipeline succeeded, submit next ---
@@ -305,6 +329,21 @@ class PipelineManager:
                  pl.pipeline_id, next_pl.pipeline_id, next_def["mode"], len(steps))
 
     _CHUNK_SIZE = 1800
+
+    def _emit_event(self, pl: Pipeline, event_type: str, data: dict) -> None:
+        """Push a lifecycle event to all SSE subscribers and store in history.
+
+        Late subscribers replay history on connect, then receive live events.
+        """
+        evt = {"event": event_type, "data": data}
+        pl._event_history.append(evt)
+        for q in list(pl._event_subs):
+            try:
+                q.put_nowait(evt)
+            except asyncio.QueueFull:
+                # Subscriber too slow — drop it so we don't stall pipeline execution
+                log.warning("sse_subscriber_dropped: pipeline=%s queue_full", pl.pipeline_id)
+                pl._event_subs.discard(q)
 
     async def _send_webhook(self, pl: Pipeline, message: str):
         """Send a single message payload via webhook."""
@@ -675,6 +714,12 @@ class PipelineManager:
         session_id = f"pipeline-{pl.pipeline_id}-{step.agent}-{step_idx}"
         shared_cwd = cwd_override if cwd_override is not None else pl.context.get("shared_cwd", "")
 
+        self._emit_event(pl, "step_started", {
+            "index": step_idx,
+            "agent": step.agent,
+            "prompt_preview": (prompt[:200] + "...") if len(prompt) > 200 else prompt,
+        })
+
         # Inject shared workspace hint for non-conversation modes
         if shared_cwd and pl.mode != "conversation":
             has_cjk = any('\u4e00' <= c <= '\u9fff' for c in prompt)
@@ -709,8 +754,22 @@ class PipelineManager:
                  pl.pipeline_id, step.agent, step.status,
                  step.completed_at - step.started_at)
 
+        evt_type = "step_completed" if step.status == "completed" else "step_failed"
+        evt_data = {
+            "index": step_idx,
+            "agent": step.agent,
+            "duration": round(step.completed_at - step.started_at, 1),
+            "status": step.status,
+        }
+        if step.status == "completed":
+            evt_data["result_preview"] = (step.result[:300] + "...") if len(step.result) > 300 else step.result
+        else:
+            evt_data["error"] = step.error
+        self._emit_event(pl, evt_type, evt_data)
+
     async def _exec_step_acp(self, step: PipelineStep, prompt: str, session_id: str, cwd: str = ""):
         parts = []
+        step._live_parts = parts
         try:
             conn = await self._pool.get_or_create(step.agent, session_id, cwd=cwd)
             async for notification in conn.session_prompt(prompt):

@@ -108,7 +108,7 @@ curl -s -X POST http://localhost:18010/runs \
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.20.1
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.21.0
 
 ## Contributing
 
