@@ -19,6 +19,44 @@
 | First call slow (5–15s) | ACP subprocess cold start | Normal — subsequent calls to the same agent reuse the process |
 | Agent hangs | Permission request not answered | Already handled (auto-allow). If still hanging, check agent logs via stderr |
 
+## Bridge Lifecycle
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Pipeline steps timeout despite agent being healthy | Bridge crash loop killing agent subprocesses every few seconds | Diagnose with the steps below |
+| `health` returns but version/uptime look wrong | Two bridge processes (orphan + systemd) competing for port 18010 | Kill the orphan, let systemd take over |
+| `[Errno 98] address already in use` in journal | Another process owns port 18010, systemd can't bind | See diagnostic flow below |
+
+### Diagnosing crash-loop / orphan bridge
+
+```bash
+# 1. Is bridge currently in a restart loop? Look for repeated "starting" lines.
+sudo journalctl -u acp-bridge.service --since "5 minutes ago" -o cat | grep -c "starting on 0.0.0.0:18010"
+# Healthy: 0–1. Crash loop: dozens.
+
+# 2. Who actually owns port 18010?
+sudo ss -ltnp | grep 18010
+# Note the PID.
+
+# 3. Compare against the systemd-managed process.
+sudo systemctl status acp-bridge.service | grep "Main PID"
+
+# 4. If PIDs differ, port is held by an orphan. Find its parent.
+ps -ef | grep -E "main.py|uv run" | grep -v grep
+# Orphan signs: TTY column is pts/N (interactive), not "?"; parent PID is 1 (init)
+#               but service status doesn't recognize it.
+
+# 5. Kill the orphan. systemd will rebind within 7s (Restart=always interval).
+kill <orphan_pid>
+sleep 5
+curl -s http://127.0.0.1:18010/health | jq '.uptime'
+# Uptime should now be small (just-restarted).
+```
+
+**Why orphans happen**: running `uv run main.py` directly (e.g. for debugging, or via `start.sh`) spawns a process outside systemd's cgroup. A subsequent `./bridge-ctl.sh restart` only restarts the systemd instance — it can't kill the manual one. The systemd instance then crash-loops on `EADDRINUSE`, and each failed startup runs the shutdown hook which kills agent subprocesses (via `pool.shutdown()`), so any in-flight pipeline step idles out.
+
+**Prevention**: never run `uv run main.py` directly. Always use `./bridge-ctl.sh restart`.
+
 ## Agents
 
 | Symptom | Cause | Fix |

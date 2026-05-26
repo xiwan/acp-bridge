@@ -197,6 +197,7 @@ agents:
     acp_args: ["/home/ec2-user/githubs/OpenGame/packages/cli/dist/index.js", "--acp"]
     working_dir: "/tmp/opengame"
     idle_ttl: 0
+    idle_timeout: 900
     description: "OpenGame - AI-powered web game generator from a prompt"
     heartbeat: false
     env:

@@ -14,7 +14,7 @@ class PipelineStepRequest(BaseModel):
     agent: str
     prompt: str
     output_as: str = ""
-    timeout: float = 600
+    timeout: float = 0
 
 
 class PipelineRequest(BaseModel):

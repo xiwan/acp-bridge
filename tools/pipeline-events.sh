@@ -46,7 +46,13 @@ awk '
         evt = ""; data = ""
     }
 ' | while IFS=$'\t' read -r EVT DATA; do
-    T=$(date +%H:%M:%S)
+    # Prefer event's own emitted timestamp (added in v0.21.1+); fall back to now
+    EMITTED=$(echo "$DATA" | jq -r '._emitted_at // empty')
+    if [[ -n "$EMITTED" ]]; then
+        T=$(date -d "@$EMITTED" +%H:%M:%S 2>/dev/null || date +%H:%M:%S)
+    else
+        T=$(date +%H:%M:%S)
+    fi
     case "$EVT" in
         pipeline_started)
             STEPS=$(echo "$DATA" | jq -r '.steps')

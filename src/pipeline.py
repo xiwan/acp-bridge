@@ -334,7 +334,10 @@ class PipelineManager:
         """Push a lifecycle event to all SSE subscribers and store in history.
 
         Late subscribers replay history on connect, then receive live events.
+        Each event is stamped with `_emitted_at` (unix seconds) so clients
+        can render correct timestamps on late-connect replay.
         """
+        data = {**data, "_emitted_at": time.time()}
         evt = {"event": event_type, "data": data}
         pl._event_history.append(evt)
         for q in list(pl._event_subs):
@@ -727,7 +730,7 @@ class PipelineManager:
             prompt = ws_prompt.format(shared_cwd=shared_cwd) + "\n\n" + prompt
 
         cfg = self._agents_cfg.get(step.agent, {})
-        timeout = step.timeout or cfg.get("idle_timeout", 90)
+        timeout = step.timeout or cfg.get("idle_timeout", 300)
         try:
             if cfg.get("mode") == "pty":
                 pty_cfg = {**cfg, "working_dir": shared_cwd} if shared_cwd else cfg

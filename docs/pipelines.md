@@ -135,12 +135,14 @@ Event types:
 
 | event | data |
 |-------|------|
-| `pipeline_started` | `{pipeline_id, mode, steps, shared_cwd, agents}` |
-| `step_started` | `{index, agent, prompt_preview}` |
-| `step_completed` | `{index, agent, duration, status, result_preview}` |
-| `step_failed` | `{index, agent, duration, status, error}` |
-| `pipeline_done` | `{pipeline_id, status, duration, error}` |
+| `pipeline_started` | `{pipeline_id, mode, steps, shared_cwd, agents, _emitted_at}` |
+| `step_started` | `{index, agent, prompt_preview, _emitted_at}` |
+| `step_completed` | `{index, agent, duration, status, result_preview, _emitted_at}` |
+| `step_failed` | `{index, agent, duration, status, error, _emitted_at}` |
+| `pipeline_done` | `{pipeline_id, status, duration, error, _emitted_at}` |
 | `heartbeat` | `{ts}` (every 15s during running steps) |
+
+Every non-heartbeat event includes `_emitted_at` (unix seconds, since v0.21.1) so clients can render correct timestamps even on late-connect history replay.
 
 **Late-connect replay**: connecting to a pipeline that already started (or finished) replays the full event history first, then streams live (or closes if already done). This means clients don't need to subscribe before submitting.
 
