@@ -65,6 +65,39 @@ awk '
             AGENT=$(echo "$DATA" | jq -r '.agent')
             printf "[%s] ▶️  step_started     idx=%s agent=%s\n" "$T" "$IDX" "$AGENT"
             ;;
+        step_progress)
+            # Intermediate ACP notification — thinking, tools, message chunks
+            IDX=$(echo "$DATA" | jq -r '.index')
+            AGENT=$(echo "$DATA" | jq -r '.agent')
+            KIND=$(echo "$DATA" | jq -r '.kind')
+            case "$KIND" in
+                tool.start)
+                    TITLE=$(echo "$DATA" | jq -r '.title // "?"')
+                    printf "[%s] 🔧 step_progress    idx=%s agent=%s tool.start  %s\n" "$T" "$IDX" "$AGENT" "$TITLE"
+                    ;;
+                tool.done)
+                    TITLE=$(echo "$DATA" | jq -r '.title // "?"')
+                    STATUS=$(echo "$DATA" | jq -r '.status // "?"')
+                    ICON="✓"; [[ "$STATUS" == "failed" ]] && ICON="✗"
+                    printf "[%s] %s step_progress    idx=%s agent=%s tool.done   %s (%s)\n" "$T" "$ICON" "$IDX" "$AGENT" "$TITLE" "$STATUS"
+                    ;;
+                message.thinking)
+                    SNIP=$(echo "$DATA" | jq -r '.content // "" | gsub("\\n"; " ") | .[:60]')
+                    printf "[%s] 💭 step_progress    idx=%s agent=%s thinking    %s\n" "$T" "$IDX" "$AGENT" "$SNIP"
+                    ;;
+                message.part)
+                    SNIP=$(echo "$DATA" | jq -r '.content // "" | gsub("\\n"; " ") | .[:60]')
+                    printf "[%s] 💬 step_progress    idx=%s agent=%s message     %s\n" "$T" "$IDX" "$AGENT" "$SNIP"
+                    ;;
+                status)
+                    TEXT=$(echo "$DATA" | jq -r '.text // "" | .[:60]')
+                    printf "[%s] 📋 step_progress    idx=%s agent=%s plan        %s\n" "$T" "$IDX" "$AGENT" "$TEXT"
+                    ;;
+                *)
+                    printf "[%s] ?  step_progress    idx=%s agent=%s kind=%s\n" "$T" "$IDX" "$AGENT" "$KIND"
+                    ;;
+            esac
+            ;;
         step_completed)
             IDX=$(echo "$DATA" | jq -r '.index')
             AGENT=$(echo "$DATA" | jq -r '.agent')

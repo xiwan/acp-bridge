@@ -44,7 +44,12 @@ class PipelineStep:
     error: str = ""
     started_at: float = 0
     completed_at: float = 0
+    # Tools invoked during this step. Each entry: {"id", "name", "status"}.
+    # Populated from session/update tool_call + tool_call_update notifications.
+    tools: list = field(default_factory=list)
     _live_parts: list = field(default_factory=list, repr=False)
+    # Accumulated agent_thought_chunk text. Joined for /steps/{i}/live.
+    _thinking_parts: list = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict:
         d = {"agent": self.agent, "status": self.status}
@@ -54,6 +59,8 @@ class PipelineStep:
             d["error"] = self.error
         if self.completed_at and self.started_at:
             d["duration"] = round(self.completed_at - self.started_at, 1)
+        if self.tools:
+            d["tools"] = self.tools
         return d
 
 
@@ -670,8 +677,19 @@ class PipelineManager:
                     prompt_result = notification["_prompt_result"]
                     break
                 event = transform_notification(notification)
-                if event and event["type"] == "message.part":
+                if not event:
+                    continue
+                if event["type"] == "message.part":
                     parts.append(event["content"])
+                # Emit step_progress so SSE clients see thinking/tool events per turn.
+                # `index` here is the turn index (negative if not provided).
+                if pl is not None:
+                    self._emit_event(pl, "step_progress", {
+                        "index": turn_idx,
+                        "agent": agent,
+                        "kind": event["type"],
+                        **{k: v for k, v in event.items() if k != "type"},
+                    })
         except (PoolExhaustedError, AcpError) as e:
             return f"[ERROR] {e}"
         except Exception as e:
@@ -779,7 +797,7 @@ class PipelineManager:
                     timeout=timeout)
             else:
                 await asyncio.wait_for(
-                    self._exec_step_acp(step, final_prompt, session_id, cwd=shared_cwd),
+                    self._exec_step_acp(pl, step, step_idx, final_prompt, session_id, cwd=shared_cwd),
                     timeout=timeout)
         except asyncio.TimeoutError:
             step.error = f"step timeout ({timeout}s)"
@@ -810,7 +828,8 @@ class PipelineManager:
             evt_data["error"] = step.error
         self._emit_event(pl, evt_type, evt_data)
 
-    async def _exec_step_acp(self, step: PipelineStep, prompt: str, session_id: str, cwd: str = ""):
+    async def _exec_step_acp(self, pl: Pipeline, step: PipelineStep, step_idx: int,
+                             prompt: str, session_id: str, cwd: str = ""):
         parts = []
         step._live_parts = parts
         try:
@@ -824,8 +843,43 @@ class PipelineManager:
                         step.status = "completed"
                     break
                 event = transform_notification(notification)
-                if event and event["type"] == "message.part":
+                if not event:
+                    continue
+                kind = event["type"]
+
+                # Existing behavior: cumulative message text → step.result
+                if kind == "message.part":
                     parts.append(event["content"])
+                # NEW: thinking accumulation
+                elif kind == "message.thinking":
+                    step._thinking_parts.append(event.get("content", ""))
+                # NEW: tools tracking by toolCallId
+                elif kind == "tool.start":
+                    step.tools.append({
+                        "id": event.get("toolCallId", ""),
+                        "name": event.get("title", ""),
+                        "status": event.get("status", "pending"),
+                    })
+                elif kind == "tool.done":
+                    tid = event.get("toolCallId", "")
+                    found = next((t for t in step.tools if t["id"] == tid), None)
+                    if found:
+                        found["status"] = event.get("status", "completed")
+                    else:
+                        # Orphan done (start lost): record for visibility
+                        step.tools.append({
+                            "id": tid,
+                            "name": event.get("title", ""),
+                            "status": event.get("status", "completed"),
+                        })
+
+                # NEW: emit live SSE event for ALL transformed kinds
+                self._emit_event(pl, "step_progress", {
+                    "index": step_idx,
+                    "agent": step.agent,
+                    "kind": kind,
+                    **{k: v for k, v in event.items() if k != "type"},
+                })
         except (PoolExhaustedError, AcpError) as e:
             step.error = str(e)
             step.status = "failed"

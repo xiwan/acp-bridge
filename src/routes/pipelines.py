@@ -197,8 +197,12 @@ def register(app, pipeline_mgr: PipelineManager | None,
             return JSONResponse({"error": "step index out of range"}, status_code=400)
         step = pl.steps[step_index]
         content = step.result if step.status in ("completed", "failed") else "".join(step._live_parts)
+        thinking = "".join(getattr(step, "_thinking_parts", []))
         return {"pipeline_id": pipeline_id, "step": step_index, "agent": step.agent,
-                "status": step.status, "content": content, "parts_count": len(step._live_parts)}
+                "status": step.status, "content": content,
+                "thinking": thinking,
+                "tools": list(getattr(step, "tools", [])),
+                "parts_count": len(step._live_parts)}
 
     @app.get("/pipelines/{pipeline_id}/prompts")
     async def get_pipeline_prompts(

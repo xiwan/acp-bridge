@@ -1032,3 +1032,169 @@ async def test_cancel_pipeline_mid_execution(tmp_path):
                             await task
     assert pl.steps[0].status == "completed"
     assert pl.steps[2].status == "pending"
+
+
+# ============================================================================
+# Test Class: Step Progress Events (v0.22.0)
+# ============================================================================
+
+class TestStepProgressEvents:
+    """Tests for step_progress SSE event emission and tools/thinking accumulation
+    introduced in v0.22.0. The implementation adds new branches inside the
+    notification loop in `_exec_step_acp` without changing existing message.part
+    handling.
+    """
+
+    @pytest.mark.asyncio
+    async def test_step_progress_emits_for_all_kinds(self, manager, mock_pool):
+        """All 5 transformed kinds → step_progress event emitted with metadata."""
+        # Build raw notifications; we'll have transform_notification return
+        # canned events so we can assert the wiring without coupling to sse.py.
+        canned_events = [
+            {"type": "tool.start", "toolCallId": "tc-1", "title": "read_file", "status": "pending"},
+            {"type": "message.thinking", "content": "thinking..."},
+            {"type": "tool.done", "toolCallId": "tc-1", "title": "read_file", "status": "completed"},
+            {"type": "message.part", "content": "hello"},
+            {"type": "status", "text": "step 1 of 2"},
+        ]
+        notifications = [{"params": {"i": i}} for i in range(len(canned_events))] + [
+            {"_prompt_result": {"result": {"stopReason": "end"}}}
+        ]
+
+        async def fake_prompt(prompt, idle_timeout=300):
+            for n in notifications:
+                yield n
+
+        conn = AsyncMock(spec=AcpConnection)
+        conn.session_prompt = fake_prompt
+        mock_pool.get_or_create = AsyncMock(return_value=conn)
+
+        # transform_notification: index into canned_events by params.i; sentinel returns None
+        def fake_transform(n):
+            if "_prompt_result" in n:
+                return None
+            return canned_events[n["params"]["i"]]
+
+        pl = Pipeline(pipeline_id="prog-1", mode="sequence", steps=[
+            PipelineStep(agent="kiro", prompt_template="go"),
+        ], context={})
+
+        with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
+            with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
+                with patch.object(manager, '_webhook', new_callable=AsyncMock):
+                    with patch.object(manager, '_webhook_step', new_callable=AsyncMock):
+                        with patch('src.pipeline.get_prompt_suffix', return_value=""):
+                            with patch('src.pipeline.transform_notification', side_effect=fake_transform):
+                                await manager._run(pl)
+
+        # Step completed normally
+        assert pl.steps[0].status == "completed"
+        # message.part path unchanged: result is concat of message.part contents
+        assert pl.steps[0].result == "hello"
+        # thinking accumulated
+        assert "".join(pl.steps[0]._thinking_parts) == "thinking..."
+        # tools tracked, tc-1 transitioned start→done
+        assert pl.steps[0].tools == [{"id": "tc-1", "name": "read_file", "status": "completed"}]
+
+        # Verify step_progress events landed on the SSE history (5 emits, one per kind)
+        progress_events = [e for e in pl._event_history if e["event"] == "step_progress"]
+        assert len(progress_events) == 5
+        kinds = [e["data"]["kind"] for e in progress_events]
+        assert kinds == ["tool.start", "message.thinking", "tool.done", "message.part", "status"]
+        # Each event carries the step index and agent
+        for e in progress_events:
+            assert e["data"]["index"] == 0
+            assert e["data"]["agent"] == "kiro"
+            assert "_emitted_at" in e["data"]
+
+    @pytest.mark.asyncio
+    async def test_step_progress_orphan_tool_done(self, manager, mock_pool):
+        """A tool.done with no prior tool.start is appended to tools (resilience)."""
+        canned_events = [
+            {"type": "tool.done", "toolCallId": "tc-orphan", "title": "ghost", "status": "failed"},
+        ]
+        notifications = [{"params": {"i": 0}},
+                         {"_prompt_result": {"result": {"stopReason": "end"}}}]
+
+        async def fake_prompt(prompt, idle_timeout=300):
+            for n in notifications:
+                yield n
+
+        conn = AsyncMock(spec=AcpConnection)
+        conn.session_prompt = fake_prompt
+        mock_pool.get_or_create = AsyncMock(return_value=conn)
+
+        def fake_transform(n):
+            if "_prompt_result" in n:
+                return None
+            return canned_events[n["params"]["i"]]
+
+        pl = Pipeline(pipeline_id="prog-orphan", mode="sequence", steps=[
+            PipelineStep(agent="kiro", prompt_template="go"),
+        ], context={})
+
+        with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
+            with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
+                with patch.object(manager, '_webhook', new_callable=AsyncMock):
+                    with patch.object(manager, '_webhook_step', new_callable=AsyncMock):
+                        with patch('src.pipeline.get_prompt_suffix', return_value=""):
+                            with patch('src.pipeline.transform_notification', side_effect=fake_transform):
+                                await manager._run(pl)
+
+        assert pl.steps[0].status == "completed"
+        assert pl.steps[0].tools == [{"id": "tc-orphan", "name": "ghost", "status": "failed"}]
+
+    def test_step_to_dict_includes_tools(self):
+        """to_dict() exposes tools when non-empty, omits when empty."""
+        s1 = PipelineStep(agent="kiro", prompt_template="x")
+        # Empty tools → not in dict
+        assert "tools" not in s1.to_dict()
+
+        s2 = PipelineStep(agent="kiro", prompt_template="x")
+        s2.tools = [{"id": "t1", "name": "read", "status": "completed"}]
+        d = s2.to_dict()
+        assert d["tools"] == [{"id": "t1", "name": "read", "status": "completed"}]
+
+    @pytest.mark.asyncio
+    async def test_message_part_path_unchanged(self, manager, mock_pool):
+        """Regression: the existing message.part → step.result path is preserved."""
+        # Only message.part events; result must equal their concatenation
+        canned_events = [
+            {"type": "message.part", "content": "Hello "},
+            {"type": "message.part", "content": "world"},
+        ]
+        notifications = [{"params": {"i": 0}}, {"params": {"i": 1}},
+                         {"_prompt_result": {"result": {"stopReason": "end"}}}]
+
+        async def fake_prompt(prompt, idle_timeout=300):
+            for n in notifications:
+                yield n
+
+        conn = AsyncMock(spec=AcpConnection)
+        conn.session_prompt = fake_prompt
+        mock_pool.get_or_create = AsyncMock(return_value=conn)
+
+        def fake_transform(n):
+            if "_prompt_result" in n:
+                return None
+            return canned_events[n["params"]["i"]]
+
+        pl = Pipeline(pipeline_id="regress-1", mode="sequence", steps=[
+            PipelineStep(agent="kiro", prompt_template="go"),
+        ], context={})
+
+        with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
+            with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
+                with patch.object(manager, '_webhook', new_callable=AsyncMock):
+                    with patch.object(manager, '_webhook_step', new_callable=AsyncMock):
+                        with patch('src.pipeline.get_prompt_suffix', return_value=""):
+                            with patch('src.pipeline.transform_notification', side_effect=fake_transform):
+                                await manager._run(pl)
+
+        assert pl.steps[0].result == "Hello world"
+        assert pl.steps[0].tools == []
+        assert pl.steps[0]._thinking_parts == []
+        # And we still emit step_progress for both message.part chunks
+        progress = [e for e in pl._event_history if e["event"] == "step_progress"]
+        assert len(progress) == 2
+        assert all(e["data"]["kind"] == "message.part" for e in progress)

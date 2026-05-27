@@ -137,12 +137,29 @@ Event types:
 |-------|------|
 | `pipeline_started` | `{pipeline_id, mode, steps, shared_cwd, agents, _emitted_at}` |
 | `step_started` | `{index, agent, prompt_preview, _emitted_at}` |
+| `step_progress` *(v0.22.0)* | `{index, agent, kind, _emitted_at, ...kind-specific fields}` |
 | `step_completed` | `{index, agent, duration, status, result_preview, _emitted_at}` |
 | `step_failed` | `{index, agent, duration, status, error, _emitted_at}` |
 | `pipeline_done` | `{pipeline_id, status, duration, error, _emitted_at}` |
 | `heartbeat` | `{ts}` (every 15s during running steps) |
 
 Every non-heartbeat event includes `_emitted_at` (unix seconds, since v0.21.1) so clients can render correct timestamps even on late-connect history replay.
+
+#### `step_progress` kinds (v0.22.0)
+
+Emitted whenever the running agent sends a `session/update` notification while a step executes. Lets clients see thinking/tool activity in real time instead of waiting for the step to complete.
+
+| `kind` | extra fields | source notification |
+|--------|--------------|---------------------|
+| `tool.start` | `title` (tool name), `toolCallId`, `status` (usually `pending`) | `tool_call` |
+| `tool.done` | `title`, `toolCallId`, `status` (`completed` / `failed`) | `tool_call_update` (terminal) |
+| `message.thinking` | `content` (chunk text) | `agent_thought_chunk` |
+| `message.part` | `content` (chunk text) | `agent_message_chunk` |
+| `status` | `text` (plan summary) | `plan` |
+
+In conversation mode, `index` is the turn index (negative if not provided by the orchestrator).
+
+`message.part` events duplicate text that also accumulates into `step.result`; live-streaming clients can rely on `step_progress` exclusively without polling `/steps/{i}/live`.
 
 **Late-connect replay**: connecting to a pipeline that already started (or finished) replays the full event history first, then streams live (or closes if already done). This means clients don't need to subscribe before submitting.
 
@@ -160,8 +177,28 @@ Every non-heartbeat event includes `_emitted_at` (unix seconds, since v0.21.1) s
 
 ```bash
 GET /pipelines/{id}                       # full status snapshot
-GET /pipelines/{id}/steps/{idx}/live      # streaming buffer of a running step
+GET /pipelines/{id}/steps/{idx}/live      # running-step buffer + tools (v0.22.0)
 ```
+
+`/steps/{idx}/live` returns:
+
+```json
+{
+  "pipeline_id": "...",
+  "step": 1,
+  "agent": "opengame",
+  "status": "running",
+  "content": "cumulative agent_message_chunk text",
+  "thinking": "cumulative agent_thought_chunk text (v0.22.0)",
+  "tools": [
+    {"id": "tooluse_abc", "name": "read_file",  "status": "completed"},
+    {"id": "tooluse_xyz", "name": "write_file", "status": "pending"}
+  ],
+  "parts_count": 12
+}
+```
+
+Use this when SSE isn't available (e.g. shell scripts behind a proxy that buffers). For live UIs, prefer `step_progress` SSE events.
 
 CLI helper: `tools/pipeline-watch.sh <pid> [interval]` polls and prints transitions only.
 
