@@ -41,6 +41,15 @@ heartbeat:
   language: "zh"  # heartbeat prompt language: en, zh
   # client_script: ""  # optional, auto-resolves to skill/scripts/acp-client.sh
 
+# Persist every prompt actually sent to an agent (job/pipeline/heartbeat) for
+# post-mortem and replay. See docs/api-reference.md for /pipelines/{id}/prompts
+# and /admin/prompts endpoints.
+prompt_log:
+  enabled: true
+  redact_secrets: true
+  max_size: 1048576
+  retention_days: 30
+
 security:
   auth_token: "${ACP_BRIDGE_TOKEN}"
   rate_limit: 200
@@ -194,7 +203,7 @@ agents:
     enabled: true
     mode: "acp"
     command: "node"
-    acp_args: ["/home/ec2-user/githubs/OpenGame/packages/cli/dist/index.js", "--acp"]
+    acp_args: ["/home/ec2-user/githubs/OpenGame/packages/cli/dist/index.js", "--acp", "--yolo"]
     working_dir: "/tmp/opengame"
     idle_ttl: 0
     idle_timeout: 900

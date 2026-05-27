@@ -2,12 +2,13 @@
 
 import uuid as _uuid
 
-from fastapi import Path as PathParam
+from fastapi import Path as PathParam, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.responses import Response
 
 from ..jobs import JobManager
+from ..prompt_log import PromptStore, row_to_summary
 
 
 class JobRequest(BaseModel):
@@ -22,7 +23,8 @@ class JobRequest(BaseModel):
     channel: str = ""
 
 
-def register(app, job_mgr: JobManager | None, webhook_account_id: str, webhook_default_target: str):
+def register(app, job_mgr: JobManager | None, webhook_account_id: str, webhook_default_target: str,
+             prompt_store: PromptStore | None = None):
 
     @app.post("/jobs")
     async def submit_job(req: JobRequest):
@@ -84,3 +86,19 @@ def register(app, job_mgr: JobManager | None, webhook_account_id: str, webhook_d
             if j.status in summary:
                 summary[j.status] += 1
         return {"jobs": dicts, "summary": summary}
+
+    @app.get("/jobs/{job_id}/prompts")
+    async def get_job_prompts(
+        job_id: str = PathParam(...),
+        include: str = Query("", description="comma-separated extras: 'final' to include full prompt fields"),
+    ):
+        """Return prompt_log records for a job. Default response omits large
+        prompt fields; pass ?include=final to also return template/rendered/final."""
+        if not prompt_store:
+            return JSONResponse({"error": "prompt logging disabled"}, status_code=503)
+        include_final = "final" in {x.strip() for x in (include or "").split(",")}
+        rows = prompt_store.list_by_parent("job", job_id)
+        return {
+            "job_id": job_id,
+            "records": [row_to_summary(r, include_final) for r in rows],
+        }

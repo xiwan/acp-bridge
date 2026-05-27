@@ -14,6 +14,17 @@ pool:
 harness:
   binary: ""                                    # absolute path to harness-factory binary; empty = disabled
 
+# Persist every prompt actually sent to an agent (across job/pipeline/heartbeat
+# paths) for post-mortem and replay. Stored in SQLite next to jobs.db.
+# Records include the original template, post-render version, and the fully
+# decorated string (with shared-workspace hint + suffix). Best-effort writes
+# never block the agent call.
+prompt_log:
+  enabled: true                                 # master switch
+  redact_secrets: true                          # scrub patterns from OPERATIONS.md before write
+  max_size: 1048576                             # per-field cap (1 MB); longer prompts get truncated
+  retention_days: 30                            # 0 = keep forever (cleanup is opt-in)
+
 security:
   auth_token: "${ACP_BRIDGE_TOKEN}"             # or paste token string directly
   allowed_ips:

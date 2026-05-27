@@ -3,11 +3,12 @@
 import asyncio
 import json
 
-from fastapi import Path as PathParam
+from fastapi import Path as PathParam, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from ..pipeline import PipelineManager
+from ..prompt_log import PromptStore, row_to_summary
 
 
 class PipelineStepRequest(BaseModel):
@@ -33,7 +34,8 @@ class PipelineRequest(BaseModel):
 
 
 def register(app, pipeline_mgr: PipelineManager | None,
-             webhook_account_id: str = "", webhook_default_target: str = ""):
+             webhook_account_id: str = "", webhook_default_target: str = "",
+             prompt_store: PromptStore | None = None):
 
     @app.post("/pipelines")
     async def submit_pipeline(req: PipelineRequest):
@@ -198,6 +200,23 @@ def register(app, pipeline_mgr: PipelineManager | None,
         return {"pipeline_id": pipeline_id, "step": step_index, "agent": step.agent,
                 "status": step.status, "content": content, "parts_count": len(step._live_parts)}
 
+    @app.get("/pipelines/{pipeline_id}/prompts")
+    async def get_pipeline_prompts(
+        pipeline_id: str = PathParam(...),
+        include: str = Query("", description="comma-separated extras: 'final' to include full prompt fields"),
+    ):
+        """Return prompt_log records for a pipeline (one per step / conversation
+        turn). Default response omits large prompt fields; pass ?include=final
+        to also return template/rendered/final."""
+        if not prompt_store:
+            return JSONResponse({"error": "prompt logging disabled"}, status_code=503)
+        include_final = "final" in {x.strip() for x in (include or "").split(",")}
+        rows = prompt_store.list_by_parent("pipeline_step", pipeline_id)
+        return {
+            "pipeline_id": pipeline_id,
+            "records": [row_to_summary(r, include_final) for r in rows],
+        }
+
     @app.get("/pipelines/{pipeline_id}/artifacts")
     async def list_artifacts(pipeline_id: str = PathParam(...)):
         import os
@@ -220,6 +239,27 @@ def register(app, pipeline_mgr: PipelineManager | None,
                 rel = os.path.relpath(full, shared_cwd)
                 files.append({"path": rel, "size": os.path.getsize(full)})
         return {"pipeline_id": pipeline_id, "shared_cwd": shared_cwd, "files": files}
+
+    @app.get("/pipelines/{pipeline_id}/artifacts/download")
+    async def download_artifact(pipeline_id: str = PathParam(...), path: str = ""):
+        """Download a specific file from pipeline's shared_cwd."""
+        import os
+        from starlette.responses import FileResponse
+        if not pipeline_mgr:
+            return JSONResponse({"error": "pipeline not available"}, status_code=503)
+        pl = pipeline_mgr.get(pipeline_id)
+        if not pl:
+            return JSONResponse({"error": "pipeline not found"}, status_code=404)
+        shared_cwd = pl.context.get("shared_cwd", "")
+        if not shared_cwd or not path:
+            return JSONResponse({"error": "invalid path"}, status_code=400)
+        # Prevent path traversal
+        full = os.path.realpath(os.path.join(shared_cwd, path))
+        if not full.startswith(os.path.realpath(shared_cwd)):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        if not os.path.isfile(full):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return FileResponse(full)
 
     @app.get("/pipelines")
     async def list_pipelines():

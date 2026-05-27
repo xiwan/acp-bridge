@@ -199,7 +199,8 @@ class EnvCollector:
         })
 
 
-def register(app, env_collector: "EnvCollector", pool: AcpProcessPool):
+def register(app, env_collector: "EnvCollector", pool: AcpProcessPool,
+             prompt_store=None):
     from starlette.responses import JSONResponse
 
     _ALLOWED_INTERVALS = [60, 120, 300, 600]
@@ -286,6 +287,16 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool):
                                             cwd=cfg.get("working_dir", "/tmp"))
         except (PoolExhaustedError, AcpError) as e:
             return JSONResponse({"error": str(e)}, status_code=503)
+
+        if prompt_store:
+            prompt_store.record(
+                parent_type="heartbeat", parent_id=agent_name,
+                agent=agent_name, mode="acp",
+                session_id=session_id,
+                cwd=cfg.get("working_dir", "/tmp"),
+                template=prompt, rendered=prompt, final=prompt,
+                decorations=["heartbeat_prompt"],
+            )
 
         from .sse import transform_notification
         parts = []

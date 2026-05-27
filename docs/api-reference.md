@@ -290,6 +290,71 @@ Response:
 
 Receives `StandardLoggingPayload` from LiteLLM `generic_api` callback. Not intended for direct use.
 
+## Prompt Log
+
+Every prompt actually sent to an agent (across pipelines, jobs, and heartbeats) is recorded into `data/jobs.db` for post-mortem and replay. Each record stores:
+
+- `template` — the original user-supplied prompt (for pipeline steps: `prompt_template`; for jobs: raw input)
+- `rendered` — after `{{var}}` substitution from pipeline context
+- `final` — what actually reached the agent (includes `shared_workspace*.txt` hint and `get_prompt_suffix()`)
+- `decorations` — list of layers applied, e.g. `["shared_workspace_zh", "prompt_suffix"]`
+
+Default response **omits** the large prompt fields. Pass `?include=final` to retrieve them.
+
+> **Privacy:** With `prompt_log.redact_secrets: true` (default), values matching OPERATIONS.md sensitive patterns are masked before write — see [Security](security.md).
+
+### `GET /pipelines/{pipeline_id}/prompts`
+
+Records for every step (and every conversation turn) in a pipeline.
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `include` | (none) | Comma-separated extras: `final` to also return `template`/`rendered`/`final` |
+
+```bash
+curl -s "http://localhost:18010/pipelines/$PID/prompts?include=final" \
+  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN"
+```
+
+### `GET /jobs/{job_id}/prompts`
+
+Records for a job (one per attempt, if fallback fired).
+
+```bash
+curl -s "http://localhost:18010/jobs/$JID/prompts?include=final" \
+  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN"
+```
+
+### `GET /admin/prompts`
+
+Cross-cutting search across all parent types.
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `parent_type` | (any) | `job` / `pipeline_step` / `heartbeat` |
+| `agent` | (any) | Filter by agent name |
+| `limit` | `50` | Max records (1–500) |
+| `include` | (none) | `final` to include large fields |
+
+```bash
+# Latest 10 prompts sent to opengame across any path
+curl -s "http://localhost:18010/admin/prompts?agent=opengame&limit=10" \
+  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN"
+```
+
+### `GET /admin/prompts/{record_id}`
+
+Direct single-record lookup; returns `final` by default.
+
+```bash
+curl -s "http://localhost:18010/admin/prompts/<record_id>" \
+  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN"
+```
+
+### Disabling
+
+Set `prompt_log.enabled: false` in `config.yaml` and restart. The endpoints will return `503 prompt logging disabled`.
+
 ## Request Tracing
 
 All requests receive an `X-Request-Id` response header. Pass your own via the request header to stitch traces across services (e.g. OpenClaw → Bridge → agent logs).

@@ -33,9 +33,10 @@ from acp_sdk.server.app import create_app
 from src.acp_client import AcpProcessPool
 from src.agents import make_acp_agent_handler, make_pty_agent_handler, ping_loop
 from src.jobs import JobManager
+from src.prompt_log import PromptStore
 from src.security import SecurityMiddleware
 from src.stats import StatsCollector
-from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes, stats as stats_routes, templates as templates_routes, harness as harness_routes
+from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes, stats as stats_routes, templates as templates_routes, harness as harness_routes, admin as admin_routes
 
 try:
     from acp_sdk.models.models import Metadata
@@ -250,6 +251,18 @@ def main():
     # --- Job manager ---
     pty_agents = {k: v for k, v in agents_cfg.items() if v.get("mode") != "acp"}
     base_url = srv_cfg.get("base_url", f"http://{host}:{port}")
+    # Prompt log (records every prompt actually sent to an agent).
+    pl_cfg = config.get("prompt_log", {})
+    prompt_store = None
+    if pl_cfg.get("enabled", True):
+        prompt_store = PromptStore(
+            db_path=pl_cfg.get("db_path", "data/jobs.db"),
+            redact=pl_cfg.get("redact_secrets", True),
+            max_size=int(pl_cfg.get("max_size", 1_048_576)),
+        )
+        log.info("prompt_log enabled (redact=%s, max_size=%d)",
+                 pl_cfg.get("redact_secrets", True),
+                 int(pl_cfg.get("max_size", 1_048_576)))
     job_mgr = JobManager(
         pool=pool, pty_configs=pty_agents,
         webhook_url=webhook_cfg.get("url", ""),
@@ -257,6 +270,7 @@ def main():
         webhook_format=webhook_cfg.get("format", "openclaw"),
         webhook_secret=webhook_cfg.get("secret", ""),
         base_url=base_url,
+        prompt_store=prompt_store,
     ) if (pool or pty_agents) else None
 
     # --- Fallback chain (load from YAML, fallback to built-in defaults) ---
@@ -272,7 +286,8 @@ def main():
 
     health_routes.register(app, _VERSION, start_time, agents_cfg, pool, ttl_hours,
                            job_mgr=job_mgr, litellm_cfg=litellm_cfg)
-    jobs_routes.register(app, job_mgr, webhook_account_id, webhook_default_target)
+    jobs_routes.register(app, job_mgr, webhook_account_id, webhook_default_target,
+                         prompt_store=prompt_store)
     tools_routes.register(app, openclaw_url, webhook_cfg.get("token", ""), webhook_account_id)
     upload_dir = srv_cfg.get("upload_dir", "/tmp/acp-uploads")
     os.environ["ACP_UPLOAD_DIR"] = upload_dir
@@ -302,7 +317,7 @@ def main():
                                      shared_workdir=srv_cfg.get("public_workdir", "/tmp/acp-public"))
         _agents_mod._env = env_collector
         from src.heartbeat import register as heartbeat_register
-        heartbeat_register(app, env_collector, pool)
+        heartbeat_register(app, env_collector, pool, prompt_store=prompt_store)
         log.info("heartbeat: env injection enabled for %s", sorted(env_collector._enabled_agents))
 
     # --- Templates ---
@@ -319,8 +334,11 @@ def main():
                                    webhook_url=webhook_cfg.get("url", ""),
                                    webhook_token=webhook_cfg.get("token", ""),
                                    webhook_format=webhook_cfg.get("format", "openclaw"),
-                                   webhook_secret=webhook_cfg.get("secret", "")) if pool else None
-    pipelines_routes.register(app, pipeline_mgr, webhook_account_id, webhook_default_target)
+                                   webhook_secret=webhook_cfg.get("secret", ""),
+                                   prompt_store=prompt_store) if pool else None
+    pipelines_routes.register(app, pipeline_mgr, webhook_account_id, webhook_default_target,
+                              prompt_store=prompt_store)
+    admin_routes.register(app, prompt_store=prompt_store)
 
     if ui_enabled:
         chat_routes.register(app, config)

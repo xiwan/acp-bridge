@@ -13,6 +13,7 @@ from .complexity import TIMEOUT_MAP, Complexity, estimate_complexity, should_use
 from .cost import calc_cost, estimate_tokens, model_from_agent
 from .exceptions import AgentModelError, AgentRateLimitError, AgentTimeoutError
 from .formatters import get_formatter, get_prompt_suffix
+from .prompt_log import PromptStore
 from .sse import transform_notification
 from .store import JobStore
 from .utils import run_pty_subprocess
@@ -69,7 +70,8 @@ class JobManager:
     def __init__(self, pool: AcpProcessPool | None = None, pty_configs: dict | None = None,
                  webhook_url: str = "", webhook_token: str = "", base_url: str = "",
                  webhook_format: str = "openclaw", webhook_secret: str = "",
-                 db_path: str = "data/jobs.db"):
+                 db_path: str = "data/jobs.db",
+                 prompt_store: PromptStore | None = None):
         self._pool = pool
         self._pty_configs = pty_configs or {}
         self._jobs: dict[str, Job] = {}
@@ -82,6 +84,7 @@ class JobManager:
             default_format=webhook_format, default_secret=webhook_secret,
         )
         self._store = JobStore(db_path)
+        self._prompt_store = prompt_store
         self._recover_jobs()
 
     def _recover_jobs(self):
@@ -233,7 +236,16 @@ class JobManager:
         job._live_parts = parts
         conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
         try:
-            async for notification in conn.session_prompt(job.prompt + get_prompt_suffix()):
+            final_prompt = job.prompt + get_prompt_suffix()
+            ps = getattr(self, '_prompt_store', None)
+            if ps:
+                ps.record(
+                    parent_type="job", parent_id=job.job_id, agent=job.agent,
+                    mode="acp", session_id=job.session_id, cwd=job.cwd,
+                    template=job.prompt, rendered=job.prompt, final=final_prompt,
+                    decorations=["prompt_suffix"],
+                )
+            async for notification in conn.session_prompt(final_prompt):
                 if "_prompt_result" in notification:
                     if "error" in notification["_prompt_result"]:
                         job.error = str(notification["_prompt_result"]["error"])
@@ -328,6 +340,15 @@ class JobManager:
 
     async def _run_pty(self, job: Job):
         cfg = self._pty_configs[job.agent]
+        ps = getattr(self, '_prompt_store', None)
+        if ps:
+            ps.record(
+                parent_type="job", parent_id=job.job_id, agent=job.agent,
+                mode="pty", session_id=job.session_id,
+                cwd=job.cwd or cfg.get("working_dir", ""),
+                template=job.prompt, rendered=job.prompt, final=job.prompt,
+                decorations=[],
+            )
         result = await run_pty_subprocess(
             command=cfg["command"],
             args=cfg.get("args", []),

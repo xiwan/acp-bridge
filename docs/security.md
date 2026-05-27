@@ -67,6 +67,33 @@ Contributions welcome:
 - Audit logging (who called what, when)
 - mTLS helper / reverse proxy config examples
 
+## Prompt Log Privacy
+
+Since v0.21.3, every prompt actually sent to an agent is persisted in the local SQLite (`data/jobs.db`, table `prompt_log`) for post-mortem and replay (see [API Reference → Prompt Log](api-reference.md#prompt-log)).
+
+**What is stored:** the user-supplied template, the post-`{{var}}` rendered version, the fully decorated final string (including `shared_workspace*.txt` hint and `get_prompt_suffix()`), plus metadata (agent, session id, cwd, decorations applied, timestamp).
+
+**What is *not* stored:** the agent's response, intermediate tool-call payloads, or any data outside the prompt itself.
+
+### Default protections
+
+- `prompt_log.redact_secrets: true` — values matching the patterns in `OPERATIONS.md` ("Sensitive Patterns" section) are masked with `***REDACTED***` before write. Covers `token=`, `api_key=`, `password=`, `secret=`, `ACP_BRIDGE_TOKEN=`, `OPENCLAW_TOKEN=`, `LITELLM_API_KEY=`, `ANTHROPIC_API_KEY=`, `AWS_SECRET_ACCESS_KEY=`, `Bearer <jwt>`, and `AKIA...` AWS access key ids.
+- `prompt_log.max_size: 1048576` — per-field cap (1 MB); longer prompts get truncated with a marker.
+- API responses default to summary-only — `final`/`template`/`rendered` are returned **only when `?include=final` is passed**.
+- All endpoints require `Authorization: Bearer <token>` (existing middleware).
+
+### Operator controls
+
+| Setting | When to change |
+|---------|----------------|
+| `prompt_log.enabled: false` | Disable persistence entirely (e.g. regulated environments) |
+| `prompt_log.redact_secrets: false` | Diagnostic-only — when you must inspect the exact original prompt and trust the SQLite file |
+| `prompt_log.retention_days: 0` | Keep all records forever (default 30; cleanup is opt-in via cron) |
+
+### Threat model addition
+
+Treat `data/jobs.db` as containing potentially sensitive user input even with redaction on (heuristic regexes are not exhaustive). Apply filesystem permissions accordingly; do not commit the file to source control (already in `.gitignore`).
+
 ## See Also
 
 - [Configuration](configuration.md) — token and IP allowlist setup

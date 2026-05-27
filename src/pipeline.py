@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
 from .formatters import PipelineFormatter, get_template, get_prompt_suffix
+from .prompt_log import PromptStore
 from .sse import transform_notification
 from .store import PipelineStore
 from .utils import run_pty_subprocess
@@ -108,7 +109,8 @@ class PipelineManager:
     def __init__(self, pool: AcpProcessPool, agents_cfg: dict,
                  webhook_url: str = "", webhook_token: str = "",
                  webhook_format: str = "openclaw", webhook_secret: str = "",
-                 db_path: str = "data/jobs.db"):
+                 db_path: str = "data/jobs.db",
+                 prompt_store: PromptStore | None = None):
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._pipelines: dict[str, Pipeline] = {}
@@ -117,6 +119,7 @@ class PipelineManager:
             default_format=webhook_format, default_secret=webhook_secret,
         )
         self._store = PipelineStore(db_path)
+        self._prompt_store = prompt_store
 
     def _make_shared_cwd(self, pl: Pipeline) -> str:
         """Create and return a shared workspace directory for the pipeline.
@@ -581,7 +584,8 @@ class PipelineManager:
             # Execute
             started = time.time()
             output = await self._exec_conversation_turn(
-                current_agent, session_id, prompt, turn_timeout, cwd=shared_cwd)
+                current_agent, session_id, prompt, turn_timeout, cwd=shared_cwd,
+                pl=pl, turn_idx=turn)
             duration = round(time.time() - started, 1)
 
             # Record
@@ -635,19 +639,33 @@ class PipelineManager:
 
     async def _exec_conversation_turn(self, agent: str, session_id: str,
                                        prompt: str, timeout: float,
-                                       cwd: str = "") -> str:
+                                       cwd: str = "",
+                                       pl: Pipeline | None = None,
+                                       turn_idx: int = -1) -> str:
         cfg = self._agents_cfg.get(agent, {})
+        final_prompt = prompt + get_prompt_suffix()
+
+        ps = getattr(self, '_prompt_store', None)
+        if ps and pl is not None:
+            ps.record(
+                parent_type="pipeline_step", parent_id=pl.pipeline_id,
+                parent_index=turn_idx, agent=agent,
+                mode=cfg.get("mode", "acp"), session_id=session_id, cwd=cwd,
+                template=prompt, rendered=prompt, final=final_prompt,
+                decorations=["conversation_turn", "prompt_suffix"],
+            )
+
         if cfg.get("mode") == "pty":
             step = PipelineStep(agent=agent, prompt_template="")
             pty_cfg = {**cfg, "working_dir": cwd} if cwd else cfg
-            await self._exec_step_pty(step, prompt + get_prompt_suffix(), pty_cfg)
+            await self._exec_step_pty(step, final_prompt, pty_cfg)
             return step.result
         # ACP mode
         parts = []
         prompt_result = None
         try:
             conn = await self._pool.get_or_create(agent, session_id, cwd=cwd)
-            async for notification in conn.session_prompt(prompt + get_prompt_suffix(), idle_timeout=timeout):
+            async for notification in conn.session_prompt(final_prompt, idle_timeout=timeout):
                 if "_prompt_result" in notification:
                     prompt_result = notification["_prompt_result"]
                     break
@@ -717,6 +735,11 @@ class PipelineManager:
         session_id = f"pipeline-{pl.pipeline_id}-{step.agent}-{step_idx}"
         shared_cwd = cwd_override if cwd_override is not None else pl.context.get("shared_cwd", "")
 
+        # Prompt at this point is post-render (var substitution already applied
+        # by the caller). Capture it as `rendered` before further decoration.
+        rendered_prompt = prompt
+        decorations: list[str] = []
+
         self._emit_event(pl, "step_started", {
             "index": step_idx,
             "agent": step.agent,
@@ -726,20 +749,37 @@ class PipelineManager:
         # Inject shared workspace hint for non-conversation modes
         if shared_cwd and pl.mode != "conversation":
             has_cjk = any('\u4e00' <= c <= '\u9fff' for c in prompt)
-            ws_prompt = _load_prompt("shared_workspace_zh.txt") if has_cjk else _load_prompt("shared_workspace.txt")
+            ws_template = "shared_workspace_zh.txt" if has_cjk else "shared_workspace.txt"
+            ws_prompt = _load_prompt(ws_template)
             prompt = ws_prompt.format(shared_cwd=shared_cwd) + "\n\n" + prompt
+            decorations.append(ws_template.replace(".txt", ""))
 
         cfg = self._agents_cfg.get(step.agent, {})
         timeout = step.timeout or cfg.get("idle_timeout", 300)
+        final_prompt = prompt + get_prompt_suffix()
+        decorations.append("prompt_suffix")
+
+        ps = getattr(self, '_prompt_store', None)
+        if ps:
+            ps.record(
+                parent_type="pipeline_step", parent_id=pl.pipeline_id,
+                parent_index=step_idx, agent=step.agent, mode=cfg.get("mode", "acp"),
+                session_id=session_id, cwd=shared_cwd,
+                template=step.prompt_template,
+                rendered=rendered_prompt,
+                final=final_prompt,
+                decorations=decorations,
+            )
+
         try:
             if cfg.get("mode") == "pty":
                 pty_cfg = {**cfg, "working_dir": shared_cwd} if shared_cwd else cfg
                 await asyncio.wait_for(
-                    self._exec_step_pty(step, prompt + get_prompt_suffix(), pty_cfg),
+                    self._exec_step_pty(step, final_prompt, pty_cfg),
                     timeout=timeout)
             else:
                 await asyncio.wait_for(
-                    self._exec_step_acp(step, prompt + get_prompt_suffix(), session_id, cwd=shared_cwd),
+                    self._exec_step_acp(step, final_prompt, session_id, cwd=shared_cwd),
                     timeout=timeout)
         except asyncio.TimeoutError:
             step.error = f"step timeout ({timeout}s)"

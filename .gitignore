@@ -35,3 +35,4 @@ test/scratch/
 design/
 test/reports/
 mcp-server/.venv
+data/
