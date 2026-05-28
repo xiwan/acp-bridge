@@ -222,7 +222,7 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool,
              prompt_store=None):
     from starlette.responses import JSONResponse
 
-    _ALLOWED_INTERVALS = [60, 120, 300, 600]
+    _ALLOWED_INTERVALS = [30, 60, 180, 600, 1800, 3600]
 
     @app.get("/heartbeat")
     async def heartbeat_status():
