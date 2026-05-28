@@ -12,7 +12,8 @@ from .formatters import get_template
 log = logging.getLogger("acp-bridge.heartbeat")
 
 # Session rotation: new session every N rounds to prevent unbounded history growth
-HEARTBEAT_ROUNDS_PER_SESSION = 10
+# 60 rounds × 60s interval = 1 hour per session (cache-friendly)
+HEARTBEAT_ROUNDS_PER_SESSION = 60
 
 
 class EnvCollector:
@@ -20,7 +21,9 @@ class EnvCollector:
 
     def __init__(self, pool: AcpProcessPool | None, agents_cfg: dict, port: int = 18010,
                  client_script: str = "", job_mgr=None, language: str = "en",
-                 shared_workdir: str = "/tmp/acp-public"):
+                 shared_workdir: str = "/tmp/acp-public",
+                 active_hours: tuple[int, int] = (0, 24),
+                 timezone_offset: int = 8):
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._port = port
@@ -32,6 +35,8 @@ class EnvCollector:
         self._ts: float = 0
         self._enabled_agents: set[str] = set()
         self._interval: int = 0  # mutable, set by main.py
+        self._active_hours = active_hours  # (start_hour, end_hour) in local tz
+        self._tz_offset = timezone_offset  # UTC offset in hours (8 = Beijing)
         for name, cfg in agents_cfg.items():
             if isinstance(cfg, dict) and cfg.get("heartbeat", False):
                 self._enabled_agents.add(name)
@@ -75,6 +80,17 @@ class EnvCollector:
 
     def is_enabled(self, agent_name: str) -> bool:
         return agent_name in self._enabled_agents
+
+    def is_active_time(self) -> bool:
+        """Check if current time is within active hours (in configured timezone)."""
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone(timedelta(hours=self._tz_offset)))
+        hour = now.hour
+        start, end = self._active_hours
+        if start <= end:
+            return start <= hour < end
+        # Wrap around midnight (e.g. 22:00 - 06:00)
+        return hour >= start or hour < end
 
     def get_prefix(self, current_agent: str) -> str:
         if not self.is_enabled(current_agent):
@@ -161,9 +177,12 @@ class EnvCollector:
 
     def build_static_prefix(self, agent_name: str) -> str:
         """Static part of heartbeat prompt — identical across rounds, cacheable.
-        Reads from YAML template (editable), falls back to built-in default."""
-        fallback = ""
-        tpl = get_template("heartbeat", f"static_prefix_{self._language}", fallback)
+        Looks up per-agent template first, falls back to generic.
+        e.g. static_prefix_zh_kiro → static_prefix_zh → empty."""
+        # Try per-agent template first
+        tpl = get_template("heartbeat", f"static_prefix_{self._language}_{agent_name}", "")
+        if not tpl:
+            tpl = get_template("heartbeat", f"static_prefix_{self._language}", "")
         return tpl.format(agent_name=agent_name, client=self._client,
                           shared_workdir=self._shared_workdir)
 

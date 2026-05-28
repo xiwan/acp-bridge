@@ -8,9 +8,9 @@ server:
   ui: true
 
 pool:
-  max_processes: 8
-  max_per_agent: 4
-  memory_limit_percent: 80
+  max_processes: 12
+  max_per_agent: 3
+  memory_limit_percent: 75
 
 harness:
   binary: ""
@@ -36,10 +36,11 @@ s3:
   presign_expires: 3600
 
 heartbeat:
-  enabled: true  # global switch for agent environment awareness
-  interval: 300  # seconds between auto heartbeat pings (0 = disabled)
-  language: "zh"  # heartbeat prompt language: en, zh
-  # client_script: ""  # optional, auto-resolves to skill/scripts/acp-client.sh
+  enabled: true
+  interval: 60
+  language: "zh"
+  active_hours: [10, 22]
+  timezone_offset: 8
 
 # Persist every prompt actually sent to an agent (job/pipeline/heartbeat) for
 # post-mortem and replay. See docs/api-reference.md for /pipelines/{id}/prompts
@@ -77,7 +78,7 @@ agents:
     acp_args: ["acp", "--trust-all-tools"]
     working_dir: "/home/ec2-user/projects/acp-bridge"
     description: "Kiro CLI agent"
-    heartbeat: false
+    heartbeat: true
     capabilities:
       domains: ["devops", "cloud", "terminal"]
       tools: ["bash", "shell", "kubectl", "helm", "terraform"]
@@ -107,7 +108,7 @@ agents:
     acp_args: []
     working_dir: "/tmp/cc"
     description: "Claude Code agent (via ACP adapter)"
-    heartbeat: false
+    heartbeat: true
     capabilities:
       domains: ["coding", "refactoring", "debugging"]
       tools: ["read_file", "write_file", "code_search", "bash", "shell"]
@@ -175,7 +176,7 @@ agents:
     working_dir: "/tmp/qw"
     idle_ttl: 0  # Bedrock disconnects idle connections; don't keep them
     description: "Qwen Code agent (Qwen3-Coder via Bedrock)"
-    heartbeat: false
+    heartbeat: true
     capabilities:
       domains: ["coding", "debugging", "code-generation"]
       tools: ["read_file", "write_file", "bash"]
@@ -234,7 +235,7 @@ agents:
     acp_args: ["acp"]
     working_dir: "/tmp/oc"
     description: "OpenCode agent (open source, multi-provider)"
-    heartbeat: false
+    heartbeat: true
     idle_timeout: 300
     env:
       CLAUDE_CODE_USE_BEDROCK: ""
@@ -257,7 +258,7 @@ agents:
     acp_args: ["acp"]
     working_dir: "/tmp/ha"
     description: "Hermes Agent (open source, multi-provider)"
-    heartbeat: false
+    heartbeat: true
     metadata:
       author: {name: "Nous Research", url: "https://nousresearch.com"}
       license: "MIT"

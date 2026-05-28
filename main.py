@@ -310,15 +310,21 @@ def main():
     heartbeat_cfg = config.get("heartbeat", {})
     env_collector = None
     if heartbeat_cfg.get("enabled", False) and pool:
+        active_hours_cfg = heartbeat_cfg.get("active_hours", [0, 24])
         env_collector = EnvCollector(pool, agents_cfg, port=port,
                                      client_script=heartbeat_cfg.get("client_script", ""),
                                      job_mgr=job_mgr,
                                      language=heartbeat_cfg.get("language", "en"),
-                                     shared_workdir=srv_cfg.get("public_workdir", "/tmp/acp-public"))
+                                     shared_workdir=srv_cfg.get("public_workdir", "/tmp/acp-public"),
+                                     active_hours=tuple(active_hours_cfg),
+                                     timezone_offset=heartbeat_cfg.get("timezone_offset", 8))
         _agents_mod._env = env_collector
         from src.heartbeat import register as heartbeat_register
         heartbeat_register(app, env_collector, pool, prompt_store=prompt_store)
-        log.info("heartbeat: env injection enabled for %s", sorted(env_collector._enabled_agents))
+        log.info("heartbeat: env injection enabled for %s (active %d:00-%d:00 UTC+%d)",
+                 sorted(env_collector._enabled_agents),
+                 active_hours_cfg[0], active_hours_cfg[1],
+                 heartbeat_cfg.get("timezone_offset", 8))
 
     # --- Templates ---
     templates_routes.register(app)
@@ -411,6 +417,10 @@ def main():
                 continue
             await asyncio.sleep(interval)
             if not env_collector:
+                continue
+            # Time-window gate
+            if not env_collector.is_active_time():
+                log.debug("heartbeat_skip: outside active hours")
                 continue
             env_collector.refresh()
             # Skip if nothing changed and no injected contexts
