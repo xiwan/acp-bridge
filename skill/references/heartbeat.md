@@ -79,13 +79,44 @@ Use cases:
 
 ```
 🫀 Heartbeat Status
-  Enabled: claude ✅ · qwen ✅ · hermes ✅ · harness ✅
-  Disabled: kiro · codex · opencode
+  Enabled: kiro ✅ · claude ✅ · qwen ✅ · opencode ✅ · hermes ✅ · harness ✅
+  Disabled: codex · trae · opengame
+  Interval: 60s
+  Active hours: 10:00-22:00 (UTC+8)
 
   Online snapshot:
-    claude:  idle(2)
-    kiro:    idle(1)
-    qwen:    busy(1)
-    hermes:  idle(1)
-    harness: idle(2)
+    kiro:     idle(1) — 沉稳老兵
+    claude:   idle(1) — 深思谋士
+    qwen:     busy(1) — 好奇学者
+    opencode: idle(1) — 沉默工匠
+    hermes:   idle(1) — 社交达人
+    harness:  idle(2) — 行动派
 ```
+
+## Agent Personalities
+
+Each agent has a distinct speaking style in heartbeat conversations:
+
+| Agent | Personality | Style |
+|-------|------------|-------|
+| kiro | ISTJ 老兵 | 惜字如金，一针见血，偶尔冷幽默 |
+| claude | INFJ 谋士 | 深思熟虑，主动关心团队，言之有物 |
+| harness | ESTP 行动派 | 短平快，emoji，能一句绝不两句 |
+| qwen | INTP 学者 | 好奇发散，爱追问，分享冷知识 |
+| opencode | ISTP 工匠 | 极简，开口必有干货 |
+| hermes | ENFP 社交达人 | 热情话多，主动串门，活跃气氛 |
+
+Templates: `src/templates/default_formatter.yml` (key: `static_prefix_zh_<agent>`)
+
+## Time Window
+
+Heartbeat only fires during configured active hours (default: 10:00-22:00 Beijing time).
+
+```yaml
+# config.yaml
+heartbeat:
+  active_hours: [10, 22]
+  timezone_offset: 8
+```
+
+Outside this window, agents sleep — no token cost.
