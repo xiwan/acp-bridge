@@ -92,7 +92,12 @@ def register(app, litellm_cfg: dict):
 
     @app.get("/usage")
     async def get_usage(hours: float = 24, model: str = ""):
-        """Query recorded LLM usage stats."""
+        """Query recorded LLM usage stats.
+
+        v0.23.0: 加 cost_usd 字段 (per-model + grand total) 基于 LiteLLM pricing 表;
+                 by_model SQL 加 SUM(cache_creation_tokens) 修历史漏报.
+        """
+        from ..cost import calc_cost_v2  # 局部 import 避免顶部循环依赖
         db = _ensure_db()
         cutoff = time.time() - hours * 3600
         where, params = ["ts > ?"], [cutoff]
@@ -119,9 +124,26 @@ def register(app, litellm_cfg: dict):
             f"""SELECT model, COUNT(*) as calls,
                        SUM(input_tokens) as input_tokens,
                        SUM(output_tokens) as output_tokens,
-                       SUM(cached_tokens) as cached_tokens
+                       SUM(cached_tokens) as cached_tokens,
+                       SUM(cache_creation_tokens) as cache_creation_tokens
                 FROM llm_usage WHERE {w} GROUP BY model ORDER BY calls DESC""",
             params).fetchall()
+
+        # v0.23.0: per-model cost
+        by_model = []
+        total_cost = 0.0
+        for m in models:
+            m_dict = dict(m)
+            cost = calc_cost_v2(
+                m_dict["model"],
+                m_dict.get("input_tokens", 0) or 0,
+                m_dict.get("cached_tokens", 0) or 0,
+                m_dict.get("cache_creation_tokens", 0) or 0,
+                m_dict.get("output_tokens", 0) or 0,
+            )
+            m_dict["cost_usd"] = round(cost, 4)
+            total_cost += cost
+            by_model.append(m_dict)
 
         return {
             "hours": hours,
@@ -133,7 +155,8 @@ def register(app, litellm_cfg: dict):
             "cache_creation_tokens": row["cache_creation_tokens"],
             "cache_rate_pct": round(cache_rate, 1),
             "avg_duration_s": round(row["avg_duration"], 2),
-            "by_model": [dict(m) for m in models],
+            "total_cost_usd": round(total_cost, 4),
+            "by_model": by_model,
         }
 
     @app.get("/usage/recent")
