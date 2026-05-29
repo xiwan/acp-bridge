@@ -377,6 +377,7 @@ def main():
         """Ping agent with LLM prompt for environment awareness."""
         import uuid
         from src.sse import transform_notification
+        from src.heartbeat import HEARTBEAT_IDLE_TIMEOUT
         cfg = agents_cfg.get(agent_name, {})
         if not isinstance(cfg, dict) or cfg.get("mode") != "acp":
             return
@@ -391,7 +392,7 @@ def main():
             conn = await pool.get_or_create(agent_name, session_id,
                                             cwd=cfg.get("working_dir", "/tmp"))
             parts = []
-            async for notification in conn.session_prompt(prompt):
+            async for notification in conn.session_prompt(prompt, idle_timeout=HEARTBEAT_IDLE_TIMEOUT):
                 if "_prompt_result" in notification:
                     break
                 event = transform_notification(notification)

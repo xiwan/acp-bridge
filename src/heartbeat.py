@@ -15,6 +15,9 @@ log = logging.getLogger("acp-bridge.heartbeat")
 # 60 rounds × 60s interval = 1 hour per session (cache-friendly)
 HEARTBEAT_ROUNDS_PER_SESSION = 60
 
+# Heartbeat is a liveness probe, not a real task — fail fast if agent emits nothing.
+HEARTBEAT_IDLE_TIMEOUT = 30
+
 
 class EnvCollector:
     """Collects agent environment snapshots, refreshed by cleanup_loop."""
@@ -255,7 +258,7 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool,
                 "agent": h["agent"],
                 "silent": h["silent"],
                 "duration": h["duration"],
-                "response": h["response"] if not h["silent"] else None,
+                "response": h["response"],
                 "prompt_preview": h["prompt"][:1000],
             }
             if h.get("snapshot"):
@@ -321,7 +324,7 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool,
         parts = []
         t0 = time.time()
         try:
-            async for notification in conn.session_prompt(prompt):
+            async for notification in conn.session_prompt(prompt, idle_timeout=HEARTBEAT_IDLE_TIMEOUT):
                 if "_prompt_result" in notification:
                     break
                 event = transform_notification(notification)
@@ -341,6 +344,6 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool,
         return JSONResponse({
             "agent": agent_name,
             "silent": silent,
-            "response": response if not silent else None,
+            "response": response,
             "snapshot": env_collector.get_snapshot(),
         })
