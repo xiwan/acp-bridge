@@ -12,7 +12,7 @@
 | [Claude Code](https://github.com/anthropics/claude-code) | Anthropic | ✅ Native | `acp` | ✅ Integrated | 5/5 | `npm i -g @agentclientprotocol/claude-agent-acp` |
 | [Qwen Code](https://www.npmjs.com/package/@anthropic-ai/qwen-code) | Alibaba | ✅ `--acp` | `acp` | ✅ Integrated | 6/6 | `npm i -g @anthropic-ai/qwen-code` |
 | [OpenGame](https://github.com/leigest519/OpenGame) | Open Source | ✅ `--acp` | `acp` | ✅ Integrated | — | See [repo](https://github.com/leigest519/OpenGame) |
-| [OpenAI Codex](https://github.com/openai/codex) | OpenAI | ❌ | `pty` | ✅ Integrated | 6/6 | `npm i -g @openai/codex` |
+| [OpenAI Codex](https://github.com/openai/codex) | OpenAI | ✅ | `acp` | ✅ Integrated | 6/6 | `npm i -g @openai/codex @agentclientprotocol/codex-acp` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google | 🧪 Experimental | — | 🟡 Planned | — | — |
 | [Copilot CLI](https://docs.github.com/en/copilot/reference/acp-server) | GitHub | ✅ `--acp` | — | 🟡 Planned | — | — |
 | [OpenCode](https://github.com/opencode-ai/opencode) | Open Source | ✅ `opencode acp` | `acp` | ✅ Integrated | 6/6 | See [repo](https://github.com/opencode-ai/opencode) |

@@ -202,6 +202,12 @@ class AcpConnection:
             if "openai" in method_ids:
                 await self._send_request("authenticate", {"methodId": "openai"})
                 log.info("auto-authenticated: method=openai")
+            elif "api-key" in method_ids:
+                try:
+                    await self._send_request("authenticate", {"methodId": "api-key"})
+                    log.info("auto-authenticated: method=api-key")
+                except AcpError:
+                    log.info("authenticate api-key skipped (env-based auth assumed)")
         return result
 
     async def session_new(self, cwd: str, profile: dict | None = None) -> str:

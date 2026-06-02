@@ -134,12 +134,15 @@ agents:
         - {type: "documentation", url: "https://docs.anthropic.com/en/docs/claude-code"}
   codex:
     enabled: true
-    mode: "pty"
-    command: "codex"
-    args: ["exec", "--full-auto", "--skip-git-repo-check"]
+    mode: "acp"
+    command: "codex-acp"
+    acp_args: []
     working_dir: "/tmp/cx"
-    description: "OpenAI Codex CLI agent"
+    description: "OpenAI Codex CLI agent (via ACP adapter)"
     heartbeat: false
+    env:
+      OPENAI_API_KEY: "${LITELLM_API_KEY}"
+      OPENAI_BASE_URL: "http://localhost:4000/v1"
     metadata:
       author: {name: "OpenAI", url: "https://openai.com"}
       license: "Apache-2.0"

@@ -21,10 +21,10 @@ KNOWN_AGENTS = {
         "description": "Claude Code agent (via ACP adapter)",
     },
     "codex": {
-        "command": "codex",
-        "mode": "pty",
-        "args": ["exec", "--full-auto", "--skip-git-repo-check"],
-        "description": "OpenAI Codex CLI agent",
+        "command": "codex-acp",
+        "mode": "acp",
+        "acp_args": [],
+        "description": "OpenAI Codex CLI agent (via ACP adapter)",
     },
     "qwen": {
         "command": "qwen",
