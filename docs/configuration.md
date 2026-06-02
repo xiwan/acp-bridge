@@ -41,6 +41,18 @@ litellm:
   env:
     LITELLM_API_KEY: "${LITELLM_API_KEY}"       # proxy auth key
 
+mesh:
+  enabled: false                                # optional A2A mesh discovery
+  node_id: "node-a"                             # defaults to host:port
+  self_url: "http://localhost:18010"            # URL peers use to reach this node
+  announce_interval: 300                        # seconds; also stale heartbeat interval
+  max_hops: 1                                   # reserved for gossip depth control
+  token: "${MESH_TOKEN}"                        # auth for /a2a/announce
+  seeds: []                                     # initial mesh peers
+  pricing:
+    model: "free"                               # L0 only declares free pricing
+    rate: 0
+
 harness:
   binary: ""                                    # path to harness-factory; empty = use PATH
 
@@ -137,6 +149,23 @@ webhook:
 ```
 
 This keeps secrets out of the config file. Set them in your shell, `.env` file, or systemd `Environment=` directives.
+
+## A2A Mesh (Optional)
+
+Mesh discovery is opt-in. When `mesh.enabled` is omitted or false, Bridge registers no mesh endpoints and starts no announce loop.
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | Enable A2A Mesh L0 discovery |
+| `node_id` | Human-readable node name used in the Agent Card |
+| `self_url` | Reachable URL advertised to peers |
+| `announce_interval` | Seconds between peer announcements; peers unseen for `3 * interval` are marked unhealthy |
+| `max_hops` | Reserved gossip depth field for future expansion |
+| `token` | Bearer token for `/a2a/announce`; separate from `ACP_BRIDGE_TOKEN` |
+| `seeds` | Initial peer URLs to announce to |
+| `pricing` | Declared pricing metadata; L0 uses `free` and does not bill |
+
+See [A2A Mesh](mesh.md) for endpoints and examples.
 
 ## S3 File Sharing (Optional)
 

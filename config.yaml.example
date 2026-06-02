@@ -186,3 +186,20 @@ agents:
   #       model: "bedrock/anthropic.claude-sonnet-4-6"
   #       system_prompt: "You are a code reviewer. Analyze diffs and produce review reports."
   #       temperature: 0.3
+
+# --- A2A Mesh (optional, decentralized discovery — L0) ---
+# When omitted or enabled:false, the Bridge behaves exactly as today (no mesh
+# endpoints, no announce). Enable to join a decentralized mesh of Bridges where
+# any node can discover every other node's agents.
+# mesh:
+#   enabled: true
+#   node_id: "node-a"                 # defaults to host:port
+#   self_url: "http://10.0.2.100:18010"  # URL peers use to reach this node
+#   announce_interval: 300            # seconds; doubles as heartbeat
+#   max_hops: 1                       # reserved gossip depth field
+#   token: "${MESH_TOKEN}"            # shared secret for /a2a/announce auth
+#   seeds:                            # initial peers to announce to on startup
+#     - "http://10.0.3.50:18010"
+#   pricing:                          # this node's declared pricing (L0: free only)
+#     model: "free"                   # free | per_token | per_call (future)
+#     rate: 0

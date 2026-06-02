@@ -346,6 +346,28 @@ def main():
                               prompt_store=prompt_store)
     admin_routes.register(app, prompt_store=prompt_store)
 
+    # --- A2A Mesh L0 (optional, decentralized discovery) ---
+    mesh_cfg = config.get("mesh", {})
+    mesh_mgr = None
+    if mesh_cfg.get("enabled", False):
+        from src.mesh import MeshManager
+        from src.routes import mesh as mesh_routes
+        mesh_mgr = MeshManager(**{
+            "node_name": mesh_cfg.get("node_id", f"{host}:{port}"),
+            "self_url": mesh_cfg.get("self_url", base_url),
+            "version": _VERSION,
+            "agents_cfg": {k: v for k, v in agents_cfg.items() if isinstance(v, dict)},
+            "config_path": args.config,
+            "seeds": mesh_cfg.get("seeds", []),
+            "token": mesh_cfg.get("token", ""),
+            "announce_interval": mesh_cfg.get("announce_interval", 300),
+            "max_hops": mesh_cfg.get("max_hops", 1),
+            "pricing": mesh_cfg.get("pricing"),
+        })
+        mesh_routes.register(app, mesh_mgr)
+        log.info("mesh: enabled node=%s seeds=%s agents=%s",
+                 mesh_mgr.node_name, mesh_mgr.seeds, mesh_mgr._agent_names())
+
     if ui_enabled:
         chat_routes.register(app, config)
 
@@ -447,6 +469,9 @@ def main():
             if pool:
                 asyncio.create_task(ping_loop(pool))
                 log.info("ping_loop: started, interval=300s")
+            if mesh_mgr:
+                asyncio.create_task(mesh_mgr.announce_loop())
+                log.info("mesh: announce_loop started, interval=%ds", mesh_mgr.announce_interval)
             yield
             task.cancel()
             if pool:

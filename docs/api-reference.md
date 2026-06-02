@@ -177,6 +177,38 @@ curl -X POST http://localhost:18010/tools/invoke \
   -d '{"tool":"message","action":"send","args":{"channel":"discord","target":"channel:123","message":"Hello"}}'
 ```
 
+## A2A Mesh
+
+Mesh endpoints are registered only when `mesh.enabled: true`. See [A2A Mesh](mesh.md) for setup details.
+
+### `GET /.well-known/agent.json`
+
+Public A2A Agent Card. No Bearer token is required.
+
+```bash
+curl -s http://localhost:18010/.well-known/agent.json
+```
+
+### `POST /a2a/announce`
+
+Peer discovery endpoint. Uses `mesh.token`, not the global Bridge token.
+
+```bash
+curl -s -X POST http://localhost:18010/a2a/announce \
+  -H "Authorization: Bearer $MESH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_card":{"url":"http://peer:18010","skills":[]},"peers":[]}'
+```
+
+### `GET /a2a/peers`
+
+Peer table for debugging. Requires the global Bridge token.
+
+```bash
+curl -s http://localhost:18010/a2a/peers \
+  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN"
+```
+
 ## Chat (Web UI)
 
 ### `POST /chat/messages`
