@@ -76,6 +76,29 @@ curl -s -X POST http://localhost:18010/runs \
 
 📖 Docker, systemd, config file setup → [Getting Started](docs/getting-started.md)
 
+## Service Management
+
+Two control scripts in the project root:
+
+| Script | Scope | Use Case |
+|--------|-------|----------|
+| `./bridge-ctl.sh` | acp-bridge (+ optional litellm) | Day-to-day dev: quick restart after code changes |
+| `./stack-ctl.sh` | Full stack: mantle-proxy → litellm → acp-bridge | Ops: ordered start/stop of all services |
+
+```bash
+# Daily development
+./bridge-ctl.sh restart      # restart bridge only
+./bridge-ctl.sh status       # check bridge status
+./bridge-ctl.sh logs 50      # tail bridge logs
+
+# Full stack management (respects dependency order)
+./stack-ctl.sh start         # start all: mantle-proxy → litellm → acp-bridge
+./stack-ctl.sh stop          # stop all (reverse order)
+./stack-ctl.sh restart       # full restart
+./stack-ctl.sh status        # all services at a glance
+./stack-ctl.sh health        # check all endpoints
+```
+
 ## Documentation
 
 | Document | Description |
