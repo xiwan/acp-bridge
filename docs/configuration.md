@@ -250,6 +250,32 @@ litellm_settings:
   drop_params: true    # required — Codex sends params Bedrock doesn't support
 ```
 
+### Optional: Tuning Engines Governed Route
+
+If you want ACP Bridge to keep owning the agent process while routing model calls
+through a governed OpenAI-compatible endpoint, add a Tuning Engines route to the
+same LiteLLM config:
+
+```yaml
+model_list:
+  - model_name: "te/gpt-5.4-mini"
+    litellm_params:
+      model: "openai/gpt-5.4-mini"
+      api_base: "https://api.tuningengines.com/v1"
+      api_key: "os.environ/TUNING_ENGINES_API_KEY"
+
+general_settings:
+  master_key: "sk-litellm-bedrock"
+
+litellm_settings:
+  drop_params: true
+```
+
+Then set `TUNING_ENGINES_API_KEY` to an inference key from your tenant. ACP
+Bridge still manages the CLI agent lifecycle, job orchestration, and callbacks;
+Tuning Engines adds centralized model access, policy controls, traces, and
+tenant-level usage reporting.
+
 #### Auto Prompt Caching (Recommended)
 
 LiteLLM can auto-inject `cache_control` checkpoints for Bedrock Claude models, reducing input costs by up to 90%. Add `cache_control_injection_points` to your model config:
