@@ -4,7 +4,7 @@
 
 # A2A Mesh
 
-ACP Bridge can optionally join a decentralized A2A mesh. Mesh L0 only handles discovery: nodes publish their local agents as A2A skills, announce themselves to seed peers, and keep a peer table. Remote cross-node invocation is not implemented in L0.
+ACP Bridge can optionally join a decentralized A2A mesh. **L0** handles discovery: nodes publish their local agents as A2A skills, announce themselves to seed peers, and keep a peer table. **L1** adds remote invocation: a peer (or any A2A client) can call this node's local agents via `POST /a2a`. Mesh routing — calling *out* to a peer that owns an agent you lack — is L2 and not yet implemented.
 
 ## Enable Mesh
 
@@ -61,4 +61,44 @@ curl -s http://localhost:18010/a2a/peers \
 
 ## Security Model
 
-`/.well-known/agent.json` is public by design. `/a2a/announce` bypasses the global Bridge token so peer nodes can use the separate mesh secret. `/a2a/peers` stays behind global auth because it exposes internal topology.
+`/.well-known/agent.json` is public by design. `/a2a/announce` and `/a2a` both bypass the global Bridge token and use the separate `mesh.token` secret instead, so peer nodes authenticate on the mesh plane. `/a2a/peers` stays behind global auth because it exposes internal topology.
+
+## `POST /a2a` (L1 — remote invocation)
+
+JSON-RPC 2.0 entry point that lets a peer invoke this node's local agents. Authenticated with `mesh.token` (not the global Bridge token). Registered only when `mesh.enabled=true`.
+
+### `tasks/send`
+
+Synchronously runs a local agent (named by `params.skill`) through the same handler path as `/runs`, including fallback and circuit-breaker behaviour. The A2A message text becomes the prompt; remote callers get a fresh per-agent session on this node.
+
+```bash
+curl -s -X POST http://localhost:18010/a2a \
+  -H "Authorization: Bearer $MESH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tasks/send",
+       "params":{"skill":"kiro",
+                 "message":{"parts":[{"type":"text","text":"Say hello"}]}}}'
+```
+
+Response (text result + reserved billing metadata, free in L1):
+
+```json
+{"jsonrpc":"2.0","id":1,
+ "result":{"status":{"state":"completed"},
+           "artifacts":[{"parts":[{"type":"text","text":"..."}]}],
+           "metadata":{"usage":null,"cost":{"amount":0,"currency":"USD"}}}}
+```
+
+### `tasks/get`
+
+Query a previously submitted task by id (maps to the local job store).
+
+```bash
+curl -s -X POST http://localhost:18010/a2a \
+  -H "Authorization: Bearer $MESH_TOKEN" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"id":"<job_id>"}}'
+```
+
+Errors use JSON-RPC codes: `-32601` unknown skill/method, `-32000` agent error, `-32001` task not found, `-32700` parse error.
+
+**Not in L1**: `tasks/sendSubscribe` (SSE streaming) and `tasks/cancel` are deferred.

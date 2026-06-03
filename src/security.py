@@ -8,7 +8,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 NO_AUTH_PATHS = {"/health", "/ui", "/internal/llm-callback",
-                 "/.well-known/agent.json", "/a2a/announce"}
+                 "/.well-known/agent.json", "/a2a/announce", "/a2a"}
 NO_AUTH_PREFIXES = ("/static/",)
 MAX_BODY_BYTES = 1 * 1024 * 1024  # 1 MB
 

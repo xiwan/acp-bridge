@@ -133,7 +133,7 @@ Two control scripts in the project root:
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.25.1
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.26.0
 
 ## Contributing
 

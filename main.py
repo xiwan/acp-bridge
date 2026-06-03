@@ -364,8 +364,14 @@ def main():
             "max_hops": mesh_cfg.get("max_hops", 1),
             "pricing": mesh_cfg.get("pricing"),
         })
-        mesh_routes.register(app, mesh_mgr)
-        log.info("mesh: enabled node=%s seeds=%s agents=%s",
+        # L1: A2A Server — reuse existing agent handlers (no new exec logic).
+        from src.mesh_a2a import A2AAdapter
+        a2a_adapter = A2AAdapter(
+            agents_provider=lambda: getattr(app.state, "acp_agents", {}),
+            job_mgr=job_mgr,
+        )
+        mesh_routes.register(app, mesh_mgr, adapter=a2a_adapter)
+        log.info("mesh: enabled node=%s seeds=%s agents=%s (L1 a2a on)",
                  mesh_mgr.node_name, mesh_mgr.seeds, mesh_mgr._agent_names())
 
     if ui_enabled:
