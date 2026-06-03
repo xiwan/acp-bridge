@@ -4,7 +4,7 @@
 
 # A2A Mesh
 
-ACP Bridge can optionally join a decentralized A2A mesh. **L0** handles discovery: nodes publish their local agents as A2A skills, announce themselves to seed peers, and keep a peer table. **L1** adds remote invocation: a peer (or any A2A client) can call this node's local agents via `POST /a2a`. **L2** adds the client side + routing: a peer's agent that this node lacks is registered as a transparent local handler, so calling it via `/runs` (or `/jobs`, `/pipelines`) is automatically routed to the peer that owns it. Connecting to any mesh node thus lets you use every node's agents.
+ACP Bridge can optionally join a decentralized A2A mesh. **L0** handles discovery: nodes publish their local agents as A2A skills, announce themselves to seed peers, and keep a peer table. **L1** adds remote invocation: a peer (or any A2A client) can call this node's local agents via `POST /a2a`. **L2** adds the client side + routing: a peer's agent that this node lacks is registered as a transparent local handler, so calling it via `/runs` (or `/jobs`, `/pipelines`) is automatically routed to the peer that owns it. **L3** lets a pipeline span nodes: a step whose agent lives on a peer relays its `shared_cwd` workspace via S3 (round-trip), so multi-step pipelines work across the mesh. Connecting to any mesh node thus lets you use every node's agents.
 
 ## Enable Mesh
 
@@ -131,3 +131,17 @@ curl -s -X POST http://10.0.2.100:18010/runs \
 ```
 
 **Not in L2**: cross-Bridge pipelines + S3 artifact passing (L3), multi-hop routing, distributed session consistency, remote load-balancing.
+
+## Cross-Bridge Pipelines (L3 — workspace relay)
+
+A pipeline's `shared_cwd` is single-machine. When a step's agent lives on a peer (an L2 remote skill), L3 relays the workspace so the step can run there and the result comes back.
+
+> **S3 is a hard prerequisite.** All mesh nodes must share one S3 bucket (set `s3.bucket` in `config.yaml`). The originating node needs S3 write access; peers need none (they use presigned URLs). If S3 is unavailable, a cross-node pipeline step **fails with a clear error** rather than silently losing files. Local-only pipelines never touch S3 and are unaffected.
+
+Flow (A originates, step runs on B):
+1. A tars the authoritative `shared_cwd`, uploads it, and generates a presigned GET (download) + presigned PUT (upload).
+2. A calls B's `POST /a2a` (`tasks/send`) with `workspace_in_url` / `workspace_out_url` (and `X-A2A-Hop: 1`).
+3. B downloads + unpacks the workspace to a temp dir, runs the agent with that dir as cwd, re-packs, and uploads to the PUT URL.
+4. A downloads the result and merges it back into `shared_cwd` — so `/pipelines/{id}/artifacts` still reflects the truth on A.
+
+Only the cross-node boundary triggers S3; consecutive local steps keep using `shared_cwd` directly. L3a covers single cross-node steps (e.g. "generate on A → deploy on B"); multi-step chains and parallel-mode workspace merge are deferred.

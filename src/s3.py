@@ -90,3 +90,85 @@ def upload(local_path: str, key_name: str = "") -> Optional[str]:
     except Exception as e:
         log.warning("s3: upload failed path=%s error=%s", local_path, e)
         return None
+
+
+# --- L3 mesh workspace relay helpers ---------------------------------------
+
+def _client():
+    import boto3
+    return boto3.client("s3", region_name=_region)
+
+
+def presigned_put(key_name: str, expires: int = 0) -> Optional[str]:
+    """Presigned PUT URL so a peer can upload WITHOUT S3 credentials."""
+    if not _available:
+        return None
+    try:
+        key = f"{_prefix}/{key_name}"
+        return _client().generate_presigned_url(
+            "put_object", Params={"Bucket": _bucket, "Key": key},
+            ExpiresIn=expires or _expires)
+    except Exception as e:
+        log.warning("s3: presigned_put failed key=%s error=%s", key_name, e)
+        return None
+
+
+def presigned_get(key_name: str, expires: int = 0) -> Optional[str]:
+    """Presigned GET URL so a peer can download WITHOUT S3 credentials."""
+    if not _available:
+        return None
+    try:
+        key = f"{_prefix}/{key_name}"
+        return _client().generate_presigned_url(
+            "get_object", Params={"Bucket": _bucket, "Key": key},
+            ExpiresIn=expires or _expires)
+    except Exception as e:
+        log.warning("s3: presigned_get failed key=%s error=%s", key_name, e)
+        return None
+
+
+def put_bytes(key_name: str, data: bytes) -> bool:
+    """Upload raw bytes to S3 (used by the originating node to stage a workspace)."""
+    if not _available:
+        return False
+    try:
+        _client().put_object(Bucket=_bucket, Key=f"{_prefix}/{key_name}", Body=data)
+        return True
+    except Exception as e:
+        log.warning("s3: put_bytes failed key=%s error=%s", key_name, e)
+        return False
+
+
+def delete_prefix(key_prefix: str) -> None:
+    """Best-effort cleanup of all objects under a key prefix. Never raises."""
+    if not _available:
+        return
+    try:
+        s3 = _client()
+        full = f"{_prefix}/{key_prefix}"
+        objs = s3.list_objects_v2(Bucket=_bucket, Prefix=full).get("Contents", [])
+        if objs:
+            s3.delete_objects(Bucket=_bucket,
+                              Delete={"Objects": [{"Key": o["Key"]} for o in objs]})
+    except Exception as e:
+        log.info("s3: delete_prefix best-effort failed prefix=%s error=%s", key_prefix, e)
+
+
+def pack_dir(path: str) -> bytes:
+    """tar.gz a directory's contents (arcname='.')."""
+    import io
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        tar.add(path, arcname=".")
+    return buf.getvalue()
+
+
+def unpack_dir(data: bytes, dest: str) -> None:
+    """Extract a tar.gz produced by pack_dir into dest (created if needed)."""
+    import io
+    import os
+    import tarfile
+    os.makedirs(dest, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        tar.extractall(dest)

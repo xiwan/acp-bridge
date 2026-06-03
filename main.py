@@ -371,12 +371,23 @@ def main():
             agents_provider=lambda: getattr(app.state, "acp_agents", {}),
             job_mgr=job_mgr,
             remote_skills=_remote_skills,
+            pool=pool,  # L3: run a workspace step with an explicit cwd
         )
         mesh_routes.register(app, mesh_mgr, adapter=a2a_adapter)
         # L2: A2A Client — register remote handlers for peer-only skills each cycle.
         from src.mesh_client import reconcile as _mesh_reconcile
         mesh_mgr.on_cycle = lambda: _mesh_reconcile(app, mesh_mgr, _remote_skills)
-        log.info("mesh: enabled node=%s seeds=%s agents=%s (L1 a2a on, L2 routing on)",
+        # L3: let pipeline steps relay shared_cwd to the peer owning a remote skill.
+        def _mesh_resolver(agent_name):
+            if agent_name not in _remote_skills:
+                return None
+            for p in mesh_mgr._peers.values():
+                if p.healthy and agent_name in p.skills:
+                    return (p.url, mesh_mgr.token)
+            return None
+        if pipeline_mgr:
+            pipeline_mgr._mesh_resolver = _mesh_resolver
+        log.info("mesh: enabled node=%s seeds=%s agents=%s (L1 a2a on, L2 routing on, L3 workspace relay on)",
                  mesh_mgr.node_name, mesh_mgr.seeds, mesh_mgr._agent_names())
 
     if ui_enabled:

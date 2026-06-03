@@ -127,6 +127,9 @@ class PipelineManager:
         )
         self._store = PipelineStore(db_path)
         self._prompt_store = prompt_store
+        # L3: optional mesh hook. (agent) -> (peer_url, mesh_token) if the agent is a
+        # remote skill that should run on a peer with S3 workspace relay, else None.
+        self._mesh_resolver = None
 
     def _make_shared_cwd(self, pl: Pipeline) -> str:
         """Create and return a shared workspace directory for the pipeline.
@@ -790,7 +793,12 @@ class PipelineManager:
             )
 
         try:
-            if cfg.get("mode") == "pty":
+            mesh_target = self._mesh_resolver(step.agent) if self._mesh_resolver else None
+            if mesh_target and shared_cwd:
+                await asyncio.wait_for(
+                    self._exec_step_remote(pl, step, final_prompt, shared_cwd, mesh_target),
+                    timeout=timeout)
+            elif cfg.get("mode") == "pty":
                 pty_cfg = {**cfg, "working_dir": shared_cwd} if shared_cwd else cfg
                 await asyncio.wait_for(
                     self._exec_step_pty(step, final_prompt, pty_cfg),
@@ -887,6 +895,56 @@ class PipelineManager:
             step.error = str(e)
             step.status = "failed"
         step.result = "".join(parts)
+
+    async def _exec_step_remote(self, pl: Pipeline, step: PipelineStep,
+                                prompt: str, shared_cwd: str, mesh_target: tuple):
+        """L3 (A side): relay shared_cwd to a peer via S3, run the step there, merge back.
+
+        S3 is a hard prerequisite — without it a cross-node step fails (never silent).
+        """
+        import httpx
+        from src import s3
+        peer_url, mesh_token = mesh_target
+        if not s3.is_available():
+            step.status = "failed"
+            step.error = ("cross-bridge pipeline step requires S3 "
+                          "(mesh workspace relay); s3 unavailable")
+            log.warning("l3_no_s3: pipeline=%s agent=%s", pl.pipeline_id, step.agent)
+            return
+        idx = pl.steps.index(step)
+        base = f"mesh-ws/{pl.pipeline_id}/step-{idx}"
+        try:
+            if not s3.put_bytes(f"{base}/in.tgz", s3.pack_dir(shared_cwd)):
+                step.status = "failed"; step.error = "workspace upload (A->S3) failed"; return
+            in_url = s3.presigned_get(f"{base}/in.tgz")
+            out_url = s3.presigned_put(f"{base}/out.tgz")
+            body = {"jsonrpc": "2.0", "id": 1, "method": "tasks/send",
+                    "params": {"skill": step.agent,
+                               "message": {"parts": [{"type": "text", "text": prompt}]},
+                               "workspace_in_url": in_url, "workspace_out_url": out_url}}
+            headers = {"X-A2A-Hop": "1"}
+            if mesh_token:
+                headers["Authorization"] = f"Bearer {mesh_token}"
+            async with httpx.AsyncClient(timeout=step.timeout or 600) as c:
+                r = await c.post(peer_url.rstrip("/") + "/a2a", json=body, headers=headers)
+                r.raise_for_status()
+                resp = r.json()
+            if "error" in resp:
+                step.status = "failed"; step.error = resp["error"].get("message", "remote error"); return
+            # merge result workspace back into the authoritative shared_cwd
+            get_out = s3.presigned_get(f"{base}/out.tgz")
+            ro = httpx.get(get_out, timeout=120)
+            if ro.status_code == 200 and ro.content:
+                s3.unpack_dir(ro.content, shared_cwd)
+            arts = resp.get("result", {}).get("artifacts", [])
+            step.result = "".join(p.get("text", "") for a in arts for p in a.get("parts", []))
+            step.status = "completed"
+        except Exception as e:
+            step.status = "failed"; step.error = f"remote step failed: {e}"
+            log.warning("l3_remote_failed: pipeline=%s agent=%s err=%s",
+                        pl.pipeline_id, step.agent, e)
+        finally:
+            s3.delete_prefix(f"mesh-ws/{pl.pipeline_id}/")
 
     async def _exec_step_pty(self, step: PipelineStep, prompt: str, cfg: dict):
         result = await run_pty_subprocess(
