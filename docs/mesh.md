@@ -4,7 +4,7 @@
 
 # A2A Mesh
 
-ACP Bridge can optionally join a decentralized A2A mesh. **L0** handles discovery: nodes publish their local agents as A2A skills, announce themselves to seed peers, and keep a peer table. **L1** adds remote invocation: a peer (or any A2A client) can call this node's local agents via `POST /a2a`. Mesh routing — calling *out* to a peer that owns an agent you lack — is L2 and not yet implemented.
+ACP Bridge can optionally join a decentralized A2A mesh. **L0** handles discovery: nodes publish their local agents as A2A skills, announce themselves to seed peers, and keep a peer table. **L1** adds remote invocation: a peer (or any A2A client) can call this node's local agents via `POST /a2a`. **L2** adds the client side + routing: a peer's agent that this node lacks is registered as a transparent local handler, so calling it via `/runs` (or `/jobs`, `/pipelines`) is automatically routed to the peer that owns it. Connecting to any mesh node thus lets you use every node's agents.
 
 ## Enable Mesh
 
@@ -102,3 +102,32 @@ curl -s -X POST http://localhost:18010/a2a \
 Errors use JSON-RPC codes: `-32601` unknown skill/method, `-32000` agent error, `-32001` task not found, `-32700` parse error.
 
 **Not in L1**: `tasks/sendSubscribe` (SSE streaming) and `tasks/cancel` are deferred.
+
+## Mesh Routing (L2 — calling out to peers)
+
+When `mesh.enabled=true`, each announce cycle reconciles the peer table: for every skill a healthy peer has that this node does **not** serve locally, a transparent `a2a-remote` handler is registered into the local agent set. Calling that agent via `/runs`, `/jobs`, or `/pipelines` is then automatically forwarded to the owning peer over L1 `tasks/send`. No client change is needed — routing is invisible.
+
+Rules:
+- **Local priority** — a skill served locally is never shadowed by a remote one.
+- **1-hop limit** — outbound forwards carry `X-A2A-Hop: 1`; a node receiving a hopped request refuses to forward it again (JSON-RPC error `-32011`), preventing cascades.
+- **Single-turn** — L2 does not guarantee multi-turn session continuity across nodes; a remote call gets a fresh session on the owning node.
+- **Free** — cross-node calls remain unbilled (pricing placeholders only).
+
+```yaml
+# node-a (no claude locally) seeds node-b (has claude)
+mesh:
+  enabled: true
+  node_id: "node-a"
+  self_url: "http://10.0.2.100:18010"
+  token: "${MESH_TOKEN}"
+  seeds: ["http://10.0.3.50:18010"]
+```
+
+```bash
+# After discovery, claude appears in node-a's /agents and routes to node-b:
+curl -s -X POST http://10.0.2.100:18010/runs \
+  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN" -H "Content-Type: application/json" \
+  -d '{"agent_name":"claude","input":[{"parts":[{"content":"hi","content_type":"text/plain"}]}]}'
+```
+
+**Not in L2**: cross-Bridge pipelines + S3 artifact passing (L3), multi-hop routing, distributed session consistency, remote load-balancing.

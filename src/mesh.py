@@ -54,6 +54,7 @@ class MeshManager:
             self._registry.load(config_path)
         except Exception as e:  # config without capabilities is fine
             log.warning("mesh: capability load failed (%s); minimal skills only", e)
+        self.on_cycle = None  # L2: optional hook run after each announce cycle
 
     # --- Agent Card ---------------------------------------------------------
 
@@ -140,4 +141,9 @@ class MeshManager:
         while True:
             await self.announce_to_seeds()
             self.mark_stale()
+            if self.on_cycle:
+                try:
+                    self.on_cycle()
+                except Exception as e:
+                    log.warning("mesh: on_cycle hook failed: %s", e)
             await asyncio.sleep(self.announce_interval)

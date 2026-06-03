@@ -366,12 +366,17 @@ def main():
         })
         # L1: A2A Server — reuse existing agent handlers (no new exec logic).
         from src.mesh_a2a import A2AAdapter
+        _remote_skills: set = set()
         a2a_adapter = A2AAdapter(
             agents_provider=lambda: getattr(app.state, "acp_agents", {}),
             job_mgr=job_mgr,
+            remote_skills=_remote_skills,
         )
         mesh_routes.register(app, mesh_mgr, adapter=a2a_adapter)
-        log.info("mesh: enabled node=%s seeds=%s agents=%s (L1 a2a on)",
+        # L2: A2A Client — register remote handlers for peer-only skills each cycle.
+        from src.mesh_client import reconcile as _mesh_reconcile
+        mesh_mgr.on_cycle = lambda: _mesh_reconcile(app, mesh_mgr, _remote_skills)
+        log.info("mesh: enabled node=%s seeds=%s agents=%s (L1 a2a on, L2 routing on)",
                  mesh_mgr.node_name, mesh_mgr.seeds, mesh_mgr._agent_names())
 
     if ui_enabled:

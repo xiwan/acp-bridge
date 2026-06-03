@@ -49,7 +49,8 @@ def register(app, mesh: MeshManager, adapter: A2AAdapter | None = None):
                 {"jsonrpc": "2.0", "id": None,
                  "error": {"code": -32700, "message": "parse error"}},
                 status_code=400)
-        return await adapter.dispatch(rpc)
+        inbound_hop = request.headers.get("x-a2a-hop") is not None
+        return await adapter.dispatch(rpc, inbound_hop=inbound_hop)
 
     @app.get("/a2a/peers")
     async def peers():

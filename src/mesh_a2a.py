@@ -54,10 +54,13 @@ async def _drain(agent, input: list[Message]) -> str:
 class A2AAdapter:
     """Dispatches A2A JSON-RPC methods against this node's local agents + job store."""
 
-    def __init__(self, agents_provider, job_mgr=None):
+    def __init__(self, agents_provider, job_mgr=None, remote_skills=None):
         # agents_provider: callable -> {name: Agent}; deferred so app.state is ready.
         self._agents_provider = agents_provider
         self._job_mgr = job_mgr
+        # L2: names registered as a2a-remote handlers (forward to a peer). Used to
+        # enforce the 1-hop limit: an inbound hopped request must not re-forward.
+        self.remote_skills = remote_skills if remote_skills is not None else set()
 
     def _agents(self) -> dict:
         try:
@@ -65,18 +68,22 @@ class A2AAdapter:
         except Exception:
             return {}
 
-    async def dispatch(self, rpc: dict) -> dict:
+    async def dispatch(self, rpc: dict, inbound_hop: bool = False) -> dict:
         rpc_id = rpc.get("id")
         method = rpc.get("method")
         params = rpc.get("params") or {}
         if method == "tasks/send":
-            return await self._tasks_send(rpc_id, params)
+            return await self._tasks_send(rpc_id, params, inbound_hop=inbound_hop)
         if method == "tasks/get":
             return self._tasks_get(rpc_id, params)
         return _rpc_error(rpc_id, -32601, f"method not found: {method}")
 
-    async def _tasks_send(self, rpc_id, params: dict) -> dict:
+    async def _tasks_send(self, rpc_id, params: dict, inbound_hop: bool = False) -> dict:
         skill = params.get("skill") or params.get("agent")
+        # 1-hop limit: refuse to forward a remote skill for an already-hopped request.
+        if inbound_hop and skill in self.remote_skills:
+            return _rpc_error(rpc_id, -32011,
+                              f"hop limit: {skill} is remote, refusing 2nd hop")
         agents = self._agents()
         agent = agents.get(skill)
         if agent is None:
