@@ -144,4 +144,4 @@ Flow (A originates, step runs on B):
 3. B downloads + unpacks the workspace to a temp dir, runs the agent with that dir as cwd, re-packs, and uploads to the PUT URL.
 4. A downloads the result and merges it back into `shared_cwd` — so `/pipelines/{id}/artifacts` still reflects the truth on A.
 
-Only the cross-node boundary triggers S3; consecutive local steps keep using `shared_cwd` directly. L3a covers single cross-node steps (e.g. "generate on A → deploy on B"); multi-step chains and parallel-mode workspace merge are deferred.
+Only the cross-node boundary triggers S3; consecutive local steps keep using `shared_cwd` directly. Multi-step cross-node chains work in `sequence` mode (each step relays the latest workspace), and `parallel` mode isolates each step in its own `shared_cwd/<agent>/` subdir so concurrent cross-node steps don't clobber each other.

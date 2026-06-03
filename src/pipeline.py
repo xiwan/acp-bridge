@@ -944,7 +944,9 @@ class PipelineManager:
             log.warning("l3_remote_failed: pipeline=%s agent=%s err=%s",
                         pl.pipeline_id, step.agent, e)
         finally:
-            s3.delete_prefix(f"mesh-ws/{pl.pipeline_id}/")
+            # Clean up ONLY this step's own prefix. Deleting the whole pipeline prefix
+            # here would race parallel steps (first finisher wipes others' in/out.tgz).
+            s3.delete_prefix(f"{base}/")
 
     async def _exec_step_pty(self, step: PipelineStep, prompt: str, cfg: dict):
         result = await run_pty_subprocess(
