@@ -109,7 +109,7 @@ Two control scripts in the project root:
 | [Configuration](docs/configuration.md) | `config.yaml` reference, Codex + LiteLLM proxy setup |
 | [Agents](docs/agents.md) | Supported agents, compatibility matrix, install commands |
 | [API Reference](docs/api-reference.md) | All HTTP endpoints with examples |
-| [A2A Mesh](docs/mesh.md) | Decentralized Bridge discovery with Agent Cards |
+| [A2A Mesh](docs/mesh.md) | Decentralized mesh: discovery (L0) → remote invocation (L1) → routing (L2) → cross-Bridge pipelines (L3) |
 | [Pipelines](docs/pipelines.md) | Multi-agent orchestration: sequence, parallel, race, conversation |
 | [Async Jobs](docs/async-jobs.md) | Background tasks, webhook callback, IM push |
 | [Webhooks](docs/webhooks.md) | Webhook formats, auth (token vs HMAC), payload examples |
