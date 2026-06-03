@@ -38,6 +38,9 @@ sudo journalctl -u acp-bridge.service --since "5 minutes ago" -o cat | grep -c "
 sudo ss -ltnp | grep 18010
 # Note the PID.
 
+# Quick check for manual Bridge processes outside systemd.
+./bridge-ctl.sh orphans
+
 # 3. Compare against the systemd-managed process.
 sudo systemctl status acp-bridge.service | grep "Main PID"
 
@@ -55,7 +58,7 @@ curl -s http://127.0.0.1:18010/health | jq '.uptime'
 
 **Why orphans happen**: running `uv run main.py` directly (e.g. for debugging, or via `start.sh`) spawns a process outside systemd's cgroup. A subsequent `./bridge-ctl.sh restart` only restarts the systemd instance — it can't kill the manual one. The systemd instance then crash-loops on `EADDRINUSE`, and each failed startup runs the shutdown hook which kills agent subprocesses (via `pool.shutdown()`), so any in-flight pipeline step idles out.
 
-**Prevention**: never run `uv run main.py` directly. Always use `./bridge-ctl.sh restart`.
+**Prevention**: never run `uv run main.py` directly. Always use `./bridge-ctl.sh restart`. `./bridge-ctl.sh status` and `./bridge-ctl.sh restart` warn when they detect Bridge processes outside the systemd cgroup.
 
 ## Agents
 

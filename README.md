@@ -89,6 +89,7 @@ Two control scripts in the project root:
 # Daily development
 ./bridge-ctl.sh restart      # restart bridge only
 ./bridge-ctl.sh status       # check bridge status
+./bridge-ctl.sh orphans      # detect manual Bridge processes outside systemd
 ./bridge-ctl.sh logs 50      # tail bridge logs
 
 # Full stack management (respects dependency order)
@@ -132,7 +133,7 @@ Two control scripts in the project root:
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.25.0
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.25.1
 
 ## Contributing
 
