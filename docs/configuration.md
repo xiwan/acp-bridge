@@ -250,7 +250,38 @@ litellm_settings:
   drop_params: true    # required — Codex sends params Bedrock doesn't support
 ```
 
-#### Auto Prompt Caching (Recommended)
+### Third-party / Community Integrations
+
+The following examples show community-maintained ways to route LiteLLM traffic
+through third-party services. They are not officially tested or endorsed by ACP
+Bridge; evaluate the service, credentials, and model behavior for your own
+environment.
+
+#### Tuning Engines OpenAI-compatible Route
+
+To route a model alias through Tuning Engines, add an OpenAI-compatible route to
+the same LiteLLM config:
+
+```yaml
+model_list:
+  - model_name: "te/your-model-alias"
+    litellm_params:
+      model: "openai/your-model-alias"
+      api_base: "https://api.tuningengines.com/v1"
+      api_key: "os.environ/TUNING_ENGINES_API_KEY"
+
+general_settings:
+  master_key: "sk-litellm-bedrock"
+
+litellm_settings:
+  drop_params: true
+```
+
+Then set `TUNING_ENGINES_API_KEY` to a Tuning Engines inference key and use the
+`te/your-model-alias` route from your Codex/LiteLLM configuration. ACP Bridge
+continues to manage the CLI agent lifecycle, job orchestration, and callbacks.
+
+### Auto Prompt Caching (Recommended)
 
 LiteLLM can auto-inject `cache_control` checkpoints for Bedrock Claude models, reducing input costs by up to 90%. Add `cache_control_injection_points` to your model config:
 
