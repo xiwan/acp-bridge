@@ -6,6 +6,24 @@
 
 ACP Bridge can optionally join a decentralized A2A mesh. **L0** handles discovery: nodes publish their local agents as A2A skills, announce themselves to seed peers, and keep a peer table. **L1** adds remote invocation: a peer (or any A2A client) can call this node's local agents via `POST /a2a`. **L2** adds the client side + routing: a peer's agent that this node lacks is registered as a transparent local handler, so calling it via `/runs` (or `/jobs`, `/pipelines`) is automatically routed to the peer that owns it. **L3** lets a pipeline span nodes: a step whose agent lives on a peer relays its `shared_cwd` workspace via S3 (round-trip), so multi-step pipelines work across the mesh. Connecting to any mesh node thus lets you use every node's agents.
 
+## Design Philosophy
+
+<!-- The power of an analogy lies in its brevity — over-explaining dilutes it. -->
+
+**You don't trust a miner's claim; you trust the verifiable hash chain.**
+
+The same principle drives A2A Mesh design. We never assume a remote agent is honest, available, or deterministic. Instead, we build trust from *verifiable outcomes*: every cross-node invocation produces an auditable input→output chain — traceable, replayable, independently checkable. An agent's word is cheap; its receipts are not.
+
+Discovery follows the gossip model: nodes announce capabilities, peers propagate what they observe, and the mesh converges on a shared view of the world without any central registry. No single node is authoritative — the topology is an emergent property of ongoing protocol exchanges, not a declared truth.[^1]
+
+[^1]: Gossip guarantees *everyone hears* — it does not guarantee *what they hear is true*. Unlike blockchain consensus, gossip alone has no Sybil resistance or Byzantine fault tolerance. Truth verification is deliberately delegated to the application layer: hop limits, mesh-token auth, and artifact checksums serve as our "proof-of-work" equivalent.
+
+This yields a trustless-by-default posture: orchestration never relies on trust in a single agent's reliability. Circuit breakers, hop limits, and artifact checksums exist so the system *verifies rather than believes*. If a result can't be validated, it's retried or failed — never silently accepted.
+
+**The asymmetry constraint**: verifying must be *far cheaper* than re-executing. A Merkle proof works because it's O(log n) against O(n) recomputation. Our verification mechanisms follow the same economics — a checksum comparison or schema validation costs milliseconds against minutes of agent execution. If your verification approaches the cost of re-running the task, the black-box model collapses. Design verification to be lightweight, structural, and fast.
+
+> *"A verifiable black box is a good architectural boundary. A runnable black box is just a monolith."*
+
 ## Enable Mesh
 
 ```yaml
