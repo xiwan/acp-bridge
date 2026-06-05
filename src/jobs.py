@@ -252,6 +252,8 @@ class JobManager:
                         job.status = "failed"
                     else:
                         job.status = "completed"
+                    from .agents import _record_acp_usage
+                    _record_acp_usage(job.agent, notification["_prompt_result"], 0)
                     break
                 event = transform_notification(notification)
                 if not event:

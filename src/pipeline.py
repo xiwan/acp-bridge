@@ -678,6 +678,8 @@ class PipelineManager:
             async for notification in conn.session_prompt(final_prompt, idle_timeout=timeout):
                 if "_prompt_result" in notification:
                     prompt_result = notification["_prompt_result"]
+                    from .agents import _record_acp_usage
+                    _record_acp_usage(agent, prompt_result, 0)
                     break
                 event = transform_notification(notification)
                 if not event:
@@ -849,6 +851,8 @@ class PipelineManager:
                         step.status = "failed"
                     else:
                         step.status = "completed"
+                    from .agents import _record_acp_usage
+                    _record_acp_usage(step.agent, notification["_prompt_result"], 0)
                     break
                 event = transform_notification(notification)
                 if not event:

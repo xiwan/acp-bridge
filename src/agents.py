@@ -58,6 +58,50 @@ def get_circuit_breaker(agent: str) -> CircuitBreaker:
         return _circuit_breakers[agent]
 
 
+def _record_acp_usage(agent_name: str, prompt_result: dict, duration: float):
+    """Record LLM usage from ACP _prompt_result into usage.db.
+
+    ACP agents (e.g. Kiro/gpt-5.5) that don't go through LiteLLM still report
+    usage in the JSON-RPC response. Extract and store it so /usage is complete.
+
+    Only records when _meta.quota.model_usage provides an explicit model name.
+    Agents that go through LiteLLM already get recorded via the LiteLLM callback,
+    so the fallback (top-level usage without model name) is skipped to avoid duplicates.
+    """
+    try:
+        result = prompt_result.get("result") or {}
+        if not isinstance(result, dict):
+            return
+
+        meta = result.get("_meta") or {}
+        quota = meta.get("quota", {})
+        model_usage_list = quota.get("model_usage", [])
+
+        if not model_usage_list:
+            return
+
+        from .routes.litellm_proxy import _ensure_db
+        db = _ensure_db()
+
+        for mu in model_usage_list:
+            model = mu.get("model", "")
+            tc = mu.get("token_count", {})
+            if not model or not tc:
+                continue
+            input_t = tc.get("inputTokens", 0) or 0
+            output_t = tc.get("outputTokens", 0) or 0
+            total_t = tc.get("totalTokens", 0) or 0
+            cached_t = tc.get("cachedInputTokens", 0) or tc.get("cachedReadTokens", 0) or 0
+            db.execute(
+                """INSERT INTO llm_usage (ts, model, input_tokens, output_tokens, total_tokens,
+                   cached_tokens, cache_creation_tokens, duration)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (time.time(), model, input_t, output_t, total_t, cached_t, 0, duration))
+        db.commit()
+    except Exception as e:
+        log.debug("acp_usage_record_failed: agent=%s error=%s", agent_name, e)
+
+
 async def _execute_agent_call(
     agent_name: str,
     prompt: str,
@@ -109,6 +153,8 @@ async def _execute_agent_call(
                          notification["_prompt_result"].get("result", {}).get("stopReason", "?"))
                 if "error" in notification["_prompt_result"]:
                     _success = False
+                # Extract and record usage from ACP _prompt_result
+                _record_acp_usage(agent_name, notification["_prompt_result"], time.time() - _t0)
                 continue
 
             event = transform_notification(notification)

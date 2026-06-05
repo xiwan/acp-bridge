@@ -132,6 +132,23 @@ class EnvCollector:
         import re
         return re.sub(r'/home/\S+/', '.../', text)
 
+    @staticmethod
+    def clean_response(text: str) -> str:
+        """Post-process heartbeat response: replace CLI commands with natural language."""
+        import re
+        # acp-client.sh -a <agent> "msg" → 对<agent>说：msg
+        text = re.sub(
+            r'(?:acp-client\.sh|./acp-client\.sh)\s+-a\s+(\S+)\s+"([^"]*)"',
+            r'对\1说：\2', text)
+        # Strip trailing [SILENT] (agents often append it after real content)
+        text = re.sub(r'\s*\[SILENT\]\s*$', '', text, flags=re.IGNORECASE)
+        return text.strip()
+
+    @staticmethod
+    def is_silent(response: str) -> bool:
+        """True only if the entire response is [SILENT] or empty."""
+        return not response.strip() or response.strip().upper() == "[SILENT]"
+
     def _build_context(self) -> str:
         lines = []
         # Injected human directives
@@ -333,8 +350,8 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool,
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
 
-        response = "".join(parts).strip()
-        silent = "[SILENT]" in response.upper() or not response
+        response = env_collector.clean_response("".join(parts).strip())
+        silent = env_collector.is_silent(response)
         duration = time.time() - t0
 
         log.info("heartbeat_ping: agent=%s silent=%s len=%d dur=%.1fs", agent_name, silent, len(response), duration)

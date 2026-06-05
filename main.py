@@ -438,12 +438,14 @@ def main():
             parts = []
             async for notification in conn.session_prompt(prompt, idle_timeout=HEARTBEAT_IDLE_TIMEOUT):
                 if "_prompt_result" in notification:
+                    from src.agents import _record_acp_usage
+                    _record_acp_usage(agent_name, notification["_prompt_result"], time.time() - t0)
                     break
                 event = transform_notification(notification)
                 if event and event["type"] == "message.part":
                     parts.append(event["content"])
-            response = "".join(parts).strip()
-            silent = "[SILENT]" in response.upper() or not response
+            response = env_collector.clean_response("".join(parts).strip())
+            silent = env_collector.is_silent(response)
             env_collector.record(agent_name, prompt, response, silent, time.time() - t0,
                                  snapshot=env_collector.get_snapshot())
             env_collector.increment_round(agent_name)
