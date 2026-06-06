@@ -398,6 +398,9 @@ def main():
             pipeline_mgr._mesh_resolver = _mesh_resolver
         log.info("mesh: enabled node=%s seeds=%s agents=%s (L1 a2a on, L2 routing on, L3 workspace relay on)",
                  mesh_mgr.node_name, mesh_mgr.seeds, mesh_mgr._agent_names())
+        # Wire mesh agents into heartbeat snapshot
+        if env_collector:
+            env_collector._acp_agents_provider = lambda: getattr(app.state, "acp_agents", {})
 
     if ui_enabled:
         chat_routes.register(app, config)

@@ -26,7 +26,8 @@ class EnvCollector:
                  client_script: str = "", job_mgr=None, language: str = "en",
                  shared_workdir: str = "/tmp/acp-public",
                  active_hours: tuple[int, int] = (0, 24),
-                 timezone_offset: int = 8):
+                 timezone_offset: int = 8,
+                 acp_agents_provider=None):
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._port = port
@@ -51,6 +52,8 @@ class EnvCollector:
         self._round_counter: dict[str, int] = {}
         # Last snapshot hash — for diff-based skip
         self._last_snapshot_hash: str = ""
+        # Mesh remote agents provider (callable returning dict of agent objects)
+        self._acp_agents_provider = acp_agents_provider
         self.refresh()
 
     def _agent_profile(self, agent: str) -> dict:
@@ -78,6 +81,16 @@ class EnvCollector:
                 continue
             if cfg.get("enabled") and cfg.get("mode") == "acp":
                 agents[name] = {"busy": 0, "idle": 0, **self._agent_profile(name)}
+        # Mesh remote agents
+        if self._acp_agents_provider:
+            local_names = {n for n in self._agents_cfg if isinstance(self._agents_cfg[n], dict)}
+            for name, agent_obj in (self._acp_agents_provider() or {}).items():
+                if name in local_names or name in agents:
+                    continue
+                desc = getattr(agent_obj, "description", "") or ""
+                meta = getattr(agent_obj, "metadata", None)
+                domains = (meta.domains or []) if meta and hasattr(meta, "domains") else []
+                agents[name] = {"busy": 0, "idle": 0, "description": desc, "domains": domains}
         self._snapshot = json.dumps(agents, ensure_ascii=False, separators=(",", ":"))
         self._ts = time.time()
 
@@ -105,6 +118,9 @@ class EnvCollector:
     def get_snapshot(self) -> dict:
         if not self._snapshot:
             return {}
+        # Refresh to pick up mesh agents that registered after init
+        if self._acp_agents_provider:
+            self.refresh()
         return {"agents": json.loads(self._snapshot), "ts": self._ts}
 
     def heartbeat_session_id(self, agent_name: str) -> str:

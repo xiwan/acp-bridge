@@ -127,6 +127,19 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
                 status = "degraded"
             reasons.append(f"{jobs_info['stuck']} stuck job(s)")
 
+        # Mesh remote agents
+        local_names = {n for n in agents_cfg if isinstance(agents_cfg[n], dict)}
+        acp_agents = getattr(app.state, "acp_agents", None) or {}
+        for name in acp_agents:
+            if name not in local_names:
+                agents_summary.append({
+                    "name": name,
+                    "mode": "mesh",
+                    "enabled": True,
+                    "alive": 0,
+                    "healthy": True,
+                })
+
         body = {
             "status": status,
             "version": version,
@@ -178,6 +191,39 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
                 "healthy": responsive > 0 or cfg.get("mode") == "pty",
                 "sessions": sessions,
             })
+
+        # Mesh remote agents (L2): registered in app.state.acp_agents but not in agents_cfg
+        local_names = {n for n in agents_cfg if isinstance(agents_cfg[n], dict)}
+        acp_agents = getattr(app.state, "acp_agents", None) or {}
+        for name, agent_obj in acp_agents.items():
+            if name in local_names:
+                continue
+            tags = []
+            description = ""
+            domains = []
+            if hasattr(agent_obj, "metadata") and agent_obj.metadata:
+                meta = agent_obj.metadata
+                if hasattr(meta, "tags"):
+                    tags = meta.tags or []
+                if hasattr(meta, "domains"):
+                    domains = meta.domains or []
+            if hasattr(agent_obj, "description"):
+                description = agent_obj.description or ""
+            agent_list.append({
+                "name": name,
+                "mode": "mesh",
+                "alive_sessions": 0,
+                "responsive_sessions": 0,
+                "healthy": True,
+                "sessions": [],
+                "description": description,
+                "domains": domains,
+                "mesh": {
+                    "node": next((t.split(":", 1)[1] for t in tags if t.startswith("node:")), None),
+                    "peer": next((t.split(":", 1)[1] for t in tags if t.startswith("peer:")), None),
+                },
+            })
+
         return {"version": version, "agents": agent_list}
 
     @app.get("/agents/fallback-chain")
