@@ -131,7 +131,25 @@ info "Step 2/6: Installing ACP Bridge..."
 
 if [ -d "$INSTALL_DIR/.git" ] && $HAS_GIT; then
     info "Updating existing installation at $INSTALL_DIR..."
-    git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || warn "git pull failed, using existing version"
+    # Fast-forward only. Local changes to tracked files (historically config.yaml,
+    # which is no longer tracked as of v0.31.0) can block the merge — capture the
+    # real error, auto-stash, and retry before falling back to the existing version.
+    pull_err="$(git -C "$INSTALL_DIR" pull --ff-only 2>&1)"; pull_rc=$?
+    if [ $pull_rc -ne 0 ]; then
+        warn "Fast-forward update failed:"
+        printf '%s\n' "$pull_err" | sed 's/^/    /'
+        warn "Stashing local changes (including untracked) and retrying..."
+        stash_out="$(git -C "$INSTALL_DIR" stash push -u -m "install.sh auto-stash $(date -u +%Y%m%dT%H%M%SZ)" 2>&1)"
+        if git -C "$INSTALL_DIR" pull --ff-only >/dev/null 2>&1; then
+            ok "Updated after stashing local changes."
+            case "$stash_out" in
+                *"No local changes"*) : ;;
+                *) warn "Your local changes were stashed — recover with: git -C \"$INSTALL_DIR\" stash pop" ;;
+            esac
+        else
+            warn "git pull still failed, using existing version"
+        fi
+    fi
 elif [ -d "$INSTALL_DIR" ]; then
     # Existing dir without .git (tarball install) — update via tarball overlay
     info "Updating existing installation at $INSTALL_DIR (tarball)..."
