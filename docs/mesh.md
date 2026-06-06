@@ -61,6 +61,25 @@ references `${MESH_TOKEN}`), and prints just the token's last 4 characters so yo
 across nodes without exposing the secret. On update, an existing `mesh:` section or `MESH_TOKEN`
 is preserved, not overwritten.
 
+### Peer Liveness
+
+Nodes stay connected through periodic **announce**, not a fast ping/pong heartbeat:
+
+- Every `announce_interval` seconds (default **300s / 5 min**), each node `POST`s its Agent Card
+  to all seeds + known peers (`announce_loop`). The target replies with its own Card and peer
+  list, so a single announce refreshes `last_seen` on **both** sides — which is why seeding one
+  direction is enough for both peer tables to populate.
+- After each cycle, `mark_stale` flags any peer whose `last_seen` is older than
+  `announce_interval * 3` (default **900s / 15 min**) as `healthy: false`.
+- L2 routing only registers agents from `healthy` peers. When a peer goes stale, its remote
+  agents are dropped from the local route set, so calls stop forwarding to a dead node.
+- Discovery is gossip-based: announce also exchanges each node's peer list, so a node learns
+  "peers of peers" (added as `unhealthy` placeholders until first direct contact succeeds).
+
+**Tuning:** with defaults, a node that dies takes up to ~15 min to be marked unhealthy. For
+faster failure detection, lower `mesh.announce_interval` (e.g. `60` → stale after 180s) at the
+cost of more frequent announce traffic.
+
 
 
 ### `GET /.well-known/agent.json`
@@ -181,3 +200,112 @@ Flow (A originates, step runs on B):
 4. A downloads the result and merges it back into `shared_cwd` — so `/pipelines/{id}/artifacts` still reflects the truth on A.
 
 Only the cross-node boundary triggers S3; consecutive local steps keep using `shared_cwd` directly. Multi-step cross-node chains work in `sequence` mode (each step relays the latest workspace), and `parallel` mode isolates each step in its own `shared_cwd/<agent>/` subdir so concurrent cross-node steps don't clobber each other.
+
+## Two-Node Walkthrough (verify L0–L3)
+
+A complete end-to-end setup with two Bridges — **node-a** (`172.31.15.10`) and **node-b**
+(`172.31.6.197`) — plus a shared S3 bucket. Replace IPs with your own.
+
+### 1. Configure both nodes
+
+On each node add a `mesh:` block (or answer the installer's `Enable A2A Mesh?` prompt). Both
+nodes must share the **same** `MESH_TOKEN` in `.env`.
+
+```yaml
+# node-a config.yaml
+mesh:
+  enabled: true
+  node_id: "node-a"
+  self_url: "http://172.31.15.10:18010"
+  token: "${MESH_TOKEN}"
+  seeds: ["http://172.31.6.197:18010"]   # point at node-b
+  pricing: { model: "free", rate: 0 }
+```
+
+```yaml
+# node-b config.yaml — self_url is itself, seeds point back at node-a
+mesh:
+  enabled: true
+  node_id: "node-b"
+  self_url: "http://172.31.6.197:18010"
+  token: "${MESH_TOKEN}"
+  seeds: ["http://172.31.15.10:18010"]
+  pricing: { model: "free", rate: 0 }
+```
+
+Seeding one direction is enough (announce is bidirectional), but seeding both converges faster.
+Copy the same token to both `.env` files — match the last 4 characters to confirm.
+
+Restart both: `./bridge-ctl.sh restart`.
+
+### 2. L0 — discovery
+
+```bash
+source .env
+curl -s http://127.0.0.1:18010/.well-known/agent.json | jq .name   # not 404 = mesh up
+curl -s http://127.0.0.1:18010/a2a/peers -H "Authorization: Bearer $ACP_BRIDGE_TOKEN" | jq
+```
+
+The peer table should list the other node with `"healthy": true` and its `skills`.
+
+### 3. L1 — explicit remote invocation
+
+Call a peer's agent directly over `POST /a2a` (uses `MESH_TOKEN`):
+
+```bash
+curl -s -X POST http://172.31.6.197:18010/a2a \
+  -H "Authorization: Bearer $MESH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tasks/send",
+       "params":{"skill":"harness","message":{"parts":[{"type":"text","text":"say hi"}]}}}'
+```
+
+A `result.artifacts[].text` reply confirms the cross-node call path works.
+
+### 4. L2 — transparent routing
+
+To see `/runs` route to a peer, the agent must be **peer-only** (local priority means a local
+agent of the same name is never shadowed). On node-a, temporarily disable the local copy:
+
+```yaml
+# node-a config.yaml
+  harness:
+    enabled: false   # so node-b's harness is the one that routes
+```
+
+Restart node-a, wait one announce cycle, then call via the normal API — no peer address needed:
+
+```bash
+curl -s -X POST http://127.0.0.1:18010/runs \
+  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN" -H "Content-Type: application/json" \
+  -d '{"agent_name":"harness","input":[{"parts":[{"content":"Run: echo I-am-on-the-peer","content_type":"text/plain"}]}]}'
+```
+
+The output proves it executed on node-b (e.g. its profile's shell allowlist applies).
+
+### 5. L3 — cross-node pipeline
+
+With a peer-only agent and a shared S3 bucket, a pipeline step runs on the peer and its workspace
+is relayed back:
+
+```bash
+curl -s -X POST http://127.0.0.1:18010/pipelines \
+  -H "Authorization: Bearer $ACP_BRIDGE_TOKEN" -H "Content-Type: application/json" \
+  -d '{"mode":"sequence","steps":[
+        {"agent":"harness","prompt":"Write a file proof.txt with content CROSS_NODE_L3_OK in the cwd, then reply done.","timeout":120}]}'
+# poll GET /pipelines/{id}; then confirm the file came back:
+curl -s http://127.0.0.1:18010/pipelines/<id>/artifacts -H "Authorization: Bearer $ACP_BRIDGE_TOKEN"
+```
+
+`artifacts` listing `proof.txt` means node-b's write was tar'd → S3 → merged back into node-a's
+authoritative `shared_cwd`.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `/.well-known/agent.json` returns 404 | mesh not enabled on that node | set `mesh.enabled: true` and restart |
+| `/a2a/announce` or `/a2a` returns `unauthorized` | `MESH_TOKEN` differs between nodes | use the identical token everywhere (match last 4 chars) |
+| peer table stays `[]` | peer not restarted, or first announce cycle hasn't run yet | restart the peer; wait up to `announce_interval` (default 300s) |
+| `/runs` doesn't route to the peer | a local agent of the same name takes priority | disable the local agent, or use a peer-only agent name |
+| cross-node pipeline step fails immediately | S3 unavailable / no write access on the originating node | configure `s3.bucket` and ensure the origin node can write to it |
+| `/a2a/peers` returns `unauthorized` from another node | that endpoint uses the **global** Bridge token, which is per-node | query each node's peer table with that node's own `ACP_BRIDGE_TOKEN` |
