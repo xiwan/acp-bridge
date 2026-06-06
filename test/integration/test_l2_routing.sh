@@ -92,6 +92,19 @@ AUTH=(-H "Authorization: Bearer $BRIDGE_AUTH")
 agents_a=$(curl -s "${AUTH[@]}" "http://127.0.0.1:$PORT_A/agents")
 check "A lists remote echo (via mesh)" '"echo"' "$agents_a"
 
+# 1b. remote echo carries B's real description + a readable location suffix
+echo_desc=$(echo "$agents_a" | python3 -c "import sys,json;print(next((a['description'] for a in json.load(sys.stdin)['agents'] if a['name']=='echo'),''))" 2>/dev/null)
+check "remote echo desc has real text + location" 'Echo reference agent (via mesh@node-b)' "$echo_desc"
+
+# 1c. remote echo carries structured location tags (mesh + node:<name>)
+echo_tags=$(echo "$agents_a" | python3 -c "import sys,json;print((next((a for a in json.load(sys.stdin)['agents'] if a['name']=='echo'),{}).get('metadata') or {}).get('tags'))" 2>/dev/null)
+check "remote echo tagged mesh" 'mesh' "$echo_tags"
+check "remote echo tagged node:node-b" 'node:node-b' "$echo_tags"
+
+# 1d. local placeholder on A is tagged 'local'
+ph_tags=$(echo "$agents_a" | python3 -c "import sys,json;print((next((a for a in json.load(sys.stdin)['agents'] if a['name']=='placeholder'),{}).get('metadata') or {}).get('tags'))" 2>/dev/null)
+check "local placeholder tagged local" 'local' "$ph_tags"
+
 # 2. Calling echo on A is routed to B (A has no local echo)
 resp=$(curl -s -X POST "${AUTH[@]}" "http://127.0.0.1:$PORT_A/runs" \
   -H "Content-Type: application/json" \

@@ -74,6 +74,7 @@ class JobManager:
                  prompt_store: PromptStore | None = None):
         self._pool = pool
         self._pty_configs = pty_configs or {}
+        self._app = None  # set by main.py after app creation
         self._jobs: dict[str, Job] = {}
         self._stats = None  # set by main.py after StatsCollector init
         self._webhook_url = webhook_url
@@ -194,6 +195,10 @@ class JobManager:
         self._store.save(job)
         if job.agent in self._pty_configs:
             await self._run_pty(job)
+        elif self._pool and job.agent in self._pool._config:
+            await self._run_acp(job)
+        elif self._app and hasattr(self._app.state, "acp_agents") and job.agent in self._app.state.acp_agents:
+            await self._run_via_sdk(job)
         else:
             await self._run_acp(job)
         job.completed_at = time.time()
@@ -339,6 +344,34 @@ class JobManager:
                       job.job_id, job.original_agent, tried_agents)
             if self._stats:
                 self._stats.record_fallback(job.original_agent, job.agent, tried_agents, False)
+
+    async def _run_via_sdk(self, job: Job):
+        """Run a mesh remote agent via the ACP SDK agent registry (app.state.acp_agents)."""
+        from acp_sdk.models import Message, MessagePart
+        agent = self._app.state.acp_agents.get(job.agent)
+        if agent is None:
+            job.status = "failed"
+            job.error = f"agent not found in SDK registry: {job.agent}"
+            return
+        input_msgs = [Message(parts=[MessagePart(content=job.prompt, content_type="text/plain")])]
+        parts: list[str] = []
+        job._live_parts = parts
+        try:
+            async for y in agent.run(input_msgs, None):
+                if isinstance(y, Message):
+                    parts += [p.content for p in y.parts if p.content]
+                elif isinstance(y, MessagePart):
+                    if y.content:
+                        parts.append(y.content)
+                elif isinstance(y, str):
+                    parts.append(y)
+            job.result = "".join(parts)
+            job.status = "completed"
+        except Exception as e:
+            log.warning("job_sdk_failed: job=%s agent=%s err=%s", job.job_id, job.agent, e)
+            job.result = "".join(parts)
+            job.error = str(e)
+            job.status = "failed"
 
     async def _run_pty(self, job: Job):
         cfg = self._pty_configs[job.agent]

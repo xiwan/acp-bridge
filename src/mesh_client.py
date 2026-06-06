@@ -69,6 +69,7 @@ def reconcile(app, mesh, remote_skills=None) -> list[str]:
     local = mesh._agent_names()
     # pick one healthy peer per skill (local-priority: skip skills we already serve)
     skill_to_peer: dict[str, str] = {}
+    peer_by_url = {p.url: p for p in mesh._peers.values()}
     for p in mesh._peers.values():
         if not p.healthy:
             continue
@@ -82,9 +83,25 @@ def reconcile(app, mesh, remote_skills=None) -> list[str]:
     for skill, peer_url in skill_to_peer.items():
         if skill in acp_agents and remote_skills is not None and skill in remote_skills:
             continue  # already registered as remote
+        peer = peer_by_url.get(peer_url)
+        node = (peer.node_name if peer and peer.node_name else peer_url)
+        info = (peer.skill_info.get(skill, {}) if peer else {})
+        real_desc = info.get("description") or f"{skill} agent"
+        # Description carries the human-readable location: "<real desc> (via mesh@<node>)"
+        description = f"{real_desc} (via mesh@{node})"
+        # Structured location marker on metadata.tags: "mesh" + "node:<name>" + peer's tags.
+        # Metadata must be set at construction time (Agent.metadata is read-only).
+        metadata = None
+        try:
+            from acp_sdk.models.models import Metadata
+            peer_tags = info.get("tags") or []
+            metadata = Metadata(
+                tags=["mesh", f"node:{node}", f"peer:{peer_url}"] + list(peer_tags))
+        except Exception as e:
+            log.warning("mesh L2: could not build location metadata for %s: %s", skill, e)
         handler = make_a2a_remote_handler(skill, peer_url, mesh.token)
         srv = Server()
-        srv.agent(name=skill, description=f"{skill} via mesh@{peer_url}")(handler)
+        srv.agent(name=skill, description=description, metadata=metadata)(handler)
         acp_agents[skill] = srv.agents[0]
         if remote_skills is not None:
             remote_skills.add(skill)

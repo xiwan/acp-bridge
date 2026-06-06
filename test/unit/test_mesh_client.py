@@ -10,8 +10,10 @@ from src.mesh_a2a import A2AAdapter
 
 
 class _Peer:
-    def __init__(self, url, skills, healthy=True):
+    def __init__(self, url, skills, healthy=True, node_name="", skill_info=None):
         self.url = url; self.skills = skills; self.healthy = healthy
+        self.node_name = node_name
+        self.skill_info = skill_info or {}
 
 
 class _Mesh:
@@ -60,6 +62,35 @@ def test_reconcile_idempotent():
     app = _App({}); rs = set()
     assert reconcile(app, mesh, rs) == ["claude"]
     assert reconcile(app, mesh, rs) == []  # already registered, no dup
+
+
+def test_reconcile_remote_carries_real_desc_and_location():
+    # peer advertises a real description + tags; reconcile must surface them and
+    # add a clear location marker (mesh + node:<name>).
+    peer = _Peer("http://b:18010", ["harness"], node_name="node-b",
+                 skill_info={"harness": {"id": "harness",
+                                         "description": "Harness Factory lite agent",
+                                         "tags": ["lite", "rust"]}})
+    mesh = _Mesh(local=[], peers=[peer])
+    app = _App({})
+    added = reconcile(app, mesh, set())
+    assert added == ["harness"]
+    agent = app.state.acp_agents["harness"]
+    # description = real desc + readable location
+    assert agent.description == "Harness Factory lite agent (via mesh@node-b)"
+    # structured location marker on tags, peer tags preserved
+    assert agent.metadata.tags[:2] == ["mesh", "node:node-b"]
+    assert "lite" in agent.metadata.tags and "rust" in agent.metadata.tags
+
+
+def test_reconcile_remote_missing_skillinfo_falls_back():
+    # peer with no skill_info still registers with a sane description + location.
+    mesh = _Mesh(local=[], peers=[_Peer("http://b:18010", ["claude"], node_name="node-b")])
+    app = _App({})
+    reconcile(app, mesh, set())
+    agent = app.state.acp_agents["claude"]
+    assert agent.description == "claude agent (via mesh@node-b)"
+    assert agent.metadata.tags[:2] == ["mesh", "node:node-b"]
 
 
 @pytest.mark.asyncio

@@ -187,6 +187,19 @@ curl -s -X POST http://10.0.2.100:18010/runs \
 
 **Not in L2**: cross-Bridge pipelines + S3 artifact passing (L3), multi-hop routing, distributed session consistency, remote load-balancing.
 
+### Identifying local vs remote agents
+
+`GET /agents` marks where each agent runs, so a client can tell a local agent from one routed through the mesh:
+
+- **`description`** — a remote agent shows the peer's real description plus a readable location suffix, e.g. `Echo reference agent (via mesh@node-b)`. Local agents keep their own description with no suffix.
+- **`metadata.tags`** — structured, queryable markers:
+  - local agents are tagged `local` (followed by their own tags)
+  - remote agents are tagged `mesh`, `node:<peer-node-name>`, `peer:<peer-url>` (followed by the peer's own skill tags)
+
+The peer node name comes from the peer's Agent Card `name` field (`acp-bridge@<node>`); description/tags are carried in the card's `skills` and surfaced at reconcile time. A client can filter `tags` for `local` vs `mesh` and read the exact owning node from `node:<name>`.
+
+Remote routing is transparent to **async jobs** too: a `POST /jobs` targeting a peer-only agent runs the agent on the owning node (via the SDK agent registry) and stores the result locally, just like a local job.
+
 ## Cross-Bridge Pipelines (L3 — workspace relay)
 
 A pipeline's `shared_cwd` is single-machine. When a step's agent lives on a peer (an L2 remote skill), L3 relays the workspace so the step can run there and the result comes back.

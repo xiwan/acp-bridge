@@ -193,8 +193,16 @@ def main():
             handler = make_acp_agent_handler(name, pool, profile=agent_profile)
         else:
             handler = make_pty_agent_handler(cfg, verbose=args.verbose)
+        # Build metadata, marking this agent as locally served (symmetric with mesh
+        # remote agents, which get "mesh"/"node:<name>" tags in mesh_client.reconcile()).
+        # Metadata must be set at construction (Agent.metadata is read-only afterwards).
+        agent_metadata = None
+        if Metadata:
+            md = dict(cfg.get("metadata") or {})
+            md["tags"] = ["local"] + list(md.get("tags") or [])
+            agent_metadata = Metadata(**md)
         server.agent(name=name, description=cfg.get("description", ""),
-                     metadata=Metadata(**cfg["metadata"]) if Metadata and cfg.get("metadata") else None)(handler)
+                     metadata=agent_metadata)(handler)
         log.info("registered: agent=%s mode=%s cmd=%s", name, mode, cfg.get("command"))
 
     # --- Config values ---
@@ -304,6 +312,7 @@ def main():
     _agents_mod._stats = stats_collector
     if job_mgr:
         job_mgr._stats = stats_collector
+        job_mgr._app = app
 
     # --- Heartbeat / env awareness ---
     from src.heartbeat import EnvCollector

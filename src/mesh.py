@@ -26,10 +26,18 @@ DEFAULT_PRICING = {"model": "free", "rate": 0, "currency": "USD", "unit": "per_1
 class PeerInfo:
     url: str
     agent_card: dict
-    skills: list           # agent names extracted from the card
+    skills: list           # agent names (ids) extracted from the card
     pricing: dict          # reserved: peer's declared pricing (L0 stores, doesn't use)
     last_seen: float
     healthy: bool = True
+    node_name: str = ""    # peer node name, parsed from card "acp-bridge@<node>"
+    skill_info: dict = field(default_factory=dict)  # id -> full skill obj (desc/tags)
+
+
+def _node_name_from_card(card: dict) -> str:
+    """Extract '<node>' from an Agent Card name like 'acp-bridge@<node>'."""
+    name = (card.get("name") or "") if isinstance(card, dict) else ""
+    return name.split("@", 1)[1] if "@" in name else name
 
 
 class MeshManager:
@@ -94,9 +102,13 @@ class MeshManager:
         url = (card.get("url") or "").rstrip("/")
         if not url or url == self.self_url:
             return
-        skills = [s.get("id") for s in card.get("skills", []) if s.get("id")]
-        pricing = (card.get("skills") or [{}])[0].get("pricing", {}) if card.get("skills") else {}
-        self._peers[url] = PeerInfo(url, card, skills, pricing, time.time(), healthy=True)
+        card_skills = card.get("skills") or []
+        skills = [s.get("id") for s in card_skills if s.get("id")]
+        skill_info = {s["id"]: s for s in card_skills if s.get("id")}
+        pricing = card_skills[0].get("pricing", {}) if card_skills else {}
+        self._peers[url] = PeerInfo(url, card, skills, pricing, time.time(),
+                                    healthy=True, node_name=_node_name_from_card(card),
+                                    skill_info=skill_info)
         # gossip: learn peers-of-peers as placeholders (unhealthy until first contact)
         for p in (peers or []):
             p = (p or "").rstrip("/")
