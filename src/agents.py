@@ -88,10 +88,11 @@ def _record_acp_usage(agent_name: str, prompt_result: dict, duration: float):
             tc = mu.get("token_count", {})
             if not model or not tc:
                 continue
-            input_t = tc.get("inputTokens", 0) or 0
+            cached_t = tc.get("cachedInputTokens", 0) or tc.get("cachedReadTokens", 0) or 0
+            raw_input = tc.get("inputTokens", 0) or 0
+            input_t = raw_input + cached_t  # normalize: input_tokens includes cached (like LiteLLM)
             output_t = tc.get("outputTokens", 0) or 0
             total_t = tc.get("totalTokens", 0) or 0
-            cached_t = tc.get("cachedInputTokens", 0) or tc.get("cachedReadTokens", 0) or 0
             db.execute(
                 """INSERT INTO llm_usage (ts, model, input_tokens, output_tokens, total_tokens,
                    cached_tokens, cache_creation_tokens, duration)

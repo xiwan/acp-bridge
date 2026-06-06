@@ -134,7 +134,8 @@ class EnvCollector:
 
     @staticmethod
     def clean_response(text: str) -> str:
-        """Post-process heartbeat response: replace CLI commands with natural language."""
+        """Post-process heartbeat response: replace CLI commands with natural language,
+        collapse excessive newlines."""
         import re
         # acp-client.sh -a <agent> "msg" → 对<agent>说：msg
         text = re.sub(
@@ -142,6 +143,8 @@ class EnvCollector:
             r'对\1说：\2', text)
         # Strip trailing [SILENT] (agents often append it after real content)
         text = re.sub(r'\s*\[SILENT\]\s*$', '', text, flags=re.IGNORECASE)
+        # Collapse 2+ consecutive newlines into one
+        text = re.sub(r'\n{2,}', '\n', text)
         return text.strip()
 
     @staticmethod
