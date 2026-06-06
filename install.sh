@@ -480,6 +480,57 @@ if [[ "$ENABLE_S3" =~ ^[Yy]$ ]]; then
     fi
 fi
 
+# A2A Mesh (optional) — join other Bridge nodes to share agents across machines
+echo ""
+MESH_ENABLE_FLAG=false
+MESH_NODE_ID=""
+MESH_SELF_URL=""
+MESH_SEEDS=""
+MESH_TOKEN_VALUE=""
+info "A2A Mesh lets this Bridge discover and call agents on OTHER Bridge nodes."
+info "  All nodes in a mesh must share the SAME mesh token."
+ask "Enable A2A Mesh? [y/N]:"
+read_input ENABLE_MESH "n"
+if [[ "$ENABLE_MESH" =~ ^[Yy]$ ]]; then
+    MESH_ENABLE_FLAG=true
+    # node id — default to short hostname
+    _DEFAULT_NODE_ID=$(hostname -s 2>/dev/null || echo "node-$(date +%s)")
+    ask "  Node ID [$_DEFAULT_NODE_ID]:"
+    read_input MESH_NODE_ID "$_DEFAULT_NODE_ID"
+    # self_url — must be the address peers can reach (private IP by default)
+    _MESH_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    _DEFAULT_SELF_URL="http://${_MESH_IP:-127.0.0.1}:18010"
+    info "  self_url is how PEER nodes reach this node (their network must route to it)."
+    ask "  This node's URL [$_DEFAULT_SELF_URL]:"
+    read_input MESH_SELF_URL "$_DEFAULT_SELF_URL"
+    # seeds — comma-separated peer URLs to bootstrap discovery
+    info "  Seed peers bootstrap discovery (comma-separated URLs, e.g. http://10.0.0.5:18010)."
+    ask "  Seed peer URL(s) [none]:"
+    read_input MESH_SEEDS ""
+    # mesh token — reuse existing from .env, else auto-generate
+    if [ -n "${MESH_TOKEN:-}" ]; then
+        MESH_TOKEN_VALUE="$MESH_TOKEN"
+        ok "  MESH_TOKEN read from environment"
+    elif [ -f "$INSTALL_DIR/.env" ] && grep -q '^MESH_TOKEN=' "$INSTALL_DIR/.env" 2>/dev/null; then
+        MESH_TOKEN_VALUE=$(grep '^MESH_TOKEN=' "$INSTALL_DIR/.env" | cut -d= -f2-)
+        ok "  MESH_TOKEN read from existing .env"
+    else
+        info "  Mesh token authenticates peers on the mesh plane (separate from the Bridge token)."
+        info "  Leave blank to auto-generate; paste an EXISTING token to join an existing mesh."
+        ask "  Mesh token [auto-generate]:"
+        read_input _MESH_TOKEN_INPUT ""
+        if [ -n "$_MESH_TOKEN_INPUT" ]; then
+            MESH_TOKEN_VALUE="$_MESH_TOKEN_INPUT"
+        else
+            MESH_TOKEN_VALUE=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        fi
+    fi
+    # never print the full token; show only a tail so it can be matched on peers
+    _TAIL="${MESH_TOKEN_VALUE: -4}"
+    ok "  Mesh enabled: node=$MESH_NODE_ID url=$MESH_SELF_URL (token ...$_TAIL)"
+    warn "  Copy the SAME mesh token (tail ...$_TAIL) to every other node in this mesh."
+fi
+
 echo ""
 
 # ============================================================
@@ -625,6 +676,38 @@ if $CONFIG_EXISTS; then
         done
         ok "Appended ${#NEW_AGENTS[@]} agent(s) to config.yaml"
     fi
+    # Add mesh section if enabled and not already present
+    if $MESH_ENABLE_FLAG; then
+        if grep -q '^mesh:' "$CONFIG_FILE" 2>/dev/null; then
+            ok "config.yaml already has a mesh section — left unchanged"
+        else
+            info "Adding mesh section to config.yaml"
+            {
+                echo ''
+                echo 'mesh:'
+                echo '  enabled: true'
+                echo "  node_id: \"$MESH_NODE_ID\""
+                echo "  self_url: \"$MESH_SELF_URL\""
+                echo '  announce_interval: 300'
+                echo '  max_hops: 1'
+                echo '  token: "${MESH_TOKEN}"'
+                if [ -n "$MESH_SEEDS" ]; then
+                    echo '  seeds:'
+                    IFS=',' read -ra _SEED_ARRAY <<< "$MESH_SEEDS"
+                    for seed in "${_SEED_ARRAY[@]}"; do
+                        seed=$(echo "$seed" | xargs)
+                        [ -n "$seed" ] && echo "    - \"$seed\""
+                    done
+                else
+                    echo '  seeds: []'
+                fi
+                echo '  pricing:'
+                echo '    model: "free"'
+                echo '    rate: 0'
+            } >> "$CONFIG_FILE"
+            ok "Added mesh section (node=$MESH_NODE_ID)"
+        fi
+    fi
     # Update .env with any new tokens
     ENV_FILE="$INSTALL_DIR/.env"
     if [ -f "$ENV_FILE" ]; then
@@ -638,6 +721,9 @@ if $CONFIG_EXISTS; then
         if [ -n "$WEBHOOK_SECRET" ]; then
             grep -q "HERMES_WEBHOOK_SECRET" "$ENV_FILE" || echo "HERMES_WEBHOOK_SECRET=$WEBHOOK_SECRET" >> "$ENV_FILE"
         fi
+        if $MESH_ENABLE_FLAG && [ -n "$MESH_TOKEN_VALUE" ]; then
+            grep -q "^MESH_TOKEN=" "$ENV_FILE" || echo "MESH_TOKEN=$MESH_TOKEN_VALUE" >> "$ENV_FILE"
+        fi
         ok "Updated .env (preserved existing values)"
     else
         {
@@ -648,6 +734,7 @@ if $CONFIG_EXISTS; then
             [ -n "$LITELLM_KEY" ] && echo "LITELLM_API_KEY=$LITELLM_KEY"
             [ -n "$WEBHOOK_TOKEN" ] && echo "OPENCLAW_TOKEN=$WEBHOOK_TOKEN"
             [ -n "$WEBHOOK_SECRET" ] && echo "HERMES_WEBHOOK_SECRET=$WEBHOOK_SECRET"
+            { $MESH_ENABLE_FLAG && [ -n "$MESH_TOKEN_VALUE" ]; } && echo "MESH_TOKEN=$MESH_TOKEN_VALUE"
         } > "$ENV_FILE"
         ok "Created .env"
     fi
@@ -764,6 +851,30 @@ else
             echo '  presign_expires: 3600'
         fi
 
+        if $MESH_ENABLE_FLAG; then
+            echo ''
+            echo 'mesh:'
+            echo '  enabled: true'
+            echo "  node_id: \"$MESH_NODE_ID\""
+            echo "  self_url: \"$MESH_SELF_URL\""
+            echo '  announce_interval: 300'
+            echo '  max_hops: 1'
+            echo '  token: "${MESH_TOKEN}"'
+            if [ -n "$MESH_SEEDS" ]; then
+                echo '  seeds:'
+                IFS=',' read -ra _SEED_ARRAY <<< "$MESH_SEEDS"
+                for seed in "${_SEED_ARRAY[@]}"; do
+                    seed=$(echo "$seed" | xargs)
+                    [ -n "$seed" ] && echo "    - \"$seed\""
+                done
+            else
+                echo '  seeds: []'
+            fi
+            echo '  pricing:'
+            echo '    model: "free"'
+            echo '    rate: 0'
+        fi
+
         echo ''
         echo 'agents:'
         for name in "${ENABLED[@]}"; do
@@ -870,6 +981,10 @@ echo ""
 echo "  Agents:  ${ENABLED[*]}"
 echo "  Token:   ${BRIDGE_TOKEN:0:12}..."
 echo "  Config:  $CONFIG_FILE"
+if $MESH_ENABLE_FLAG; then
+    echo "  Mesh:    enabled (node=$MESH_NODE_ID, url=$MESH_SELF_URL, token tail ...${MESH_TOKEN_VALUE: -4})"
+    echo "           → use the SAME mesh token (tail ...${MESH_TOKEN_VALUE: -4}) on every peer node"
+fi
 if $IS_UPDATE && [ ${#NEW_AGENTS[@]} -gt 0 ]; then
     echo "  Added:   ${NEW_AGENTS[*]}"
 fi

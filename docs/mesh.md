@@ -43,7 +43,25 @@ mesh:
 
 When `mesh.enabled` is omitted or false, Bridge does not register mesh endpoints and does not start the announce loop.
 
-## Endpoints
+### Enable via the installer
+
+`install.sh` can configure the mesh for you (fresh install or update). After the S3 step it asks:
+
+```
+? Enable A2A Mesh? [y/N]:
+```
+
+If you answer yes, it prompts for the node id (defaults to the hostname), this node's `self_url`
+(defaults to the host's private IP on port 18010), seed peer URLs (comma-separated, optional), and
+a mesh token. Leave the token blank to auto-generate one, or paste an existing token to **join an
+existing mesh** — every node in the same mesh must share the identical token.
+
+The installer writes the token to `.env` as `MESH_TOKEN` (never into `config.yaml`, which only
+references `${MESH_TOKEN}`), and prints just the token's last 4 characters so you can match it
+across nodes without exposing the secret. On update, an existing `mesh:` section or `MESH_TOKEN`
+is preserved, not overwritten.
+
+
 
 ### `GET /.well-known/agent.json`
 
