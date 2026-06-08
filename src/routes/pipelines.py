@@ -135,6 +135,20 @@ def register(app, pipeline_mgr: PipelineManager | None,
             pl._gate.set()
         return {"pipeline_id": pipeline_id, "injected": True, "message": message[:100]}
 
+    @app.post("/pipelines/{pipeline_id}/rerun")
+    async def rerun_pipeline(pipeline_id: str = PathParam(...), req: dict = {}):
+        if not pipeline_mgr:
+            return JSONResponse({"error": "pipeline not available"}, status_code=503)
+        prompt_override = req.get("prompt_override", "")
+        from_step = int(req.get("from_step", 0))
+        try:
+            new_pl = pipeline_mgr.rerun(pipeline_id, prompt_override, from_step)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        return {"pipeline_id": new_pl.pipeline_id, "rerun_from": pipeline_id,
+                "status": new_pl.status, "mode": new_pl.mode,
+                "from_step": from_step, "steps": len(new_pl.steps)}
+
     @app.get("/pipelines/{pipeline_id}/events")
     async def stream_pipeline_events(pipeline_id: str = PathParam(...)):
         """Server-Sent Events stream of pipeline lifecycle events.

@@ -109,6 +109,37 @@ POST /pipelines/{id}/inject
 
 Injected messages appear as `[Human]` turns in the transcript. The next agent responds to the injected message. If the pipeline is paused, inject auto-resumes it.
 
+#### Rerun
+
+Re-execute a completed or failed pipeline, reusing its `shared_cwd`. Supports prompt override and partial rerun.
+
+```bash
+POST /pipelines/{id}/rerun
+{
+  "prompt_override": "可选：修正指令，注入到第一个重跑的 step",
+  "from_step": 0
+}
+```
+
+- `prompt_override` — prepended as `[修正指令]` to the first re-executed step's prompt
+- `from_step` — start from this step index (default 0 = full rerun); earlier steps are skipped, their existing output remains in `shared_cwd`
+
+Returns a new `pipeline_id`. The original pipeline stays unchanged. The new pipeline inherits `shared_cwd` so agents can see/modify previous outputs.
+
+**Mesh L3 compatible**: cross-node steps in the rerun pipeline automatically trigger S3 workspace relay, same as the original execution.
+
+```bash
+# Full rerun with feedback
+curl -X POST http://localhost:18010/pipelines/{id}/rerun \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"prompt_override": "UI 用深色主题，按钮要更大"}'
+
+# Partial rerun: skip step 0, re-execute from step 1
+curl -X POST http://localhost:18010/pipelines/{id}/rerun \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"from_step": 1}'
+```
+
 ### Artifacts
 
 List files created by agents in the shared workspace:

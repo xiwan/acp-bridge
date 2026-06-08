@@ -180,6 +180,41 @@ class PipelineManager:
     def get_transcript(self, pipeline_id: str) -> list[dict]:
         return self._store.load_transcript(pipeline_id)
 
+    def rerun(self, pipeline_id: str, prompt_override: str = "",
+             from_step: int = 0) -> Pipeline:
+        """Clone a completed/failed pipeline and re-execute, reusing shared_cwd."""
+        original = self.get(pipeline_id)
+        if not original:
+            raise ValueError("pipeline not found")
+        if original.status not in ("completed", "failed"):
+            raise ValueError(f"cannot rerun pipeline in status: {original.status}")
+        if original.mode == "conversation":
+            raise ValueError("rerun not supported for conversation mode; use inject instead")
+        if from_step < 0 or from_step >= len(original.steps):
+            raise ValueError(f"from_step {from_step} out of range (0-{len(original.steps)-1})")
+
+        steps = []
+        for i, s in enumerate(original.steps):
+            if i < from_step:
+                continue
+            prompt = s.prompt_template
+            if prompt_override and i == from_step:
+                prompt = f"[修正指令] {prompt_override}\n\n[原始任务] {prompt}"
+            steps.append({"agent": s.agent, "prompt": prompt,
+                          "output_as": s.output_as, "timeout": s.timeout})
+
+        context = original.context.copy()
+        context.pop("next_pipeline_id", None)
+        context["rerun_from"] = pipeline_id
+        context["rerun_from_step"] = from_step
+
+        return self.submit(
+            mode=original.mode,
+            steps=steps,
+            context=context,
+            webhook_meta=original.webhook_meta.copy(),
+        )
+
     def cleanup(self, max_age: float = 3600) -> int:
         """Remove completed pipelines older than max_age from in-memory cache."""
         now = time.time()
