@@ -100,6 +100,28 @@ Two control scripts in the project root:
 ./stack-ctl.sh health        # check all endpoints
 ```
 
+## Related Projects
+
+| Project | Description |
+|---------|-------------|
+| [mantle-proxy](https://github.com/xiwan/mantle-proxy) | SigV4 signing proxy for Bedrock Mantle — enables OpenAI/Anthropic SDK access to Mantle models with AWS credential chain auth. Hosts the LiteLLM config and callback used by the full stack. |
+| [harness-factory](https://github.com/xiwan/ACP-Harness-Factory) | Lightweight Rust/Go ACP agent binary with profile-driven tool activation. Bridge forks it like any other ACP agent. |
+
+### Stack Architecture
+
+```
+Clients → acp-bridge (:18010)
+              ↓ LLM calls
+          litellm (:4000)  ← config & callback in mantle-proxy/
+              ↓
+          mantle-proxy (:4010)  ← SigV4 signs & forwards
+              ↓
+          bedrock-mantle.{region}.api.aws
+              ├── /openai/v1/responses  (GPT-5.5)
+              ├── /openai/v1/chat/completions  (Kimi, GLM, Qwen, DeepSeek…)
+              └── /anthropic/v1/messages  (Claude + workspace cost tracking)
+```
+
 ## Documentation
 
 | Document | Description |
