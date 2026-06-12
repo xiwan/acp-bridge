@@ -5,8 +5,42 @@ from litellm.integrations.custom_logger import CustomLogger
 
 CALLBACK_URL = "http://127.0.0.1:18010/internal/llm-callback"
 
+# Models that reject thinking.type="enabled"
+_FABLE_MODELS = {"us.anthropic.claude-fable-5", "anthropic.claude-fable-5"}
+
+
+def _patch_thinking(data: dict) -> dict:
+    """Convert thinking.type=enabled to adaptive for Fable 5 models."""
+    model = data.get("model", "")
+    if not any(m in model for m in _FABLE_MODELS):
+        return data
+    # Patch top-level thinking
+    t = data.get("thinking")
+    if isinstance(t, dict) and t.get("type") == "enabled":
+        t["type"] = "adaptive"
+    # Patch in optional_params
+    op = data.get("optional_params")
+    if isinstance(op, dict):
+        t2 = op.get("thinking")
+        if isinstance(t2, dict) and t2.get("type") == "enabled":
+            t2["type"] = "adaptive"
+    # Patch in kwargs
+    kw = data.get("kwargs")
+    if isinstance(kw, dict):
+        t3 = kw.get("thinking")
+        if isinstance(t3, dict) and t3.get("type") == "enabled":
+            t3["type"] = "adaptive"
+    return data
+
 
 class AcpBridgeLogger(CustomLogger):
+    async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
+        return _patch_thinking(data)
+
+    async def async_log_pre_api_call(self, model, messages, kwargs):
+        """Patch thinking right before the actual API call."""
+        _patch_thinking(kwargs)
+
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         self._log(kwargs, response_obj, start_time, end_time)
 

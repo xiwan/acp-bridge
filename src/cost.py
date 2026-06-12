@@ -29,6 +29,12 @@ BEDROCK_PRICING = {
         "cache_create": 6.875e-06,  # $6.875/M
         "cache_read": 5.5e-07,      # $0.55/M
     },
+    "us.anthropic.claude-fable-5": {
+        "input": 1e-05,             # $10.00/M
+        "output": 5e-05,            # $50.00/M
+        "cache_create": 1.25e-05,   # $12.50/M
+        "cache_read": 1e-06,        # $1.00/M
+    },
     # === Qwen ===
     "qwen.qwen3-coder-next": {
         "input": 5e-07,             # $0.50/M
