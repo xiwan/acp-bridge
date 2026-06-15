@@ -194,7 +194,10 @@ agents:
 # mesh:
 #   enabled: true
 #   node_id: "node-a"                 # defaults to host:port
-#   self_url: "http://10.0.2.100:18010"  # URL peers use to reach this node
+#   mode: "dual"                      # private | public | dual (default: public)
+#   private_url: "http://10.0.2.100:18010"  # internal/VPC address (for private/dual)
+#   public_url: "http://34.213.151.41:18010" # external address (for public/dual)
+#   self_url: "http://10.0.2.100:18010"  # backward-compat fallback (used if mode not set)
 #   announce_interval: 300            # seconds; doubles as heartbeat
 #   max_hops: 1                       # reserved gossip depth field
 #   token: "${MESH_TOKEN}"            # shared secret for /a2a/announce auth

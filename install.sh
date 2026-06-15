@@ -505,6 +505,9 @@ MESH_NODE_ID=""
 MESH_SELF_URL=""
 MESH_SEEDS=""
 MESH_TOKEN_VALUE=""
+MESH_MODE=""
+MESH_PRIVATE_URL=""
+MESH_PUBLIC_URL=""
 info "A2A Mesh lets this Bridge discover and call agents on OTHER Bridge nodes."
 info "  All nodes in a mesh must share the SAME mesh token."
 ask "Enable A2A Mesh? [y/N]:"
@@ -515,12 +518,33 @@ if [[ "$ENABLE_MESH" =~ ^[Yy]$ ]]; then
     _DEFAULT_NODE_ID=$(hostname -s 2>/dev/null || echo "node-$(date +%s)")
     ask "  Node ID [$_DEFAULT_NODE_ID]:"
     read_input MESH_NODE_ID "$_DEFAULT_NODE_ID"
-    # self_url — must be the address peers can reach (private IP by default)
+    # network mode
+    info "  Network mode determines how peers reach this node:"
+    info "    private — all peers on same VPC/LAN (advertise private IP)"
+    info "    public  — all peers reach via internet (advertise public IP)"
+    info "    dual    — mixed: same-subnet peers use private, others use public"
+    ask "  Network mode [dual]:"
+    read_input MESH_MODE "dual"
+    # private_url
     _MESH_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-    _DEFAULT_SELF_URL="http://${_MESH_IP:-127.0.0.1}:18010"
-    info "  self_url is how PEER nodes reach this node (their network must route to it)."
-    ask "  This node's URL [$_DEFAULT_SELF_URL]:"
-    read_input MESH_SELF_URL "$_DEFAULT_SELF_URL"
+    _DEFAULT_PRIVATE_URL="http://${_MESH_IP:-127.0.0.1}:18010"
+    if [[ "$MESH_MODE" == "private" || "$MESH_MODE" == "dual" ]]; then
+        ask "  Private URL (VPC/LAN) [$_DEFAULT_PRIVATE_URL]:"
+        read_input MESH_PRIVATE_URL "$_DEFAULT_PRIVATE_URL"
+    fi
+    # public_url
+    if [[ "$MESH_MODE" == "public" || "$MESH_MODE" == "dual" ]]; then
+        _PUB_IP=$(curl -sf --connect-timeout 3 http://checkip.amazonaws.com 2>/dev/null || echo "")
+        _DEFAULT_PUBLIC_URL="http://${_PUB_IP:-UNKNOWN}:18010"
+        ask "  Public URL (internet) [$_DEFAULT_PUBLIC_URL]:"
+        read_input MESH_PUBLIC_URL "$_DEFAULT_PUBLIC_URL"
+    fi
+    # self_url fallback (primary advertised address)
+    if [[ "$MESH_MODE" == "private" ]]; then
+        MESH_SELF_URL="$MESH_PRIVATE_URL"
+    else
+        MESH_SELF_URL="${MESH_PUBLIC_URL:-$_DEFAULT_PRIVATE_URL}"
+    fi
     # seeds — comma-separated peer URLs to bootstrap discovery
     info "  Seed peers bootstrap discovery (comma-separated URLs, e.g. http://10.0.0.5:18010)."
     ask "  Seed peer URL(s) [none]:"
@@ -545,7 +569,7 @@ if [[ "$ENABLE_MESH" =~ ^[Yy]$ ]]; then
     fi
     # never print the full token; show only a tail so it can be matched on peers
     _TAIL="${MESH_TOKEN_VALUE: -4}"
-    ok "  Mesh enabled: node=$MESH_NODE_ID url=$MESH_SELF_URL (token ...$_TAIL)"
+    ok "  Mesh enabled: node=$MESH_NODE_ID mode=$MESH_MODE url=$MESH_SELF_URL (token ...$_TAIL)"
     warn "  Copy the SAME mesh token (tail ...$_TAIL) to every other node in this mesh."
 fi
 
@@ -705,6 +729,9 @@ if $CONFIG_EXISTS; then
                 echo 'mesh:'
                 echo '  enabled: true'
                 echo "  node_id: \"$MESH_NODE_ID\""
+                echo "  mode: \"$MESH_MODE\""
+                [ -n "$MESH_PRIVATE_URL" ] && echo "  private_url: \"$MESH_PRIVATE_URL\""
+                [ -n "$MESH_PUBLIC_URL" ] && echo "  public_url: \"$MESH_PUBLIC_URL\""
                 echo "  self_url: \"$MESH_SELF_URL\""
                 echo '  announce_interval: 300'
                 echo '  max_hops: 1'
@@ -723,7 +750,7 @@ if $CONFIG_EXISTS; then
                 echo '    model: "free"'
                 echo '    rate: 0'
             } >> "$CONFIG_FILE"
-            ok "Added mesh section (node=$MESH_NODE_ID)"
+            ok "Added mesh section (node=$MESH_NODE_ID, mode=$MESH_MODE)"
         fi
     fi
     # Update .env with any new tokens
@@ -874,6 +901,9 @@ else
             echo 'mesh:'
             echo '  enabled: true'
             echo "  node_id: \"$MESH_NODE_ID\""
+            echo "  mode: \"$MESH_MODE\""
+            [ -n "$MESH_PRIVATE_URL" ] && echo "  private_url: \"$MESH_PRIVATE_URL\""
+            [ -n "$MESH_PUBLIC_URL" ] && echo "  public_url: \"$MESH_PUBLIC_URL\""
             echo "  self_url: \"$MESH_SELF_URL\""
             echo '  announce_interval: 300'
             echo '  max_hops: 1'
@@ -1000,7 +1030,7 @@ echo "  Agents:  ${ENABLED[*]}"
 echo "  Token:   ${BRIDGE_TOKEN:0:12}..."
 echo "  Config:  $CONFIG_FILE"
 if $MESH_ENABLE_FLAG; then
-    echo "  Mesh:    enabled (node=$MESH_NODE_ID, url=$MESH_SELF_URL, token tail ...${MESH_TOKEN_VALUE: -4})"
+    echo "  Mesh:    enabled (node=$MESH_NODE_ID, mode=$MESH_MODE, url=$MESH_SELF_URL, token tail ...${MESH_TOKEN_VALUE: -4})"
     echo "           → use the SAME mesh token (tail ...${MESH_TOKEN_VALUE: -4}) on every peer node"
 fi
 if $IS_UPDATE && [ ${#NEW_AGENTS[@]} -gt 0 ]; then

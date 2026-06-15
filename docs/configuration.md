@@ -44,7 +44,10 @@ litellm:
 mesh:
   enabled: false                                # optional A2A mesh discovery
   node_id: "node-a"                             # defaults to host:port
-  self_url: "http://localhost:18010"            # URL peers use to reach this node
+  mode: "dual"                                  # private | public | dual (default: public)
+  private_url: "http://172.31.15.10:18010"     # VPC/LAN address (for private/dual)
+  public_url: "http://34.213.151.41:18010"     # internet address (for public/dual)
+  self_url: "http://localhost:18010"            # backward-compat fallback (used if mode not set)
   announce_interval: 300                        # seconds; also stale heartbeat interval
   max_hops: 1                                   # reserved for gossip depth control
   token: "${MESH_TOKEN}"                        # auth for /a2a/announce
@@ -158,7 +161,10 @@ Mesh discovery is opt-in. When `mesh.enabled` is omitted or false, Bridge regist
 |-------|-------------|
 | `enabled` | Enable A2A Mesh L0 discovery |
 | `node_id` | Human-readable node name used in the Agent Card |
-| `self_url` | Reachable URL advertised to peers |
+| `mode` | Network mode: `private` (VPC only), `public` (internet only), `dual` (smart selection). Default: `public` |
+| `private_url` | VPC/LAN address; required for `private` and `dual` modes |
+| `public_url` | Internet-reachable address; required for `public` and `dual` modes |
+| `self_url` | Backward-compat fallback; used when `mode` is not set |
 | `announce_interval` | Seconds between peer announcements; peers unseen for `3 * interval` are marked unhealthy |
 | `max_hops` | Reserved gossip depth field for future expansion |
 | `token` | Bearer token for `/a2a/announce`; separate from `ACP_BRIDGE_TOKEN` |
