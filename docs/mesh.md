@@ -30,7 +30,10 @@ This yields a trustless-by-default posture: orchestration never relies on trust 
 mesh:
   enabled: true
   node_id: "node-a"
-  self_url: "http://10.0.2.100:18010"
+  mode: "dual"                               # private | public | dual (default: public)
+  private_url: "http://10.0.2.100:18010"     # internal/VPC address (required for private/dual)
+  public_url: "http://34.213.151.41:18010"   # external/internet address (required for public/dual)
+  self_url: "http://34.213.151.41:18010"     # backward-compat fallback (used if mode not set)
   announce_interval: 300
   max_hops: 1
   token: "${MESH_TOKEN}"
@@ -40,6 +43,18 @@ mesh:
     model: "free"
     rate: 0
 ```
+
+### Network Modes
+
+| Mode | Behavior | Use case |
+|------|----------|----------|
+| `private` | Advertises `private_url`; peers always use private address | All nodes in same VPC |
+| `public` | Advertises `public_url`; peers always use public address | All nodes on public internet |
+| `dual` | Advertises both; peers select private (same subnet) or public (cross-VPC) | Mixed deployment |
+
+When `mode` is not set, falls back to `self_url` (single address, backward-compatible).
+When a peer's Agent Card includes `extensions.private_url` / `extensions.public_url`, this node
+picks the best reachable address based on its own mode and subnet proximity.
 
 When `mesh.enabled` is omitted or false, Bridge does not register mesh endpoints and does not start the announce loop.
 

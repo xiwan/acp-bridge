@@ -372,6 +372,9 @@ def main():
             "announce_interval": mesh_cfg.get("announce_interval", 300),
             "max_hops": mesh_cfg.get("max_hops", 1),
             "pricing": mesh_cfg.get("pricing"),
+            "mode": mesh_cfg.get("mode", ""),
+            "private_url": mesh_cfg.get("private_url", ""),
+            "public_url": mesh_cfg.get("public_url", ""),
         })
         # L1: A2A Server — reuse existing agent handlers (no new exec logic).
         from src.mesh_a2a import A2AAdapter

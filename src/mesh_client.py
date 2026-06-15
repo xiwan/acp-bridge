@@ -99,7 +99,9 @@ def reconcile(app, mesh, remote_skills=None) -> list[str]:
                 tags=["mesh", f"node:{node}", f"peer:{peer_url}"] + list(peer_tags))
         except Exception as e:
             log.warning("mesh L2: could not build location metadata for %s: %s", skill, e)
-        handler = make_a2a_remote_handler(skill, peer_url, mesh.token)
+        # Use resolved URL (mode-aware) for the remote handler
+        resolved_url = mesh.resolve_peer_url(peer_url)
+        handler = make_a2a_remote_handler(skill, resolved_url, mesh.token)
         srv = Server()
         srv.agent(name=skill, description=description, metadata=metadata)(handler)
         acp_agents[skill] = srv.agents[0]

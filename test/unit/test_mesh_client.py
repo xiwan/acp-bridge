@@ -20,6 +20,7 @@ class _Mesh:
     def __init__(self, local, peers, token="m"):
         self._local = local; self._peers = {p.url: p for p in peers}; self.token = token
     def _agent_names(self): return self._local
+    def resolve_peer_url(self, peer_url): return peer_url
 
 
 class _AppState:
