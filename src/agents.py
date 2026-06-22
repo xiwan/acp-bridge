@@ -111,6 +111,7 @@ async def _execute_agent_call(
     session_id: str,
     cwd: str,
     enrich_prompt: bool = True,
+    resume_session_id: str = "",
 ) -> tuple[bool, list[RunYield]]:
     """Execute agent call and return (success, yielded_items). To be used with circuit breaker."""
     results: list[RunYield] = []
@@ -118,7 +119,7 @@ async def _execute_agent_call(
 
     conn: AcpConnection | None = None
     try:
-        conn = await pool.get_or_create(agent_name, session_id, cwd=cwd, profile=profile)
+        conn = await pool.get_or_create(agent_name, session_id, cwd=cwd, profile=profile, resume_session_id=resume_session_id)
     except (PoolExhaustedError, AcpError) as e:
         log.error("agent_init_failed: agent=%s error=%s", agent_name, e)
         if _stats:
@@ -215,6 +216,7 @@ async def _call_acp_agent_internal(
     session_id: str,
     cwd: str,
     enrich_prompt: bool = True,
+    resume_session_id: str = "",
 ) -> AsyncGenerator[RunYield, RunYieldResume]:
     """
     Internal async generator function to call an ACP agent.
@@ -230,7 +232,7 @@ async def _call_acp_agent_internal(
     
     try:
         success, results = await breaker.call(
-            _execute_agent_call, agent_name, prompt, pool, profile, session_id, cwd, enrich_prompt
+            _execute_agent_call, agent_name, prompt, pool, profile, session_id, cwd, enrich_prompt, resume_session_id
         )
         for result in results:
             yield result
@@ -242,11 +244,12 @@ async def _call_acp_agent_internal(
         raise AgentModelError(f"Circuit breaker open for {agent_name}") from e
 
 
-def _extract_metadata(input: list[Message]) -> tuple[str, str, str]:
-    """Extract cwd, channel_id, session_id from message metadata."""
+def _extract_metadata(input: list[Message]) -> tuple[str, str, str, str]:
+    """Extract cwd, channel_id, session_id, resume_session_id from message metadata."""
     cwd = ""
     channel_id = ""
     explicit_session = ""
+    resume_session_id = ""
     for msg in input:
         for part in msg.parts:
             if part.metadata:
@@ -256,7 +259,9 @@ def _extract_metadata(input: list[Message]) -> tuple[str, str, str]:
                     channel_id = part.metadata["channel_id"]
                 if not explicit_session and part.metadata.get("session_id"):
                     explicit_session = part.metadata["session_id"]
-    return cwd, channel_id, explicit_session
+                if not resume_session_id and part.metadata.get("resume_session_id"):
+                    resume_session_id = part.metadata["resume_session_id"]
+    return cwd, channel_id, explicit_session, resume_session_id
 
 
 async def _retry_agent_call(
@@ -279,7 +284,18 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
         input: list[Message], context: Context
     ) -> AsyncGenerator[RunYield, RunYieldResume]:
         prompt = "".join(part.content for msg in input for part in msg.parts if part.content)
-        cwd, channel_id, explicit_session = _extract_metadata(input)
+        cwd, channel_id, explicit_session, resume_session_id = _extract_metadata(input)
+
+        # Fallback: read from HTTP headers (for external /runs callers where
+        # ACP SDK metadata validation rejects custom fields)
+        if context.request:
+            if not cwd:
+                cwd = context.request.headers.get("x-acp-cwd", "")
+            if not resume_session_id:
+                resume_session_id = context.request.headers.get("x-acp-resume-session", "")
+            # Also check query params (convenient for curl)
+            if not resume_session_id:
+                resume_session_id = context.request.query_params.get("resume_session_id", "")
 
         # Session reuse strategy:
         # 1. channel_id → per (agent, channel) — IM scenarios
@@ -324,6 +340,7 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
                         agent_name=current_agent, prompt=prompt, pool=pool,
                         profile=profile, session_id=session_id, cwd=cwd,
                         enrich_prompt=attempt == 0,
+                        resume_session_id=resume_session_id if attempt == 0 else "",
                     ):
                         yield part
                     execute_span.finish(success=True)

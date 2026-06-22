@@ -36,7 +36,7 @@ from src.jobs import JobManager
 from src.prompt_log import PromptStore
 from src.security import SecurityMiddleware
 from src.stats import StatsCollector
-from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes, stats as stats_routes, templates as templates_routes, harness as harness_routes, admin as admin_routes
+from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes, stats as stats_routes, templates as templates_routes, harness as harness_routes, admin as admin_routes, sessions as sessions_routes
 
 try:
     from acp_sdk.models.models import Metadata
@@ -294,6 +294,7 @@ def main():
 
     health_routes.register(app, _VERSION, start_time, agents_cfg, pool, ttl_hours,
                            job_mgr=job_mgr, litellm_cfg=litellm_cfg)
+    sessions_routes.register(app, pool, agents_cfg)
     jobs_routes.register(app, job_mgr, webhook_account_id, webhook_default_target,
                          prompt_store=prompt_store)
     tools_routes.register(app, openclaw_url, webhook_cfg.get("token", ""), webhook_account_id)

@@ -100,6 +100,10 @@ class Pipeline:
             d["error"] = self.error
         d["shared_cwd"] = self.context.get("shared_cwd", "")
         d["paused"] = not self._gate.is_set()
+        if self.context.get("next_pipeline_id"):
+            d["next_pipeline_id"] = self.context["next_pipeline_id"]
+        if self.context.get("report_url"):
+            d["report_url"] = self.context["report_url"]
         if self.mode == "conversation":
             d["participants"] = self.context.get("participants", [])
             d["topic"] = self.context.get("topic", "")
@@ -308,6 +312,9 @@ class PipelineManager:
         pl.completed_at = time.time()
         if pl.status == "running":
             pl.status = "completed" if not pl.error else "failed"
+        # Upload final report to S3 if requested
+        if pl.status == "completed" and pl.context.get("upload_report"):
+            self._upload_report(pl)
         self._store.save(pl)
         log.info("pipeline_done: id=%s status=%s duration=%.1fs",
                  pl.pipeline_id, pl.status, pl.completed_at - pl.created_at)
@@ -316,6 +323,7 @@ class PipelineManager:
             "status": pl.status,
             "duration": round(pl.completed_at - pl.created_at, 1),
             "error": pl.error,
+            "report_url": pl.context.get("report_url", ""),
         })
         # Signal end-of-stream to live subscribers
         for q in list(pl._event_subs):
@@ -341,6 +349,8 @@ class PipelineManager:
         next_context.setdefault("shared_cwd", pl.context.get("shared_cwd", ""))
         if pl.context.get("output"):
             next_context.setdefault("output", pl.context["output"])
+        if next_def.get("upload_report"):
+            next_context["upload_report"] = True
 
         # Build steps — support dynamic steps from output
         steps = next_def.get("steps", [])
@@ -365,6 +375,21 @@ class PipelineManager:
             log.warning("auto_chain_skip: no steps resolved for pipeline=%s", pl.pipeline_id)
             return
 
+        # Optional: inject upstream step results into the first downstream step's
+        # prompt. Makes parallel-then-judge work even when upstream agents are
+        # remote (mesh) — the judge sees the content directly instead of relying
+        # on shared_cwd files that never relayed back.
+        #   "text" (default/recommended): inline the result text — reliable, no
+        #          external dependency, nothing leaves the process.
+        #   "s3":   stage results to S3 and inject presigned GET URLs — only worth
+        #          it for large/binary artifacts; see _inject_upstream_s3 caveats.
+        inject = next_def.get("inject_upstream")
+        if inject and steps:
+            if inject == "s3":
+                self._inject_upstream_s3(pl, steps)
+            else:
+                self._inject_upstream_text(pl, steps)
+
         next_pl = self.submit(
             mode=next_def["mode"],
             steps=steps,
@@ -375,6 +400,86 @@ class PipelineManager:
         self._store.save(pl)
         log.info("auto_chain: %s -> %s mode=%s steps=%d",
                  pl.pipeline_id, next_pl.pipeline_id, next_def["mode"], len(steps))
+
+    def _inject_upstream_text(self, pl: Pipeline, steps: list[dict]) -> None:
+        """Prepend each completed upstream step's result text to the first
+        downstream step's prompt. Deterministic, no external dependency.
+        For conversation mode, injects the transcript instead of step results.
+        """
+        blocks = []
+        # Conversation mode: use transcript
+        transcript = pl.context.get("transcript")
+        if transcript and isinstance(transcript, list):
+            for t in transcript:
+                agent = t.get("agent", "?")
+                content = t.get("content", "")
+                if content:
+                    blocks.append(f"[{agent}]:\n{content}")
+        else:
+            # Parallel/sequence: use step results
+            for i, st in enumerate(pl.steps):
+                if st.status != "completed" or not st.result:
+                    continue
+                blocks.append(f"--- 第 {i} 步（{st.agent}）产出 ---\n{st.result}")
+        if not blocks:
+            return
+        header = "以下是上游各步骤的产出，请基于这些内容汇总：\n\n" + "\n\n".join(blocks) + "\n\n"
+        steps[0]["prompt"] = header + steps[0].get("prompt", "")
+        log.info("inject_upstream_text: pipeline=%s injected=%d steps",
+                 pl.pipeline_id, len(blocks))
+
+    def _inject_upstream_s3(self, pl: Pipeline, steps: list[dict]) -> None:
+        """Upload each completed upstream step result to S3 and prepend presigned
+        GET URLs to the first downstream step's prompt.
+
+        Caveats (why "text" is the default): presigned URLs are unauthenticated
+        download links that may surface in transcripts/webhooks; they expire; and
+        the downstream agent must actually fetch them. Use only for large/binary
+        artifacts. Falls back to inlining text when S3 is unavailable.
+        """
+        from src import s3
+        lines = []
+        for i, st in enumerate(pl.steps):
+            if st.status != "completed" or not st.result:
+                continue
+            url = None
+            if s3.is_available():
+                key = f"upstream/{pl.pipeline_id}/step-{i}-{st.agent}.md"
+                url = s3.upload_bytes(key, st.result.encode("utf-8"))
+            if url:
+                lines.append(f"- 第 {i} 步（{st.agent}）的产出：{url}")
+            else:
+                lines.append(f"--- 第 {i} 步（{st.agent}）产出 ---\n{st.result}")
+        if not lines:
+            return
+        if any(l.startswith("- ") for l in lines):
+            header = ("以下是上游各步骤的产出（presigned URL，请逐个 fetch 后再汇总）：\n"
+                      + "\n".join(lines) + "\n\n")
+        else:
+            header = "以下是上游各步骤的产出：\n" + "\n".join(lines) + "\n\n"
+        steps[0]["prompt"] = header + steps[0].get("prompt", "")
+        log.info("inject_upstream_s3: pipeline=%s injected=%d steps",
+                 pl.pipeline_id, len(lines))
+
+    def _upload_report(self, pl: Pipeline) -> None:
+        """Upload the last completed step's result to S3 as a downloadable report."""
+        from src import s3
+        if not s3.is_available():
+            return
+        # Find last completed step with content
+        for step in reversed(pl.steps):
+            if step.status == "completed" and step.result:
+                import re
+                clean = re.sub(r'^\[tool\.(start|done)\].*$', '', step.result, flags=re.MULTILINE)
+                clean = re.sub(r'\n{3,}', '\n\n', clean).strip()
+                if not clean:
+                    continue
+                key = f"reports/{pl.pipeline_id}/report.md"
+                url = s3.upload_bytes(key, clean.encode("utf-8"))
+                if url:
+                    pl.context["report_url"] = url
+                    log.info("upload_report: pipeline=%s url=%s", pl.pipeline_id, url[:80])
+                return
 
     _CHUNK_SIZE = 1800
 
@@ -801,7 +906,7 @@ class PipelineManager:
         self._emit_event(pl, "step_started", {
             "index": step_idx,
             "agent": step.agent,
-            "prompt_preview": (prompt[:200] + "...") if len(prompt) > 200 else prompt,
+            "prompt_preview": prompt,
         })
 
         # Inject shared workspace hint for non-conversation modes
@@ -868,7 +973,11 @@ class PipelineManager:
             "status": step.status,
         }
         if step.status == "completed":
-            evt_data["result_preview"] = (step.result[:300] + "...") if len(step.result) > 300 else step.result
+            # Strip tool noise, then take tail (conclusions)
+            import re
+            clean = re.sub(r'^\[tool\.(start|done)\].*$', '', step.result, flags=re.MULTILINE)
+            clean = re.sub(r'\n{3,}', '\n\n', clean).strip()
+            evt_data["result_preview"] = ("..." + clean[-500:]) if len(clean) > 500 else clean
         else:
             evt_data["error"] = step.error
         self._emit_event(pl, evt_type, evt_data)

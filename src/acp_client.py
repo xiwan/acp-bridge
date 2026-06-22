@@ -229,6 +229,30 @@ class AcpConnection:
         finally:
             self._unsubscribe(sub_id)
 
+    async def session_load(self, cwd: str, session_id: str) -> str:
+        """Resume an existing session by ID (e.g. OpenGame --continue)."""
+        sub_id, q = self._subscribe()
+        try:
+            params = {"cwd": cwd, "mcpServers": [], "sessionId": session_id}
+            await self._send_request("session/load", params)
+            self.acp_session_id = session_id
+            log.info("session loaded: acp_session=%s", self.acp_session_id)
+            return self.acp_session_id
+        finally:
+            self._unsubscribe(sub_id)
+
+    async def session_list(self, cwd: str, cursor: int | None = None, size: int = 20) -> dict:
+        """List available sessions for a given cwd."""
+        sub_id, q = self._subscribe()
+        try:
+            params: dict = {"cwd": cwd, "size": size}
+            if cursor is not None:
+                params["cursor"] = cursor
+            result = await self._send_request("session/list", params)
+            return result
+        finally:
+            self._unsubscribe(sub_id)
+
     async def session_prompt(self, prompt: "str | list[dict]", idle_timeout: float = 300) -> AsyncIterator[dict]:
         self._busy = True
         self.last_active = time.time()
@@ -387,11 +411,11 @@ class AcpProcessPool:
         self._save_pids()
         return conn
 
-    async def get_or_create(self, agent: str, session_id: str, cwd: str = "", profile: dict | None = None) -> AcpConnection:
+    async def get_or_create(self, agent: str, session_id: str, cwd: str = "", profile: dict | None = None, resume_session_id: str = "") -> AcpConnection:
         async with self._lock:
-            return await self._get_or_create_unlocked(agent, session_id, cwd, profile)
+            return await self._get_or_create_unlocked(agent, session_id, cwd, profile, resume_session_id)
 
-    async def _get_or_create_unlocked(self, agent: str, session_id: str, cwd: str = "", profile: dict | None = None) -> AcpConnection:
+    async def _get_or_create_unlocked(self, agent: str, session_id: str, cwd: str = "", profile: dict | None = None, resume_session_id: str = "") -> AcpConnection:
         key = (agent, session_id)
         conn = self._connections.get(key)
 
@@ -428,12 +452,12 @@ class AcpProcessPool:
         if not agent_cfg:
             raise AcpError(f"agent not found: {agent}")
 
-        conn = await self._spawn(agent, session_id, agent_cfg, is_rebuild=is_rebuild, cwd_override=cwd, profile=profile)
+        conn = await self._spawn(agent, session_id, agent_cfg, is_rebuild=is_rebuild, cwd_override=cwd, profile=profile, resume_session_id=resume_session_id)
         self._connections[key] = conn
         self._save_pids()
         return conn
 
-    async def _spawn(self, agent: str, session_id: str, cfg: dict, is_rebuild: bool = False, cwd_override: str = "", profile: dict | None = None) -> AcpConnection:
+    async def _spawn(self, agent: str, session_id: str, cfg: dict, is_rebuild: bool = False, cwd_override: str = "", profile: dict | None = None, resume_session_id: str = "") -> AcpConnection:
         command = cfg["command"]
         acp_args = cfg.get("acp_args", ["acp"])
         cwd = cwd_override or cfg.get("working_dir", "/tmp")
@@ -463,7 +487,10 @@ class AcpProcessPool:
         if is_rebuild:
             conn.session_reset = True
         await conn.initialize()
-        await conn.session_new(cwd, profile=profile)
+        if resume_session_id:
+            await conn.session_load(cwd, resume_session_id)
+        else:
+            await conn.session_new(cwd, profile=profile)
         return conn
 
     async def close(self, agent: str, session_id: str) -> None:

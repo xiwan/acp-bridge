@@ -92,6 +92,28 @@ def upload(local_path: str, key_name: str = "") -> Optional[str]:
         return None
 
 
+def upload_bytes(key_name: str, data: bytes) -> Optional[str]:
+    """Upload raw bytes to S3 and return a presigned GET URL (or None on failure).
+
+    Used to stage step outputs (e.g. text reports) so a downstream agent — local
+    or on a peer node — can fetch them via URL without S3 credentials.
+    """
+    if not _available:
+        return None
+    try:
+        key = f"{_prefix}/{key_name}"
+        client = _client()
+        client.put_object(Bucket=_bucket, Key=key, Body=data)
+        url = client.generate_presigned_url(
+            "get_object", Params={"Bucket": _bucket, "Key": key}, ExpiresIn=_expires,
+        )
+        log.info("s3: upload_bytes %d bytes -> s3://%s/%s", len(data), _bucket, key)
+        return url
+    except Exception as e:
+        log.warning("s3: upload_bytes failed key=%s error=%s", key_name, e)
+        return None
+
+
 # --- L3 mesh workspace relay helpers ---------------------------------------
 
 def _client():

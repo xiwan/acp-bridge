@@ -464,3 +464,56 @@ class TestAutoChain:
 
         assert pl.status == "failed"
         assert "next_pipeline_id" not in pl.context
+
+
+# ============================================================================
+# Upstream injection (parallel-then-judge): inject upstream results downstream
+# ============================================================================
+
+class TestInjectUpstream:
+    def _upstream_pl(self):
+        pl = Pipeline(pipeline_id="up-1", mode="parallel", steps=[
+            PipelineStep(agent="kiro-stock", prompt_template="p0"),
+            PipelineStep(agent="kiro-stock", prompt_template="p1"),
+            PipelineStep(agent="kiro-stock", prompt_template="p2"),
+        ])
+        pl.steps[0].status = "completed"; pl.steps[0].result = "fundamentals: long"
+        pl.steps[1].status = "completed"; pl.steps[1].result = "technicals: oversold"
+        pl.steps[2].status = "failed"; pl.steps[2].result = ""  # excluded
+        return pl
+
+    def test_inject_text_prepends_completed_results(self, manager):
+        pl = self._upstream_pl()
+        steps = [{"agent": "kiro", "prompt": "SUMMARIZE"}]
+        manager._inject_upstream_text(pl, steps)
+        p = steps[0]["prompt"]
+        assert "fundamentals: long" in p
+        assert "technicals: oversold" in p
+        assert p.rstrip().endswith("SUMMARIZE")
+        assert "step 2" not in p.lower()
+
+    def test_inject_text_noop_when_nothing_completed(self, manager):
+        pl = Pipeline(pipeline_id="up-2", mode="parallel",
+                      steps=[PipelineStep(agent="kiro-stock", prompt_template="p0")])
+        steps = [{"agent": "kiro", "prompt": "SUMMARIZE"}]
+        manager._inject_upstream_text(pl, steps)
+        assert steps[0]["prompt"] == "SUMMARIZE"
+
+    def test_inject_s3_uses_presigned_urls(self, manager):
+        pl = self._upstream_pl()
+        steps = [{"agent": "kiro", "prompt": "SUMMARIZE"}]
+        with patch("src.s3.is_available", return_value=True), \
+             patch("src.s3.upload_bytes", side_effect=lambda k, d: f"https://s3.example/{k}?sig=x"):
+            manager._inject_upstream_s3(pl, steps)
+        p = steps[0]["prompt"]
+        assert "https://s3.example/" in p
+        assert p.rstrip().endswith("SUMMARIZE")
+
+    def test_inject_s3_falls_back_to_text_when_unavailable(self, manager):
+        pl = self._upstream_pl()
+        steps = [{"agent": "kiro", "prompt": "SUMMARIZE"}]
+        with patch("src.s3.is_available", return_value=False):
+            manager._inject_upstream_s3(pl, steps)
+        p = steps[0]["prompt"]
+        assert "fundamentals: long" in p
+        assert "https://" not in p
