@@ -180,15 +180,17 @@ class EnvCollector:
         self._injected_contexts = remaining
 
         if self._job_mgr:
+            now = time.time()
             for j in self._job_mgr.list_jobs(limit=5):
                 prompt_preview = self._sanitize(j.prompt[:60])
                 if j.status == "running":
-                    elapsed = round(time.time() - j.created_at)
+                    elapsed = round(now - j.created_at)
                     lines.append(f"  🔄 {j.agent} running: {prompt_preview}... ({elapsed}s)")
                 elif j.status == "failed":
-                    lines.append(f"  ❌ {j.agent} failed: {self._sanitize(j.error[:60])}")
+                    if now - j.created_at < 600:
+                        lines.append(f"  ❌ {j.agent} failed: {self._sanitize(j.error[:60])}")
                 elif j.status == "completed":
-                    ago = round(time.time() - j.completed_at)
+                    ago = round(now - (j.completed_at or now))
                     if ago < 300:
                         lines.append(f"  ✅ {j.agent} completed {ago}s ago: {prompt_preview}")
         return "Recent activity:\n" + "\n".join(lines) if lines else "Recent activity: none"

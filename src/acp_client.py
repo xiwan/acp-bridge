@@ -253,6 +253,17 @@ class AcpConnection:
         finally:
             self._unsubscribe(sub_id)
 
+    @staticmethod
+    def _is_thinking_only(notification: dict) -> bool:
+        """Return True if notification is purely a thinking/thought chunk."""
+        params = notification.get("params", {})
+        # harness-factory format
+        if params.get("kind") == "thinking":
+            return True
+        # kiro/claude/qwen format
+        update = params.get("update", {})
+        return update.get("sessionUpdate") == "agent_thought_chunk"
+
     async def session_prompt(self, prompt: "str | list[dict]", idle_timeout: float = 300) -> AsyncIterator[dict]:
         self._busy = True
         self.last_active = time.time()
@@ -283,7 +294,10 @@ class AcpConnection:
                     if notification is None:
                         break
                     now = time.time()
-                    last_event_time = now
+                    # Thinking-only events don't reset idle timer — prevents
+                    # infinite thinking loops from blocking the timeout.
+                    if not self._is_thinking_only(notification):
+                        last_event_time = now
                     self.last_active = now
                     yield notification
                 except asyncio.TimeoutError:
@@ -435,8 +449,22 @@ class AcpProcessPool:
         if self._count_agent(agent) >= self._max_per_agent:
             lru = self._lru_idle(agent=agent)
             if lru is None:
-                raise PoolExhaustedError(f"per-agent limit for {agent} ({self._max_per_agent}), all busy")
-            await self._evict(lru)
+                # Reap dead connections for this agent before giving up
+                group = self._agent_group(agent)
+                dead_keys = [
+                    k for k, c in self._connections.items()
+                    if self._agent_group(k[0]) == group and not c.alive
+                ]
+                for dk in dead_keys:
+                    dc = self._connections.pop(dk, None)
+                    if dc:
+                        log.warning("reap_dead: agent=%s session=%s (process exited)", dk[0], dk[1])
+                        await dc.kill()
+                if not dead_keys:
+                    raise PoolExhaustedError(f"per-agent limit for {agent} ({self._max_per_agent}), all busy")
+                self._save_pids()
+            else:
+                await self._evict(lru)
 
         # global limit: prefer reusing same-agent process, else evict globally LRU
         if len(self._connections) >= self._max:

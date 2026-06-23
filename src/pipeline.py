@@ -987,7 +987,19 @@ class PipelineManager:
         parts = []
         step._live_parts = parts
         try:
-            conn = await self._pool.get_or_create(step.agent, session_id, cwd=cwd)
+            # Retry on pool exhaustion with backoff (3 attempts, 5/10/20s)
+            _pool_retries = 3
+            for _attempt in range(_pool_retries):
+                try:
+                    conn = await self._pool.get_or_create(step.agent, session_id, cwd=cwd)
+                    break
+                except PoolExhaustedError:
+                    if _attempt == _pool_retries - 1:
+                        raise
+                    wait = 5 * (2 ** _attempt)
+                    log.info("pool_wait: pipeline=%s agent=%s attempt=%d wait=%ds",
+                             pl.pipeline_id, step.agent, _attempt + 1, wait)
+                    await asyncio.sleep(wait)
             async for notification in conn.session_prompt(prompt):
                 if "_prompt_result" in notification:
                     if "error" in notification["_prompt_result"]:
