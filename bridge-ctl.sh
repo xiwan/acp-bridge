@@ -12,6 +12,8 @@
 #   ./bridge-ctl.sh stop            — stop Bridge
 #   ./bridge-ctl.sh logs [N]        — tail last N lines (default 50)
 #   ./bridge-ctl.sh logs -f         — follow logs in real time
+#   ./bridge-ctl.sh live            — check process liveness
+#   ./bridge-ctl.sh ready           — check request readiness
 #   ./bridge-ctl.sh health          — curl /health endpoint
 #   ./bridge-ctl.sh orphans         — show manually-started Bridge processes
 set -euo pipefail
@@ -20,6 +22,15 @@ BRIDGE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SERVICE=acp-bridge.service
 LITELLM_SERVICE=litellm.service
 PORT=${ACP_BRIDGE_PORT:-18010}
+SYSTEMD_RUN=$(command -v systemd-run)
+SYSTEMCTL=$(command -v systemctl)
+
+schedule_service_action() {
+    local purpose=$1
+    shift
+    local unit="acp-bridge-${purpose}-$(date +%s)"
+    sudo "$SYSTEMD_RUN" --quiet --collect --unit="$unit" --on-active=2s "$@"
+}
 
 service_cgroup() {
     systemctl show -p ControlGroup --value "$SERVICE" 2>/dev/null || true
@@ -91,14 +102,15 @@ case "${1:-status}" in
     restart)
         warn_orphan_bridge_processes || true
         echo "⏳ Restarting ACP Bridge via systemd (this process will be killed)..."
-        # Schedule restart in background so the response can be sent before we die
-        nohup bash -c 'sleep 2 && sudo systemctl restart acp-bridge.service' >/dev/null 2>&1 &
+        # A transient systemd timer survives when Bridge kills the calling agent process.
+        schedule_service_action restart "$SYSTEMCTL" restart "$SERVICE"
         echo "✅ Restart scheduled in 2s. Bridge will be back at http://127.0.0.1:$PORT"
         ;;
     restart-all)
         warn_orphan_bridge_processes || true
         echo "⏳ Restarting LiteLLM + ACP Bridge..."
-        nohup bash -c 'sleep 2 && sudo systemctl restart litellm.service && sleep 3 && sudo systemctl restart acp-bridge.service' >/dev/null 2>&1 &
+        schedule_service_action restart-all /bin/bash -c \
+            "'$SYSTEMCTL' restart '$LITELLM_SERVICE' && sleep 3 && '$SYSTEMCTL' restart '$SERVICE'"
         echo "✅ Restart scheduled. Services will be back shortly."
         ;;
     stop)
@@ -116,11 +128,14 @@ case "${1:-status}" in
     health)
         curl -s "http://127.0.0.1:$PORT/health" | python3 -m json.tool
         ;;
+    live|ready)
+        curl -s "http://127.0.0.1:$PORT/$1" | python3 -m json.tool
+        ;;
     orphans)
         warn_orphan_bridge_processes
         ;;
     *)
-        echo "Usage: $0 {status|restart|restart-all|stop|logs [N]|health|orphans}"
+        echo "Usage: $0 {status|restart|restart-all|stop|logs [N]|live|ready|health|orphans}"
         exit 1
         ;;
 esac

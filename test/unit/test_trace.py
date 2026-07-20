@@ -10,9 +10,9 @@ Tests the ContextVar-based distributed tracing middleware:
 import asyncio
 import logging
 import uuid
+import httpx
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from starlette.testclient import TestClient
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
@@ -44,37 +44,45 @@ def make_app():
 class TestTraceIdMiddleware:
     """Core middleware behavior."""
 
-    def test_generates_trace_id_when_none_provided(self):
+    @pytest.mark.asyncio
+    async def test_generates_trace_id_when_none_provided(self):
         """Middleware auto-generates a 12-char hex trace ID if no header given."""
-        client = TestClient(make_app())
-        resp = client.get("/")
+        transport = httpx.ASGITransport(app=make_app())
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/")
         assert resp.status_code == 200
         tid = resp.headers["x-request-id"]
         assert len(tid) == 12
         assert all(c in "0123456789abcdef" for c in tid)
 
-    def test_accepts_client_provided_trace_id(self):
+    @pytest.mark.asyncio
+    async def test_accepts_client_provided_trace_id(self):
         """When client sends X-Request-Id, middleware uses it as-is."""
-        client = TestClient(make_app())
         custom_tid = "my-custom-trace-123"
-        resp = client.get("/", headers={"x-request-id": custom_tid})
+        transport = httpx.ASGITransport(app=make_app())
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/", headers={"x-request-id": custom_tid})
         assert resp.status_code == 200
         assert resp.headers["x-request-id"] == custom_tid
         # Handler can also see it via current_trace_id()
         assert resp.text == custom_tid
 
-    def test_trace_id_propagated_to_handler(self):
+    @pytest.mark.asyncio
+    async def test_trace_id_propagated_to_handler(self):
         """current_trace_id() inside handler returns the same ID as the response header."""
-        client = TestClient(make_app())
-        resp = client.get("/")
+        transport = httpx.ASGITransport(app=make_app())
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/")
         body_tid = resp.text
         header_tid = resp.headers["x-request-id"]
         assert body_tid == header_tid
 
-    def test_trace_id_in_response_header(self):
+    @pytest.mark.asyncio
+    async def test_trace_id_in_response_header(self):
         """Response always includes X-Request-Id header (for client correlation)."""
-        client = TestClient(make_app())
-        resp = client.get("/")
+        transport = httpx.ASGITransport(app=make_app())
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/")
         assert "x-request-id" in resp.headers
 
 

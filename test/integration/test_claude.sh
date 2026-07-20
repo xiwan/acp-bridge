@@ -6,12 +6,14 @@ source "$(dirname "$0")/../lib.sh"
 echo "=== Claude 测试 ==="
 
 echo "--- 同步调用 ---"
-resp=$("$CLIENT" -a claude "回复ok两个字就行" 2>/dev/null)
+SYNC_SESSION="00000000-0000-0000-0000-cc0000000010"
+resp=$("$CLIENT" -a claude -s "$SYNC_SESSION" "回复ok两个字就行" 2>/dev/null)
 run_test "同步调用有回复" "ok\|OK" "$resp"
 
 echo ""
 echo "--- 流式调用 ---"
-resp=$("$CLIENT" --stream -a claude "回复ok两个字就行" 2>/dev/null)
+STREAM_SESSION="00000000-0000-0000-0000-cc0000000011"
+resp=$("$CLIENT" --stream -a claude -s "$STREAM_SESSION" "回复ok两个字就行" 2>/dev/null)
 run_test "流式调用有输出" "ok\|OK" "$resp"
 
 echo ""

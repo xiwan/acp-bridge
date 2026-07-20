@@ -22,7 +22,7 @@ Bridge uses dual authentication:
 1. **Bearer Token** — `Authorization: Bearer <token>` header on every request
 2. **IP Allowlist** — only requests from `security.allowed_ips` are accepted
 
-Both must pass. `/health` and `/ui` are unauthenticated (for load balancer probes and browser access).
+Both must pass. `/live`, `/ready`, `/health`, and `/ui` are unauthenticated (for load balancer probes and browser access). The IP allowlist still applies to these paths.
 
 Token supports `${ENV_VAR}` references in config — keep actual values in `.env` or environment only.
 

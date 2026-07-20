@@ -7,6 +7,7 @@ from fastapi import Path as PathParam
 from starlette.responses import JSONResponse
 
 from ..acp_client import AcpProcessPool
+from ..fallback_policy import is_agent_healthy
 
 
 def _human_uptime(seconds: int) -> str:
@@ -22,12 +23,47 @@ def _human_uptime(seconds: int) -> str:
     return " ".join(parts)
 
 
+def _agent_state(name: str, mode: str, alive: int) -> tuple[str, bool]:
+    """Classify an agent without treating lazy process creation as failure."""
+    if mode == "pty":
+        return "on_demand", True
+    if mode != "acp":
+        return "remote", True
+    if not is_agent_healthy(name):
+        return "down", False
+    if alive > 0:
+        return "ready", True
+    return "cold", True
+
+
 def register(app, version: str, start_time: float, agents_cfg: dict,
              pool: AcpProcessPool | None, ttl_hours: int,
              job_mgr=None, litellm_cfg: dict | None = None):
 
     litellm_url = (litellm_cfg or {}).get("url", "")
     litellm_required_by = (litellm_cfg or {}).get("required_by", [])
+
+    @app.get("/live")
+    async def live():
+        """Liveness probe: the HTTP process is running."""
+        uptime_s = int(time.time() - start_time)
+        return {"status": "alive", "version": version, "uptime": uptime_s}
+
+    @app.get("/ready")
+    async def ready():
+        """Readiness probe: at least one agent is configured for on-demand use."""
+        configured = sum(
+            1 for cfg in agents_cfg.values()
+            if isinstance(cfg, dict) and cfg.get("enabled", True)
+        )
+        active = pool.stats["total"] if pool else 0
+        body = {
+            "status": "ready" if configured else "not_ready",
+            "version": version,
+            "agents_configured": configured,
+            "pool_state": "active" if active else "cold",
+        }
+        return JSONResponse(content=body, status_code=200 if configured else 503)
 
     @app.get("/health")
     async def health():
@@ -52,24 +88,27 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
 
         # --- Agents summary ---
         agents_summary = []
-        acp_healthy = 0
         acp_total = 0
+        acp_down = 0
+        state_counts = {"ready": 0, "cold": 0, "down": 0, "on_demand": 0, "remote": 0}
         for name, cfg in agents_cfg.items():
             if not isinstance(cfg, dict):
                 continue
             mode = cfg.get("mode", "pty")
             alive = pool_stats.get("by_agent", {}).get(name, 0) if pool else 0
-            is_healthy = alive > 0 or mode == "pty"
+            state, is_healthy = _agent_state(name, mode, alive)
+            state_counts[state] += 1
             if mode == "acp":
                 acp_total += 1
-                if is_healthy:
-                    acp_healthy += 1
+                if state == "down":
+                    acp_down += 1
             agents_summary.append({
                 "name": name,
                 "mode": mode,
                 "enabled": cfg.get("enabled", True),
                 "alive": alive,
                 "healthy": is_healthy,
+                "state": state,
             })
 
         # --- Jobs summary ---
@@ -104,12 +143,12 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
         # --- Status ---
         status = "ok"
         reasons = []
-        if acp_total > 0 and acp_healthy == 0:
+        if acp_total > 0 and acp_down == acp_total:
             status = "unhealthy"
-            reasons.append("no ACP agents alive")
-        elif acp_total > 0 and acp_healthy < acp_total:
+            reasons.append("all ACP agents down")
+        elif acp_down > 0:
             status = "degraded"
-            reasons.append(f"{acp_total - acp_healthy}/{acp_total} ACP agents down")
+            reasons.append(f"{acp_down}/{acp_total} ACP agents down")
         if pool_info and pool_info["active"] >= pool_info["max"]:
             if status == "ok":
                 status = "degraded"
@@ -138,7 +177,9 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
                     "enabled": True,
                     "alive": 0,
                     "healthy": True,
+                    "state": "remote",
                 })
+                state_counts["remote"] += 1
 
         body = {
             "status": status,
@@ -146,6 +187,7 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
             "uptime": uptime_s,
             "uptime_human": _human_uptime(uptime_s),
             "agents": agents_summary,
+            "agent_states": state_counts,
         }
         if pool_info:
             body["pool"] = pool_info
@@ -167,6 +209,7 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
             if not isinstance(cfg, dict):
                 continue
             alive = stats["by_agent"].get(name, 0)
+            mode = cfg.get("mode", "pty")
             sessions = []
             responsive = 0
             if pool:
@@ -183,12 +226,16 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
                             "state": "stuck" if stuck else conn.state,
                             "idle": round(now - conn.last_active, 1),
                         })
+            state, healthy = _agent_state(name, mode, alive)
+            if alive > 0 and responsive == 0:
+                state, healthy = "down", False
             agent_list.append({
                 "name": name,
-                "mode": cfg.get("mode", "pty"),
+                "mode": mode,
                 "alive_sessions": alive,
                 "responsive_sessions": responsive,
-                "healthy": responsive > 0 or cfg.get("mode") == "pty",
+                "healthy": healthy,
+                "state": state,
                 "sessions": sessions,
             })
 
@@ -215,6 +262,7 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
                 "alive_sessions": 0,
                 "responsive_sessions": 0,
                 "healthy": True,
+                "state": "remote",
                 "sessions": [],
                 "description": description,
                 "domains": domains,

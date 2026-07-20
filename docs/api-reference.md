@@ -252,13 +252,21 @@ Close a session and release its subprocess.
 
 ## Health & Stats
 
+### `GET /live` (no auth)
+
+Lightweight liveness probe. Returns HTTP 200 when the Bridge HTTP process is running.
+
+### `GET /ready` (no auth)
+
+Readiness probe. Returns HTTP 200 when at least one agent is configured. A lazy ACP process pool may still be `cold`; agents are spawned on the first request.
+
 ### `GET /health` (no auth)
 
-Three-state health check: `ok`, `degraded`, `unhealthy`. Includes process pool watermark, system memory, uptime.
+Detailed three-state health check: `ok`, `degraded`, `unhealthy`. Includes process pool watermark, system memory, uptime, and `agent_states` counts. Agent state is `cold` before its first on-demand spawn, `ready` when a process is alive, and `down` only after an explicit health failure. A cold pool returns HTTP 200.
 
 ### `GET /health/agents`
 
-Per-agent status with per-session connection state (`idle`/`busy`/`stale`/`dead`).
+Per-agent status with high-level state (`cold`/`ready`/`down`/`on_demand`/`remote`) and per-session connection state (`idle`/`busy`/`stale`/`dead`).
 
 ### `GET /stats`
 

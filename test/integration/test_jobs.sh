@@ -74,8 +74,8 @@ if ! curl -sf --max-time 3 "$ACP_BRIDGE_URL/health" >/dev/null 2>&1; then
 fi
 
 if ! sudo docker ps --format '{{.Names}}' | grep -q "$CONTAINER"; then
-    echo "❌ 容器 $CONTAINER 未运行，此测试需要 Docker 部署"
-    exit 1
+    echo "⏭️  跳过：容器 $CONTAINER 未运行（当前不是 Docker light 部署）"
+    exit 0
 fi
 
 echo ""

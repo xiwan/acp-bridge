@@ -23,7 +23,8 @@ echo "--- 多轮对话 ---"
 # Only verify the session reuse mechanism doesn't crash.
 SESSION="00000000-0000-0000-0000-cd0000000001"
 resp1=$("$CLIENT" -a codex -s "$SESSION" "Remember the secret code is pineapple, reply only with understood" 2>&1)
-run_test "多轮第1轮有回复" "understood\|ok\|OK" "$resp1"
+resp1_joined=$(printf '%s' "$resp1" | tr -d '\r\n')
+run_test "多轮第1轮有回复" "understood\|ok\|OK" "$resp1_joined"
 
 resp2=$("$CLIENT" -a codex -s "$SESSION" "Reply with only the word hello" 2>&1)
 run_test "多轮第2轮有回复 (PTY无上下文)" "hello\|Hello\|session_id" "$resp2"

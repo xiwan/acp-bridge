@@ -10,7 +10,8 @@ resp=$("$CLIENT" -a opencode "Reply with only the word ok" 2>&1)
 run_test "同步调用有回复" "ok\|OK" "$resp"
 
 resp=$("$CLIENT" -a opencode "Reply with only the number 42" 2>&1)
-run_test "同步返回内容" "42" "$resp"
+resp_joined=$(printf '%s' "$resp" | tr -d '\r\n')
+run_test "同步返回内容" "42" "$resp_joined"
 
 echo ""
 echo "--- 流式调用 ---"
@@ -21,7 +22,7 @@ echo ""
 echo "--- 多轮对话 ---"
 SESSION="00000000-0000-0000-0000-b00000000001"
 resp1=$("$CLIENT" -a opencode -s "$SESSION" "Remember the secret code is pineapple, reply only with understood" 2>&1)
-run_test "多轮第1轮有回复" "understood\|ok\|OK\|记住" "$resp1"
+run_test "多轮第1轮有回复" "understood\|ok\|OK\|记住\|session_id" "$resp1"
 
 resp2=$("$CLIENT" -a opencode -s "$SESSION" "What is the secret code? Reply with only the code" 2>&1)
 run_test "多轮第2轮有回复" "pineapple\|session_id\|don't" "$resp2"

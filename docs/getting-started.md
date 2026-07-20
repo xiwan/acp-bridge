@@ -176,6 +176,8 @@ The installer sets up systemd services automatically. Use `bridge-ctl.sh` for li
 |---------|-------------|
 | `./bridge-ctl.sh status` | Show service status |
 | `./bridge-ctl.sh logs 100` | View last 100 log lines |
+| `./bridge-ctl.sh live` | Check process liveness (`/live`) |
+| `./bridge-ctl.sh ready` | Check request readiness (`/ready`) |
 | `./bridge-ctl.sh health` | Check `/health` endpoint |
 | `./bridge-ctl.sh restart` | Restart Bridge (kills running agent subprocesses) |
 | `./bridge-ctl.sh restart-all` | Restart LiteLLM + Bridge |
@@ -191,8 +193,11 @@ export ACP_BRIDGE_URL=http://localhost:18010
 ./skill/scripts/acp-client.sh -a kiro "Say hello"       # call an agent
 
 # Option 2: curl
+curl -s http://localhost:18010/ready
+# → {"status":"ready","version":"0.35.2","agents_configured":9,"pool_state":"cold"}
+
 curl -s http://localhost:18010/health
-# → {"status":"ok","version":"0.15.17"}
+# → {"status":"ok","version":"0.35.2", ...}
 
 curl -s --max-time 120 -X POST http://localhost:18010/runs \
   -H "Authorization: Bearer $ACP_BRIDGE_TOKEN" \
