@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
+from .fallback_policy import get_best_fallback
 from .formatters import PipelineFormatter, get_template, get_prompt_suffix
 from .prompt_log import PromptStore
 from .sse import transform_notification
@@ -47,6 +48,9 @@ class PipelineStep:
     # Tools invoked during this step. Each entry: {"id", "name", "status"}.
     # Populated from session/update tool_call + tool_call_update notifications.
     tools: list = field(default_factory=list)
+    # Fallback tracking (mirrors Job.original_agent / fallback_history)
+    original_agent: str = ""
+    fallback_history: list = field(default_factory=list)
     _live_parts: list = field(default_factory=list, repr=False)
     # Accumulated agent_thought_chunk text. Joined for /steps/{i}/live.
     _thinking_parts: list = field(default_factory=list, repr=False)
@@ -61,6 +65,9 @@ class PipelineStep:
             d["duration"] = round(self.completed_at - self.started_at, 1)
         if self.tools:
             d["tools"] = self.tools
+        if self.original_agent and self.original_agent != self.agent:
+            d["original_agent"] = self.original_agent
+            d["fallback_history"] = self.fallback_history
         return d
 
 
@@ -75,6 +82,8 @@ class Pipeline:
     completed_at: float = 0
     error: str = ""
     webhook_meta: dict = field(default_factory=dict)
+    # Crash-recovery retry counter (incremented on each restart resume)
+    retries: int = 0
     # Human-in-the-loop controls
     _gate: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
     _inject_queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
@@ -178,7 +187,9 @@ class PipelineManager:
             return pl
         d = self._store.get(pipeline_id)
         if d:
-            return self._dict_to_pipeline(d)
+            # Restore persisted lifecycle events so /pipelines/{id}/events can
+            # replay history even after a Bridge restart.
+            return self._dict_to_pipeline(d, with_events=True)
         return None
 
     def get_transcript(self, pipeline_id: str) -> list[dict]:
@@ -218,6 +229,76 @@ class PipelineManager:
             context=context,
             webhook_meta=original.webhook_meta.copy(),
         )
+
+    MAX_RECOVERY_RETRIES = 2
+
+    async def run_recovery(self):
+        """Resume pipelines interrupted by a Bridge restart (mirrors JobManager.run_recovery).
+
+        sequence/parallel: completed steps keep their persisted results; only
+        unfinished steps re-execute (shared_cwd is reused via _make_shared_cwd).
+        race: all steps reset (a partial race has no meaningful winner).
+        conversation: not resumable (agent session context lives in dead
+        subprocesses) — marked failed with a clear error + webhook.
+        """
+        for d in self._store.load_incomplete():
+            pl = self._dict_to_pipeline(d, with_events=True)
+            pl.retries += 1
+
+            if pl.mode == "conversation":
+                pl.status = "failed"
+                pl.error = "interrupted: conversation pipelines are not resumable after restart"
+                pl.completed_at = time.time()
+                self._store.save(pl)
+                self._emit_event(pl, "pipeline_done", {
+                    "pipeline_id": pl.pipeline_id,
+                    "status": pl.status,
+                    "duration": round(pl.completed_at - pl.created_at, 1),
+                    "error": pl.error,
+                    "report_url": "",
+                })
+                log.warning("recovery_conversation_failed: pipeline=%s", pl.pipeline_id)
+                await self._webhook(pl)
+                continue
+
+            if pl.retries > self.MAX_RECOVERY_RETRIES:
+                pl.status = "failed"
+                pl.error = f"interrupted: failed after {self.MAX_RECOVERY_RETRIES} recovery retries across restarts"
+                pl.completed_at = time.time()
+                self._store.save(pl)
+                self._emit_event(pl, "pipeline_done", {
+                    "pipeline_id": pl.pipeline_id,
+                    "status": pl.status,
+                    "duration": round(pl.completed_at - pl.created_at, 1),
+                    "error": pl.error,
+                    "report_url": "",
+                })
+                log.warning("recovery_failed: pipeline=%s retries=%d", pl.pipeline_id, pl.retries)
+                await self._webhook(pl)
+                continue
+
+            done = 0
+            for step in pl.steps:
+                if pl.mode == "race" or step.status != "completed":
+                    step.status = "pending"
+                    step.result = "" if pl.mode == "race" else step.result
+                    step.error = ""
+                    step.started_at = 0
+                    step.completed_at = 0
+                else:
+                    done += 1
+                    # Re-expose completed step output to downstream templates
+                    if step.output_as:
+                        pl.context[step.output_as] = step.result
+            pl.status = "pending"
+            pl.error = ""
+            pl.completed_at = 0
+            self._pipelines[pl.pipeline_id] = pl
+            self._store.save(pl)
+            log.info("recovery_resume: pipeline=%s mode=%s attempt=%d/%d done_steps=%d/%d",
+                     pl.pipeline_id, pl.mode, pl.retries, self.MAX_RECOVERY_RETRIES,
+                     done, len(pl.steps))
+            asyncio.create_task(self._run(pl))
 
     def cleanup(self, max_age: float = 3600) -> int:
         """Remove completed pipelines older than max_age from in-memory cache."""
@@ -263,20 +344,25 @@ class PipelineManager:
             out[m] = s
         return {"period_hours": hours, "modes": out}
 
-    @staticmethod
-    def _dict_to_pipeline(d: dict) -> Pipeline:
+    def _dict_to_pipeline(self, d: dict, with_events: bool = False) -> Pipeline:
         pl = Pipeline(
             pipeline_id=d["pipeline_id"], mode=d["mode"],
             steps=[PipelineStep(
                 agent=s["agent"], prompt_template=s.get("prompt_template", ""),
-                output_as=s.get("output_as", ""), status=s.get("status", ""),
+                output_as=s.get("output_as", ""), timeout=s.get("timeout", 600),
+                status=s.get("status", "pending"),
                 result=s.get("result", ""), error=s.get("error", ""),
                 started_at=s.get("started_at", 0), completed_at=s.get("completed_at", 0),
+                original_agent=s.get("original_agent", ""),
+                fallback_history=s.get("fallback_history", []) or [],
             ) for s in d.get("steps", [])],
             status=d["status"], context=d.get("context", {}),
             created_at=d["created_at"], completed_at=d.get("completed_at", 0),
             error=d.get("error", ""), webhook_meta=d.get("webhook_meta", {}),
+            retries=d.get("retries", 0),
         )
+        if with_events:
+            pl._event_history = self._store.load_events(pl.pipeline_id)
         return pl
 
     async def _run(self, pl: Pipeline):
@@ -483,6 +569,11 @@ class PipelineManager:
 
     _CHUNK_SIZE = 1800
 
+    # Persisted to SQLite so /events history survives restarts. step_progress
+    # is intentionally excluded — too high-frequency, live-only.
+    _PERSISTED_EVENTS = {"pipeline_started", "step_started", "step_completed",
+                         "step_failed", "step_fallback", "pipeline_done"}
+
     def _emit_event(self, pl: Pipeline, event_type: str, data: dict) -> None:
         """Push a lifecycle event to all SSE subscribers and store in history.
 
@@ -493,6 +584,11 @@ class PipelineManager:
         data = {**data, "_emitted_at": time.time()}
         evt = {"event": event_type, "data": data}
         pl._event_history.append(evt)
+        if event_type in self._PERSISTED_EVENTS:
+            try:
+                self._store.save_event(pl.pipeline_id, event_type, data)
+            except Exception as e:
+                log.debug("event_persist_failed: pipeline=%s err=%s", pl.pipeline_id, e)
         for q in list(pl._event_subs):
             try:
                 q.put_nowait(evt)
@@ -563,6 +659,12 @@ class PipelineManager:
 
     async def _run_sequence(self, pl: Pipeline):
         for step in pl.steps:
+            # Recovery resume: steps already completed before a restart keep
+            # their persisted results and are not re-executed.
+            if step.status == "completed":
+                if step.output_as:
+                    pl.context[step.output_as] = step.result
+                continue
             prompt = self._render(step.prompt_template, pl.context)
             await self._exec_step(pl, step, prompt)
             await self._webhook_step(pl, step)
@@ -582,6 +684,8 @@ class PipelineManager:
 
         tasks = []
         for step in pl.steps:
+            if step.status == "completed":  # recovery resume: keep persisted result
+                continue
             prompt = self._render(step.prompt_template, pl.context)
             step_cwd = os.path.join(shared_cwd, step.agent) if shared_cwd else ""
             if step_cwd:
@@ -934,8 +1038,9 @@ class PipelineManager:
                 decorations=decorations,
             )
 
+        mesh_target = self._mesh_resolver(step.agent) if self._mesh_resolver else None
+        timed_out = False
         try:
-            mesh_target = self._mesh_resolver(step.agent) if self._mesh_resolver else None
             if mesh_target and shared_cwd:
                 await asyncio.wait_for(
                     self._exec_step_remote(pl, step, final_prompt, shared_cwd, mesh_target),
@@ -950,10 +1055,21 @@ class PipelineManager:
                     self._exec_step_acp(pl, step, step_idx, final_prompt, session_id, cwd=shared_cwd),
                     timeout=timeout)
         except asyncio.TimeoutError:
+            timed_out = True
             step.error = f"step timeout ({timeout}s)"
             step.status = "failed"
             log.warning("step_timeout: pipeline=%s agent=%s timeout=%ds",
                         pl.pipeline_id, step.agent, timeout)
+
+        # --- Per-step fallback (local ACP steps only) ---
+        # Timeouts deliberately excluded: another agent would burn the same
+        # wall-clock budget again. Mesh/PTY excluded: different exec paths.
+        # Opt-out via context.step_fallback=false.
+        if (step.status == "failed" and not timed_out
+                and not mesh_target and cfg.get("mode", "acp") == "acp"
+                and pl.context.get("step_fallback", True)):
+            await self._step_fallback(pl, step, step_idx, final_prompt, shared_cwd, timeout)
+
         step.completed_at = time.time()
         # Truncate oversized output to prevent OOM
         if len(step.result) > MAX_OUTPUT_SIZE:
@@ -981,6 +1097,57 @@ class PipelineManager:
         else:
             evt_data["error"] = step.error
         self._emit_event(pl, evt_type, evt_data)
+
+    MAX_STEP_FALLBACK = 2
+
+    async def _step_fallback(self, pl: Pipeline, step: PipelineStep, step_idx: int,
+                             prompt: str, shared_cwd: str, timeout: float):
+        """Re-execute a failed ACP step on fallback agents (mirrors JobManager fallback)."""
+        if not step.original_agent:
+            step.original_agent = step.agent
+        tried = [step.original_agent] + list(step.fallback_history)
+        first_error = step.error
+
+        for attempt in range(self.MAX_STEP_FALLBACK):
+            next_agent = get_best_fallback(step.agent, tried, self._pool, None)
+            if next_agent is None:
+                break
+            # Fallback agents must exist locally and be ACP mode
+            next_cfg = self._agents_cfg.get(next_agent, {})
+            if not isinstance(next_cfg, dict) or next_cfg.get("mode", "acp") != "acp":
+                tried.append(next_agent)
+                continue
+            step.fallback_history.append(step.agent)
+            tried.append(next_agent)
+            log.info("step_fallback: pipeline=%s step=%d %s -> %s (attempt %d/%d)",
+                     pl.pipeline_id, step_idx, step.agent, next_agent,
+                     attempt + 1, self.MAX_STEP_FALLBACK)
+            self._emit_event(pl, "step_fallback", {
+                "index": step_idx,
+                "from_agent": step.agent,
+                "to_agent": next_agent,
+                "error": step.error,
+            })
+            step.agent = next_agent
+            step.status = "running"
+            step.error = ""
+            session_id = f"pipeline-{pl.pipeline_id}-{next_agent}-{step_idx}-fb{attempt}"
+            try:
+                await asyncio.wait_for(
+                    self._exec_step_acp(pl, step, step_idx, prompt, session_id, cwd=shared_cwd),
+                    timeout=timeout)
+            except asyncio.TimeoutError:
+                step.error = f"step timeout ({timeout}s)"
+                step.status = "failed"
+                return  # timeout on fallback agent — stop the chain
+            if step.status == "completed":
+                return
+
+        if step.status != "completed":
+            step.status = "failed"
+            step.error = step.error or first_error
+            log.warning("step_fallback_exhausted: pipeline=%s step=%d original=%s tried=%s",
+                        pl.pipeline_id, step_idx, step.original_agent, tried)
 
     async def _exec_step_acp(self, pl: Pipeline, step: PipelineStep, step_idx: int,
                              prompt: str, session_id: str, cwd: str = ""):

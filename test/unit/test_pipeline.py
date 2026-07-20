@@ -157,7 +157,7 @@ class TestSubmitAndLifecycle:
     def test_submit_creates_pipeline(self, manager):
         """submit() returns a Pipeline with correct mode and step count."""
         with patch.object(manager, '_run', new_callable=AsyncMock):
-            with patch('src.pipeline.asyncio.create_task'):
+            with patch('src.pipeline.asyncio.create_task', side_effect=lambda coro: coro.close()):
                 pl = manager.submit("sequence", [
                     {"agent": "kiro", "prompt": "step1"},
                     {"agent": "claude", "prompt": "step2"},
@@ -170,7 +170,7 @@ class TestSubmitAndLifecycle:
     def test_submit_stores_pipeline(self, manager):
         """submit() makes pipeline retrievable via get()."""
         with patch.object(manager, '_run', new_callable=AsyncMock):
-            with patch('src.pipeline.asyncio.create_task'):
+            with patch('src.pipeline.asyncio.create_task', side_effect=lambda coro: coro.close()):
                 pl = manager.submit("sequence", [{"agent": "kiro", "prompt": "x"}])
         assert manager.get(pl.pipeline_id) is not None
 
@@ -181,7 +181,7 @@ class TestSubmitAndLifecycle:
     def test_submit_respects_timeout(self, manager):
         """Step timeout from input dict is preserved."""
         with patch.object(manager, '_run', new_callable=AsyncMock):
-            with patch('src.pipeline.asyncio.create_task'):
+            with patch('src.pipeline.asyncio.create_task', side_effect=lambda coro: coro.close()):
                 pl = manager.submit("sequence", [
                     {"agent": "kiro", "prompt": "x", "timeout": 120},
                 ])
@@ -190,7 +190,7 @@ class TestSubmitAndLifecycle:
     def test_submit_respects_output_as(self, manager):
         """output_as from input dict is preserved on step."""
         with patch.object(manager, '_run', new_callable=AsyncMock):
-            with patch('src.pipeline.asyncio.create_task'):
+            with patch('src.pipeline.asyncio.create_task', side_effect=lambda coro: coro.close()):
                 pl = manager.submit("sequence", [
                     {"agent": "kiro", "prompt": "x", "output_as": "step1_result"},
                 ])
@@ -238,7 +238,7 @@ class TestSequenceExecution:
         pl = Pipeline(pipeline_id="seq-2", mode="sequence", steps=[
             PipelineStep(agent="kiro", prompt_template="step1"),
             PipelineStep(agent="claude", prompt_template="step2"),
-        ], context={})
+        ], context={"step_fallback": False})
 
         with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
             with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
@@ -335,7 +335,7 @@ class TestParallelExecution:
         pl = Pipeline(pipeline_id="par-2", mode="parallel", steps=[
             PipelineStep(agent="kiro", prompt_template="task1"),
             PipelineStep(agent="claude", prompt_template="task2"),
-        ], context={})
+        ], context={"step_fallback": False})
 
         with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
             with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
@@ -756,7 +756,8 @@ async def test_exec_step_agent_success(tmp_path):
 async def test_exec_step_no_builtin_retry(tmp_path):
     mgr, pool = _make_manager(tmp_path)
     pool.get_or_create = AsyncMock(side_effect=AcpError("agent down"))
-    pl = Pipeline(pipeline_id="p5", mode="sequence", steps=[], context={"shared_cwd": "/tmp/ws"})
+    pl = Pipeline(pipeline_id="p5", mode="sequence", steps=[],
+                  context={"shared_cwd": "/tmp/ws", "step_fallback": False})
     step = PipelineStep(agent="claude", prompt_template="x")
     pl.steps.append(step)
     for p in _PATCHES: p.start()
@@ -780,7 +781,7 @@ async def test_sequence_stops_on_step_failure(tmp_path):
         PipelineStep(agent="kiro", prompt_template="s1"),
         PipelineStep(agent="claude", prompt_template="s2"),
         PipelineStep(agent="qwen", prompt_template="s3"),
-    ], context={})
+    ], context={"step_fallback": False})
     for p in _PATCHES: p.start()
     try:
         with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
@@ -807,7 +808,7 @@ async def test_parallel_partial_failure(tmp_path):
         PipelineStep(agent="kiro", prompt_template="t1"),
         PipelineStep(agent="claude", prompt_template="t2"),
         PipelineStep(agent="qwen", prompt_template="t3"),
-    ], context={})
+    ], context={"step_fallback": False})
     for p in _PATCHES: p.start()
     try:
         with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
@@ -821,6 +822,189 @@ async def test_parallel_partial_failure(tmp_path):
     assert pl.steps[0].status == "completed"
     assert pl.steps[1].status == "failed"
     assert pl.steps[2].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_step_fallback_succeeds_and_persists_history(tmp_path):
+    mgr, pool = _make_manager(tmp_path)
+
+    async def fail_then_succeed(agent, sid, cwd=""):
+        if agent == "claude":
+            raise AcpError("claude down")
+        return _mock_conn("fallback result")
+
+    pool.get_or_create = AsyncMock(side_effect=fail_then_succeed)
+    pl = Pipeline(pipeline_id="fallback-1", mode="sequence", steps=[
+        PipelineStep(agent="claude", prompt_template="task"),
+    ], context={})
+
+    for p in _PATCHES: p.start()
+    try:
+        with patch("src.pipeline.get_best_fallback", return_value="kiro"):
+            with patch.object(mgr, "_make_shared_cwd", return_value="/tmp/ws"):
+                with patch.object(mgr, "_webhook_start", new_callable=AsyncMock):
+                    with patch.object(mgr, "_webhook", new_callable=AsyncMock):
+                        with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
+                            await mgr._run(pl)
+    finally:
+        for p in _PATCHES: p.stop()
+
+    step = pl.steps[0]
+    assert pl.status == "completed"
+    assert step.agent == "kiro"
+    assert step.original_agent == "claude"
+    assert step.fallback_history == ["claude"]
+    assert step.result == "fallback result"
+    assert "step_fallback" in [e["event"] for e in pl._event_history]
+
+    reloaded, _ = _make_manager(tmp_path)
+    restored = reloaded.get(pl.pipeline_id)
+    assert restored.steps[0].original_agent == "claude"
+    assert restored.steps[0].fallback_history == ["claude"]
+
+
+@pytest.mark.asyncio
+async def test_step_fallback_stops_after_two_attempts(tmp_path):
+    mgr, pool = _make_manager(tmp_path)
+    pool.get_or_create = AsyncMock(side_effect=AcpError("agent down"))
+    pl = Pipeline(pipeline_id="fallback-2", mode="sequence", steps=[
+        PipelineStep(agent="claude", prompt_template="task"),
+    ], context={})
+
+    for p in _PATCHES: p.start()
+    try:
+        with patch("src.pipeline.get_best_fallback", side_effect=["kiro", "qwen"]):
+            await mgr._exec_step(pl, pl.steps[0], "task")
+    finally:
+        for p in _PATCHES: p.stop()
+
+    step = pl.steps[0]
+    assert step.status == "failed"
+    assert step.original_agent == "claude"
+    assert step.agent == "qwen"
+    assert step.fallback_history == ["claude", "kiro"]
+    assert pool.get_or_create.await_count == 3
+
+
+def _close_scheduled(coros):
+    def close(coro):
+        coros.append(coro)
+        coro.close()
+        return Mock()
+    return close
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["sequence", "parallel"])
+async def test_recovery_resumes_only_unfinished_steps(tmp_path, mode):
+    db_path = str(tmp_path / f"recovery-{mode}.db")
+    original, _ = _make_manager(tmp_path)
+    original._store = original._store.__class__(db_path)
+    pl = Pipeline(
+        pipeline_id=f"recovery-{mode}", mode=mode, status="running",
+        context={"shared_cwd": str(tmp_path)},
+        steps=[
+            PipelineStep(agent="kiro", prompt_template="done", output_as="first",
+                         timeout=77, status="completed", result="kept"),
+            PipelineStep(agent="claude", prompt_template="todo", timeout=88,
+                         status="running", result="partial", error="interrupted"),
+        ],
+    )
+    original._store.save(pl)
+
+    recovered, _ = _make_manager(tmp_path)
+    recovered._store = recovered._store.__class__(db_path)
+    scheduled = []
+    with patch("src.pipeline.asyncio.create_task", side_effect=_close_scheduled(scheduled)):
+        await recovered.run_recovery()
+
+    restored = recovered._pipelines[pl.pipeline_id]
+    assert restored.retries == 1
+    assert restored.status == "pending"
+    assert restored.steps[0].status == "completed"
+    assert restored.steps[0].result == "kept"
+    assert restored.steps[0].timeout == 77
+    assert restored.steps[1].status == "pending"
+    assert restored.steps[1].error == ""
+    assert restored.steps[1].timeout == 88
+    assert restored.context["first"] == "kept"
+    assert len(scheduled) == 1
+
+
+@pytest.mark.asyncio
+async def test_recovery_resets_all_race_steps(tmp_path):
+    db_path = str(tmp_path / "recovery-race.db")
+    original, _ = _make_manager(tmp_path)
+    original._store = original._store.__class__(db_path)
+    pl = Pipeline(pipeline_id="recovery-race", mode="race", status="running", steps=[
+        PipelineStep(agent="kiro", prompt_template="a", status="completed", result="old winner"),
+        PipelineStep(agent="claude", prompt_template="b", status="running", result="partial"),
+    ])
+    original._store.save(pl)
+
+    recovered, _ = _make_manager(tmp_path)
+    recovered._store = recovered._store.__class__(db_path)
+    scheduled = []
+    with patch("src.pipeline.asyncio.create_task", side_effect=_close_scheduled(scheduled)):
+        await recovered.run_recovery()
+
+    restored = recovered._pipelines[pl.pipeline_id]
+    assert [s.status for s in restored.steps] == ["pending", "pending"]
+    assert [s.result for s in restored.steps] == ["", ""]
+    assert len(scheduled) == 1
+
+
+@pytest.mark.asyncio
+async def test_recovery_fails_conversation_with_terminal_event(tmp_path):
+    db_path = str(tmp_path / "recovery-conversation.db")
+    original, _ = _make_manager(tmp_path)
+    original._store = original._store.__class__(db_path)
+    pl = Pipeline(pipeline_id="recovery-conversation", mode="conversation",
+                  status="running", steps=[])
+    original._store.save(pl)
+
+    recovered, _ = _make_manager(tmp_path)
+    recovered._store = recovered._store.__class__(db_path)
+    with patch.object(recovered, "_webhook", new_callable=AsyncMock):
+        await recovered.run_recovery()
+
+    restored = recovered.get(pl.pipeline_id)
+    assert restored.status == "failed"
+    assert "not resumable" in restored.error
+    assert restored._event_history[-1]["event"] == "pipeline_done"
+
+
+@pytest.mark.asyncio
+async def test_recovery_stops_after_retry_limit(tmp_path):
+    db_path = str(tmp_path / "recovery-limit.db")
+    original, _ = _make_manager(tmp_path)
+    original._store = original._store.__class__(db_path)
+    pl = Pipeline(pipeline_id="recovery-limit", mode="sequence", status="running",
+                  retries=2, steps=[PipelineStep(agent="kiro", prompt_template="task")])
+    original._store.save(pl)
+
+    recovered, _ = _make_manager(tmp_path)
+    recovered._store = recovered._store.__class__(db_path)
+    with patch.object(recovered, "_webhook", new_callable=AsyncMock):
+        await recovered.run_recovery()
+
+    restored = recovered.get(pl.pipeline_id)
+    assert restored.status == "failed"
+    assert restored.retries == 3
+    assert "2 recovery retries" in restored.error
+    assert restored._event_history[-1]["event"] == "pipeline_done"
+
+
+def test_lifecycle_events_persist_but_progress_does_not(tmp_path):
+    mgr, _ = _make_manager(tmp_path)
+    pl = Pipeline(pipeline_id="events-1", mode="sequence", steps=[])
+    mgr._store.save(pl)
+    mgr._emit_event(pl, "step_started", {"index": 0, "agent": "kiro"})
+    mgr._emit_event(pl, "step_progress", {"index": 0, "agent": "kiro", "kind": "status"})
+
+    reloaded, _ = _make_manager(tmp_path)
+    restored = reloaded.get(pl.pipeline_id)
+    assert [e["event"] for e in restored._event_history] == ["step_started"]
 
 
 @pytest.mark.asyncio

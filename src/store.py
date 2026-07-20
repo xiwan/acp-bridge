@@ -212,6 +212,15 @@ CREATE TABLE IF NOT EXISTS pipelines (
 );
 CREATE INDEX IF NOT EXISTS idx_pipelines_created ON pipelines(created_at);
 
+CREATE TABLE IF NOT EXISTS pipeline_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    pipeline_id  TEXT NOT NULL,
+    event        TEXT NOT NULL,
+    data         TEXT DEFAULT '{}',
+    created_at   REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_events ON pipeline_events(pipeline_id);
+
 CREATE TABLE IF NOT EXISTS conversation_log (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     pipeline_id  TEXT NOT NULL,
@@ -232,23 +241,53 @@ class PipelineStore:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_PIPELINE_SCHEMA)
+        self._migrate()
+
+    def _migrate(self):
+        cols = {r[1] for r in self._db.execute("PRAGMA table_info(pipelines)").fetchall()}
+        if "retries" not in cols:
+            self._db.execute("ALTER TABLE pipelines ADD COLUMN retries INTEGER DEFAULT 0")
+            self._db.commit()
 
     def save(self, pl) -> None:
         steps = json.dumps([{
             "agent": s.agent, "prompt_template": s.prompt_template,
-            "output_as": s.output_as, "status": s.status,
+            "output_as": s.output_as, "timeout": s.timeout, "status": s.status,
             "result": s.result, "error": s.error,
             "started_at": s.started_at, "completed_at": s.completed_at,
+            "original_agent": getattr(s, "original_agent", ""),
+            "fallback_history": getattr(s, "fallback_history", []),
         } for s in pl.steps])
         self._db.execute(
             """INSERT OR REPLACE INTO pipelines
-               (pipeline_id, mode, status, steps, context, error, webhook_meta, created_at, completed_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               (pipeline_id, mode, status, steps, context, error, webhook_meta, created_at, completed_at, retries)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (pl.pipeline_id, pl.mode, pl.status, steps,
              json.dumps(pl.context), pl.error, json.dumps(pl.webhook_meta),
-             pl.created_at, pl.completed_at),
+             pl.created_at, pl.completed_at, getattr(pl, "retries", 0)),
         )
         self._db.commit()
+
+    def load_incomplete(self) -> list[dict]:
+        """Load pipelines that were pending/running/paused when Bridge last shut down."""
+        rows = self._db.execute(
+            "SELECT * FROM pipelines WHERE status IN ('pending', 'running', 'paused')"
+        ).fetchall()
+        return [self._row_to_dict(r) for r in rows]
+
+    def save_event(self, pipeline_id: str, event: str, data: dict) -> None:
+        self._db.execute(
+            "INSERT INTO pipeline_events (pipeline_id, event, data, created_at) VALUES (?,?,?,?)",
+            (pipeline_id, event, json.dumps(data), time.time()),
+        )
+        self._db.commit()
+
+    def load_events(self, pipeline_id: str) -> list[dict]:
+        rows = self._db.execute(
+            "SELECT event, data FROM pipeline_events WHERE pipeline_id = ? ORDER BY id",
+            (pipeline_id,),
+        ).fetchall()
+        return [{"event": r["event"], "data": json.loads(r["data"])} for r in rows]
 
     def load_recent(self, limit: int = 50) -> list[dict]:
         rows = self._db.execute(
@@ -264,6 +303,11 @@ class PipelineStore:
 
     def delete_old(self, max_age: float = 86400) -> int:
         cutoff = time.time() - max_age
+        self._db.execute(
+            """DELETE FROM pipeline_events WHERE pipeline_id IN
+               (SELECT pipeline_id FROM pipelines WHERE completed_at > 0 AND completed_at < ?)""",
+            (cutoff,),
+        )
         cur = self._db.execute(
             "DELETE FROM pipelines WHERE completed_at > 0 AND completed_at < ?", (cutoff,)
         )
@@ -276,6 +320,7 @@ class PipelineStore:
         d["steps"] = json.loads(d["steps"])
         d["context"] = json.loads(d["context"])
         d["webhook_meta"] = json.loads(d["webhook_meta"])
+        d.setdefault("retries", 0)
         return d
 
     def save_turn(self, pipeline_id: str, turn: int, agent: str,

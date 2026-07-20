@@ -21,6 +21,45 @@
 - Conversation: agents take turns in a multi-round discussion
 - Harness Factory support: profile-driven lightweight agents via [harness-factory](https://github.com/xiwan/harness-factory) — same binary, different profiles, different agents
 
+## Resilience (v0.35.0)
+
+### Crash recovery
+
+Bridge automatically recovers pipelines left in `pending`, `running`, or
+`paused` state after a process restart:
+
+| Mode | Recovery behavior |
+|------|-------------------|
+| `sequence` | Keeps completed steps and resumes from the first unfinished step |
+| `parallel` | Keeps completed steps and re-runs only unfinished steps |
+| `race` | Resets and re-runs every step because a partial race has no valid winner |
+| `conversation` | Marks the pipeline failed because the agent conversation sessions lived in the terminated subprocesses |
+
+The shared workspace and completed step outputs are preserved. Recovery is
+attempted at most twice across restarts; a pipeline interrupted again after
+that limit is marked failed and receives its normal terminal webhook/event.
+
+### Per-step fallback
+
+Failed local ACP steps automatically try up to two agents from the configured
+fallback chain. A successful fallback changes the step's `agent` and exposes
+the original assignment as `original_agent` plus `fallback_history` in the
+pipeline response.
+
+Fallback is not attempted for:
+
+- step timeouts;
+- PTY or remote Mesh steps;
+- pipelines submitted with `context.step_fallback` set to `false`.
+
+```json
+{
+  "mode": "sequence",
+  "context": {"step_fallback": false},
+  "steps": [{"agent": "claude", "prompt": "Review the project"}]
+}
+```
+
 ## Composable Pipelines (v0.19.0)
 
 Pipelines can be **composed** across multiple API calls by sharing a workspace directory. This enables multi-phase workflows without hardcoding the flow.
@@ -171,6 +210,7 @@ Event types:
 | `step_progress` *(v0.22.0)* | `{index, agent, kind, _emitted_at, ...kind-specific fields}` |
 | `step_completed` | `{index, agent, duration, status, result_preview, _emitted_at}` |
 | `step_failed` | `{index, agent, duration, status, error, _emitted_at}` |
+| `step_fallback` *(v0.35.0)* | `{index, from_agent, to_agent, error, _emitted_at}` |
 | `pipeline_done` | `{pipeline_id, status, duration, error, _emitted_at}` |
 | `heartbeat` | `{ts}` (every 15s during running steps) |
 
@@ -192,7 +232,7 @@ In conversation mode, `index` is the turn index (negative if not provided by the
 
 `message.part` events duplicate text that also accumulates into `step.result`; live-streaming clients can rely on `step_progress` exclusively without polling `/steps/{i}/live`.
 
-**Late-connect replay**: connecting to a pipeline that already started (or finished) replays the full event history first, then streams live (or closes if already done). This means clients don't need to subscribe before submitting.
+**Late-connect replay**: connecting to a pipeline that already started (or finished) replays the event history first, then streams live (or closes if already done). Since v0.35.0, lifecycle events survive Bridge restarts in SQLite. High-frequency `step_progress` events remain memory-only and are not replayed after a restart.
 
 **Quick CLI**: `tools/pipeline-events.sh <pid>` wraps the SSE stream with human-readable output.
 

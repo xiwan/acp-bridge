@@ -503,6 +503,8 @@ def main():
             task = asyncio.create_task(cleanup_loop())
             if job_mgr:
                 asyncio.create_task(job_mgr.run_recovery())
+            if pipeline_mgr:
+                asyncio.create_task(pipeline_mgr.run_recovery())
             if env_collector and heartbeat_interval > 0:
                 asyncio.create_task(heartbeat_loop())
                 log.info("heartbeat_loop: started, interval=%ds", heartbeat_interval)
