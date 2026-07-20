@@ -2,6 +2,7 @@
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v0.35.1 | 2026-07-20 | Cost tracking: add explicit Mantle pricing for `openai.gpt-5.5` ($2.50/M input, $10/M output) and `openai.gpt-5.6-sol` ($5/M input, $30/M output), including `bedrock/` prefix lookup coverage. |
 | v0.35.0 | 2026-07-20 | Pipeline resilience: interrupted sequence/parallel/race pipelines recover after Bridge restart with a two-restart limit; local ACP step failures use up to two configured fallback agents (`context.step_fallback=false` disables); lifecycle SSE events persist in SQLite for replay after restart, while high-frequency progress remains memory-only. Conversation pipelines fail cleanly on restart because subprocess session context cannot be reconstructed. |
 | v0.34.1 | 2026-07-06 | Version housekeeping: renumber the 2026-06-23 fixes (originally committed as `v0.33.1`, which regressed below the already-released v0.34.0) — heartbeat stale-job filter, thinking idle fix, pool dead-reap, pipeline retry. Sync version across VERSION/README/SKILL.md, backfill missing v0.34.0 changelog entry, reset OPERATIONS.md Part 2 to idle. No code changes. |
 | v0.34.0 | 2026-06-22 | Session resume + pipeline inject upstream + heartbeat 活跃度优化. `src/routes/sessions.py` new session-resume endpoints; `acp_client.py`/`agents.py` session resume support; `pipeline.py` inject upstream step output; `default_formatter.yml` heartbeat prompt rework (weaken SILENT rule, encourage proactive short replies). |

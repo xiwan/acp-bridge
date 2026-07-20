@@ -7,12 +7,15 @@ v0.23.0 (2026-05-28):
     cache_create / output), 防止重复计算 cache.
   - 旧 calc_cost(input, output, model) 保留向后兼容 (jobs.py 仍用).
   - 模型名 lookup 自动 strip 'bedrock/' 前缀, 自动尝试 'us./apac./eu.' CRIS prefix.
+
+v0.35.1 (2026-07-20):
+  - Add explicit Mantle pricing for openai.gpt-5.5 and openai.gpt-5.6-sol.
 """
 
 # ============================================================================
 # Pricing table (USD per token; 1e-6 = $1 / 1M tokens).
 # Source: LiteLLM model_prices_and_context_window.json snapshot, 2026-05-28
-# Coverage: 12 models from ~/.codex/litellm-config.yaml
+# Coverage: 14 models from the deployed LiteLLM/Mantle routes
 # ============================================================================
 
 BEDROCK_PRICING = {
@@ -34,6 +37,19 @@ BEDROCK_PRICING = {
         "output": 5e-05,            # $50.00/M
         "cache_create": 1.25e-05,   # $12.50/M
         "cache_read": 1e-06,        # $1.00/M
+    },
+    # === OpenAI (via Mantle) ===
+    "openai.gpt-5.5": {
+        "input": 2.5e-06,           # $2.50/M
+        "output": 1e-05,            # $10.00/M
+        "cache_create": None,
+        "cache_read": None,
+    },
+    "openai.gpt-5.6-sol": {
+        "input": 5e-06,             # $5.00/M
+        "output": 3e-05,            # $30.00/M
+        "cache_create": None,
+        "cache_read": None,
     },
     # === Qwen ===
     "qwen.qwen3-coder-next": {

@@ -69,6 +69,13 @@ def test_pricing_table_covers_known_models():
         assert m in BEDROCK_PRICING, f"missing pricing for {m}"
 
 
+def test_pricing_table_covers_mantle_openai_models():
+    assert BEDROCK_PRICING["openai.gpt-5.5"]["input"] == 2.5e-06
+    assert BEDROCK_PRICING["openai.gpt-5.5"]["output"] == 1e-05
+    assert BEDROCK_PRICING["openai.gpt-5.6-sol"]["input"] == 5e-06
+    assert BEDROCK_PRICING["openai.gpt-5.6-sol"]["output"] == 3e-05
+
+
 def test_claude_has_cache_pricing():
     # Claude sonnet/opus 必须有 cache 单价
     for m in ("us.anthropic.claude-sonnet-4-6", "us.anthropic.claude-opus-4-6-v1"):
@@ -100,6 +107,12 @@ def test_lookup_pricing_strips_bedrock_prefix():
     # jobs.py 可能传 'bedrock/us.anthropic.claude-sonnet-4-6'
     p, k = lookup_pricing("bedrock/us.anthropic.claude-sonnet-4-6")
     assert k == "us.anthropic.claude-sonnet-4-6"
+
+
+def test_lookup_pricing_mantle_openai_with_bedrock_prefix():
+    p, k = lookup_pricing("bedrock/openai.gpt-5.6-sol")
+    assert k == "openai.gpt-5.6-sol"
+    assert p["output"] == 3e-05
 
 
 def test_lookup_pricing_falls_back_to_default():
@@ -152,6 +165,15 @@ def test_calc_cost_v2_no_cache_model():
     # cost = 800K * 0.5/M + 200K * 0.5/M + 50K * 1.2/M
     #      = 0.40 + 0.10 + 0.06 = $0.56
     assert abs(cost - 0.56) < 1e-6
+
+
+def test_calc_cost_v2_mantle_openai_model():
+    cost = calc_cost_v2(
+        "openai.gpt-5.5",
+        input_tokens=1_000_000,
+        output_tokens=100_000,
+    )
+    assert abs(cost - 3.5) < 1e-10
 
 
 def test_calc_cost_v2_zero_tokens():
