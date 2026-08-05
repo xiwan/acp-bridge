@@ -119,9 +119,8 @@ class A2AAdapter:
         # pull in the agent-execution machinery. Untrusted ws_in/ws_out never
         # get that far if they're unsafe.
         try:
-            validate_outbound_url(ws_in, allow_private=self._allow_private_urls)
-            if ws_out:
-                validate_outbound_url(ws_out, allow_private=self._allow_private_urls)
+            for target in filter(None, (ws_in, ws_out)):
+                validate_outbound_url(target, allow_private=self._allow_private_urls)
         except UnsafeUrlError as e:
             return _rpc_error(rpc_id, -32014, f"unsafe workspace url: {e}")
         import tempfile, uuid

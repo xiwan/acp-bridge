@@ -133,6 +133,8 @@ curl -s http://localhost:18010/a2a/peers \
 
 `/.well-known/agent.json` is public by design. `/a2a/announce` and `/a2a` both bypass the global Bridge token and use the separate `mesh.token` secret instead, so peer nodes authenticate on the mesh plane. `/a2a/peers` stays behind global auth because it exposes internal topology.
 
+Because those two endpoints carry no protection from the global Bearer middleware, `mesh.token` is their only gate — Bridge therefore fails closed on it: if `mesh.enabled: true` and `mesh.token` resolves empty, startup is refused rather than silently leaving `/a2a`/`/a2a/announce` open with no authentication (see [Security → Authentication](security.md#authentication)).
+
 ## `POST /a2a` (L1 — remote invocation)
 
 JSON-RPC 2.0 entry point that lets a peer invoke this node's local agents. Authenticated with `mesh.token` (not the global Bridge token). Registered only when `mesh.enabled=true`.
@@ -169,7 +171,7 @@ curl -s -X POST http://localhost:18010/a2a \
   -d '{"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"id":"<job_id>"}}'
 ```
 
-Errors use JSON-RPC codes: `-32601` unknown skill/method, `-32000` agent error, `-32001` task not found, `-32700` parse error.
+Errors use JSON-RPC codes: `-32601` unknown skill/method, `-32000` agent error, `-32001` task not found, `-32700` parse error. The L3 workspace relay below (`workspace_in_url`/`workspace_out_url`) adds: `-32010` no process pool configured, `-32011` hop limit exceeded, `-32012` workspace download failed, `-32013` workspace upload failed, `-32014` unsafe workspace URL (see [Security → SSRF Protection](security.md#ssrf-protection) — `workspace_in_url`/`workspace_out_url` are validated against loopback/private/metadata targets before any fetch is attempted).
 
 **Not in L1**: `tasks/sendSubscribe` (SSE streaming) and `tasks/cancel` are deferred.
 
@@ -333,6 +335,8 @@ authoritative `shared_cwd`.
 |---------|-------|-----|
 | `/.well-known/agent.json` returns 404 | mesh not enabled on that node | set `mesh.enabled: true` and restart |
 | `/a2a/announce` or `/a2a` returns `unauthorized` | `MESH_TOKEN` differs between nodes | use the identical token everywhere (match last 4 chars) |
+| Bridge won't start, logs `mesh.token resolved to an empty value` | `mesh.enabled: true` but `MESH_TOKEN`/`mesh.token` is unset or blank | set `mesh.token` (fail-closed by design — see [Security Model](#security-model)), or set `mesh.enabled: false` if mesh isn't needed |
+| L3 workspace step fails with `unsafe workspace url` | `workspace_in_url`/`workspace_out_url` resolves to a loopback/private/metadata address | expected if that's untrusted input (SSRF guard, see [Security → SSRF Protection](security.md#ssrf-protection)); set `security.allow_private_callback_urls: true` only for a deliberately private-network deployment |
 | peer table stays `[]` | peer not restarted, or first announce cycle hasn't run yet | restart the peer; wait up to `announce_interval` (default 300s) |
 | `/runs` doesn't route to the peer | a local agent of the same name takes priority | disable the local agent, or use a peer-only agent name |
 | cross-node pipeline step fails immediately | S3 unavailable / no write access on the originating node | configure `s3.bucket` and ensure the origin node can write to it |

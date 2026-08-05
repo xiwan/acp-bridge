@@ -78,6 +78,7 @@ Submit an async background job. See [Async Jobs](async-jobs.md) for full details
 | `target` | string | No | Webhook push target (e.g. `channel:123`, `user:456`) |
 | `channel` | string | No | IM channel (`discord`, `feishu`) |
 | `callback_meta` | object | No | Extra webhook metadata (e.g. `{"account_id": "default"}`) |
+| `callback_url` | string | No | Override the configured webhook URL for this job. Validated against loopback/private/metadata targets (SSRF guard, see [Security → SSRF Protection](security.md#ssrf-protection)) — an unsafe value returns `400` before the job is created |
 
 ### `GET /jobs`
 

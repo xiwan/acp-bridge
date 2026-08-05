@@ -137,8 +137,10 @@ async def test_workspace_relay_allow_private_urls_bypasses_guard(monkeypatch):
     fake_agents = types.ModuleType("src.agents")
 
     async def _fake_call(*a, **kw):
-        return
-        yield  # pragma: no cover - never reached, makes this an async generator
+        # Empty async generator: never actually reached, since ws_in is
+        # unreachable (127.0.0.1:1) and fails before this is called for real.
+        if False:
+            yield
 
     fake_agents._call_acp_agent_internal = _fake_call
     monkeypatch.setitem(sys.modules, "src.agents", fake_agents)

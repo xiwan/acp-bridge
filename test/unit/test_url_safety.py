@@ -25,6 +25,9 @@ def test_public_https_url_is_allowed():
         "http://10.0.0.5/hook",
         "http://192.168.1.5/hook",
         "http://172.16.0.5/hook",
+        "http://100.100.100.200/latest/meta-data/",  # Alibaba Cloud metadata
+        "http://[fd00::1]/hook",  # IPv6 ULA (RFC 4193, is_private)
+        "http://[fe80::1]/hook",  # IPv6 link-local
     ],
 )
 def test_private_and_metadata_targets_are_blocked(url):

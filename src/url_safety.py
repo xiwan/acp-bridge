@@ -7,6 +7,13 @@ loopback, link-local, private, reserved, and cloud-metadata targets by
 default. Deployments that intentionally point callbacks at a private-network
 service (e.g. a self-hosted n8n instance) can opt in per-target via
 `allow_private=True`, wired from `security.allow_private_callback_urls`.
+
+Known limitations (see docs/security.md "SSRF Protection" for detail): this
+validates the hostname's DNS resolution at check time, but the HTTP client
+that later fetches the URL resolves independently — a DNS-rebinding attacker
+could still redirect the actual connection after validation passes. The
+resolution below is also a blocking call, not offloaded to a thread executor,
+so a slow-to-resolve host adds latency to whichever request path calls this.
 """
 
 import ipaddress
@@ -14,7 +21,17 @@ import socket
 from urllib.parse import urlparse
 
 ALLOWED_SCHEMES = {"http", "https"}
-_METADATA_HOSTS = {"169.254.169.254", "metadata.google.internal"}
+# DNS names that resolve to metadata endpoints (not literal IPs, so they can't
+# be caught by the range checks in _is_unsafe_ip below).
+_METADATA_HOSTNAMES = {"metadata.google.internal"}
+# Metadata IPs outside the standard loopback/link-local/private/reserved
+# ranges — must be checked explicitly, whether they appear as a literal URL
+# host or as a DNS resolution result, since is_loopback/is_link_local/etc.
+# alone would miss them. 169.254.169.254 (AWS/Azure/most clouds) is already
+# covered by is_link_local (169.254.0.0/16); listed here anyway for clarity.
+_METADATA_IPS = frozenset(
+    ipaddress.ip_address(ip) for ip in ("169.254.169.254", "100.100.100.200")
+)  # 100.100.100.200 = Alibaba Cloud
 
 
 class UnsafeUrlError(ValueError):
@@ -23,7 +40,8 @@ class UnsafeUrlError(ValueError):
 
 def _is_unsafe_ip(ip) -> bool:
     return (
-        ip.is_loopback
+        ip in _METADATA_IPS
+        or ip.is_loopback
         or ip.is_link_local
         or ip.is_private
         or ip.is_reserved
@@ -50,7 +68,7 @@ def validate_outbound_url(url: str, *, allow_private: bool = False) -> None:
         raise UnsafeUrlError("missing host")
     if allow_private:
         return
-    if host.lower() in _METADATA_HOSTS:
+    if host.lower() in _METADATA_HOSTNAMES:
         raise UnsafeUrlError(f"blocked metadata host: {host}")
     try:
         ip = ipaddress.ip_address(host)

@@ -26,6 +26,8 @@ Both must pass. `/live`, `/ready`, `/health`, and `/ui` are unauthenticated (for
 
 Token supports `${ENV_VAR}` references in config — keep actual values in `.env` or environment only. If `security.auth_token` resolves to an empty value, Bridge refuses to start instead of silently disabling authentication.
 
+The same fail-closed rule applies to `mesh.token`: `/a2a` and `/a2a/announce` are exempt from the global Bearer check by design (they authenticate on the separate mesh plane instead — see [A2A Mesh → Security Model](mesh.md#security-model)), so if `mesh.enabled: true` and `mesh.token` resolves empty, Bridge refuses to start rather than leaving those two endpoints open with no authentication at all.
+
 Verbose Bridge logging suppresses credential-bearing AWS SDK internals so temporary IAM session headers are not written to the service journal.
 
 File and Pipeline artifact downloads require the normal Bearer token. The LiteLLM usage callback does not require the Bridge token, but accepts requests only from loopback clients (`127.0.0.0/8` or `::1`).
@@ -50,6 +52,22 @@ File and Pipeline artifact downloads require the normal Bearer token. The LiteLL
 - Webhook token is configured separately from Bridge auth token
 - OpenClaw format includes auth headers; generic format sends plain JSON
 - Messages are auto-chunked at 1800 chars to avoid Discord API limits
+
+## SSRF Protection
+
+Two request fields let a caller supply a URL that Bridge itself then fetches or posts to server-side: `callback_url` on `POST /jobs` (see [Async Jobs](async-jobs.md)) and `workspace_in_url`/`workspace_out_url` on the mesh L3 workspace relay (`POST /a2a` `tasks/send`, see [A2A Mesh](mesh.md)). Both are validated by `src/url_safety.py` before Bridge touches them:
+
+- Scheme must be `http` or `https`.
+- The resolved host must not be loopback, link-local, private (RFC 1918), reserved, multicast, or a known cloud metadata endpoint (`169.254.169.254`, `metadata.google.internal`, and Alibaba Cloud's `100.100.100.200`, which falls outside the standard private/link-local ranges).
+
+An invalid `callback_url` returns `400` with `{"error": "unsafe callback_url: ..."}` before the job is created. An invalid workspace URL returns JSON-RPC error `-32014` before any download is attempted.
+
+Set `security.allow_private_callback_urls: true` to disable the range checks (scheme validation still applies) for deployments that intentionally point callbacks at a private-network service — e.g. a self-hosted n8n instance reachable only from Bridge's own network. Default is `false`.
+
+### Known limitations
+
+- **DNS rebinding (TOCTOU).** Validation resolves the hostname once, at request time. The HTTP client that later performs the actual fetch (`httpx`) resolves independently. An attacker who controls the target hostname's authoritative DNS server could answer a public IP during validation and a private/loopback IP moments later, bypassing the guard. Closing this fully requires pinning the validated IP and connecting directly to it (a custom transport), which hasn't been implemented — accepted as residual risk given Bridge's current threat model (harnesses you run yourself, not open to hostile internet traffic).
+- **Blocking DNS resolution.** The hostname resolution in `validate_outbound_url` is a synchronous `socket.getaddrinfo()` call with no explicit timeout. On `POST /jobs` this runs inside the async request handler; on the mesh workspace relay it joins pre-existing synchronous `httpx.get`/`httpx.put` calls in the same code path (up to 120s timeout each). A slow-to-resolve or non-responding hostname in a client-supplied URL can stall the single asyncio event loop for the OS resolver's timeout, delaying every other in-flight request. Not currently offloaded to a thread executor.
 
 ## Heartbeat & Environment Awareness
 
