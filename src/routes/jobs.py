@@ -9,6 +9,7 @@ from starlette.responses import Response
 
 from ..jobs import JobManager
 from ..prompt_log import PromptStore, row_to_summary
+from ..url_safety import UnsafeUrlError
 
 
 class JobRequest(BaseModel):
@@ -41,8 +42,11 @@ def register(app, job_mgr: JobManager | None, webhook_account_id: str, webhook_d
             meta["account_id"] = webhook_account_id
         if req.channel:
             meta["channel"] = req.channel
-        job = job_mgr.submit(req.agent_name, sid, req.prompt,
-                             req.callback_url, meta, cwd=req.cwd)
+        try:
+            job = job_mgr.submit(req.agent_name, sid, req.prompt,
+                                 req.callback_url, meta, cwd=req.cwd)
+        except UnsafeUrlError as e:
+            return JSONResponse({"error": f"unsafe callback_url: {e}"}, status_code=400)
         return {"job_id": job.job_id, "status": job.status, "agent": job.agent, "session_id": sid}
 
     @app.get("/jobs/{job_id}")

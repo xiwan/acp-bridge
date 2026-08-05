@@ -12,10 +12,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import pytest
+
 from src.acp_client import AcpError, PoolExhaustedError
 from src.jobs import Job, JobManager
 from src.store import JobStore
 from src.fallback_policy import get_next_fallback, get_best_fallback
+from src.url_safety import UnsafeUrlError
 
 
 # ── Helpers ──────────────────────────────────────────────
@@ -76,6 +79,7 @@ def make_manager(pool, db_path=None):
     mgr._sender = MagicMock()
     mgr._store = JobStore(db_path)
     mgr._pending_recovery = []
+    mgr._allow_private_urls = False
     return mgr
 
 
@@ -403,6 +407,25 @@ def test_fallback_exhaustion_error_message():
     # The error should indicate exhaustion
     assert "fallback" in job.error.lower() or "exhausted" in job.error.lower()
     print("✅ test_fallback_exhaustion_error_message")
+
+
+# ── SSRF guard on submit(callback_url) ──────────────────────
+
+def test_submit_rejects_unsafe_callback_url():
+    """A client-supplied callback_url pointing at a private/loopback target
+    must be rejected before the job is even created (no task, no DB row)."""
+    mgr = make_manager(FailThenSucceedPool(fail_agents=set()))
+    with pytest.raises(UnsafeUrlError):
+        mgr.submit("kiro", "s1", "hi", callback_url="http://127.0.0.1:9999/hook")
+    assert mgr._jobs == {}  # nothing was queued
+
+
+@pytest.mark.asyncio
+async def test_submit_allows_safe_callback_url():
+    mgr = make_manager(FailThenSucceedPool(fail_agents=set()))
+    job = mgr.submit("kiro", "s1", "hi", callback_url="https://example.com/hook")
+    assert job.callback_url == "https://example.com/hook"
+    await asyncio.sleep(0)  # let the queued _run task settle
 
 
 # ── Smart retry tests ────────────────────────────────────

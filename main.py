@@ -221,6 +221,11 @@ def main():
         log.error("Set ACP_BRIDGE_TOKEN or configure security.auth_token explicitly")
         sys.exit(1)
 
+    # SSRF guard for client-supplied outbound URLs (jobs.callback_url, mesh
+    # ws_in/ws_out). Off by default; opt in per-deployment for trusted
+    # private-network callback targets (e.g. a self-hosted n8n instance).
+    allow_private_callback_urls = sec_cfg.get("allow_private_callback_urls", False)
+
     host = args.host or srv_cfg.get("host", "0.0.0.0")
     port = args.port or srv_cfg.get("port", 18010)
     ttl_hours = srv_cfg.get("session_ttl_hours", 24)
@@ -290,6 +295,7 @@ def main():
         webhook_secret=webhook_cfg.get("secret", ""),
         base_url=base_url,
         prompt_store=prompt_store,
+        allow_private_urls=allow_private_callback_urls,
     ) if (pool or pty_agents) else None
 
     # --- Fallback chain (load from YAML, fallback to built-in defaults) ---
@@ -371,8 +377,14 @@ def main():
     mesh_cfg = config.get("mesh", {})
     mesh_mgr = None
     if mesh_cfg.get("enabled", False):
-        from src.mesh import MeshManager
+        from src.mesh import MeshManager, resolve_mesh_token
         from src.routes import mesh as mesh_routes
+        try:
+            mesh_token = resolve_mesh_token(mesh_cfg)
+        except ValueError as e:
+            log.error(str(e))
+            log.error("Set mesh.token (e.g. via ${MESH_TOKEN}) or disable mesh.enabled")
+            sys.exit(1)
         mesh_mgr = MeshManager(**{
             "node_name": mesh_cfg.get("node_id", f"{host}:{port}"),
             "self_url": mesh_cfg.get("self_url", base_url),
@@ -380,7 +392,7 @@ def main():
             "agents_cfg": {k: v for k, v in agents_cfg.items() if isinstance(v, dict)},
             "config_path": args.config,
             "seeds": mesh_cfg.get("seeds", []),
-            "token": mesh_cfg.get("token", ""),
+            "token": mesh_token,
             "announce_interval": mesh_cfg.get("announce_interval", 300),
             "max_hops": mesh_cfg.get("max_hops", 1),
             "pricing": mesh_cfg.get("pricing"),
@@ -396,6 +408,7 @@ def main():
             job_mgr=job_mgr,
             remote_skills=_remote_skills,
             pool=pool,  # L3: run a workspace step with an explicit cwd
+            allow_private_urls=allow_private_callback_urls,
         )
         mesh_routes.register(app, mesh_mgr, adapter=a2a_adapter)
         # L2: A2A Client — register remote handlers for peer-only skills each cycle.

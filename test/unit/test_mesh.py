@@ -4,7 +4,7 @@ import os, sys, time, tempfile, textwrap
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from src.mesh import MeshManager, PeerInfo, DEFAULT_PRICING
+from src.mesh import MeshManager, PeerInfo, DEFAULT_PRICING, resolve_mesh_token
 
 
 _CONFIG = textwrap.dedent("""\
@@ -42,6 +42,24 @@ def _mgr(seeds=None, mesh_auth="", config_text=_CONFIG, agents_cfg=None):
         "token": mesh_auth,
         "announce_interval": 300,
     })
+
+
+# --- resolve_mesh_token (fail-closed auth guard) ---------------------------
+
+def test_resolve_mesh_token_rejects_empty_when_enabled():
+    with pytest.raises(ValueError, match="refusing to start with mesh.enabled=true"):
+        resolve_mesh_token({"enabled": True, "token": ""})
+    with pytest.raises(ValueError):
+        resolve_mesh_token({"enabled": True})  # token key absent entirely
+
+
+def test_resolve_mesh_token_allows_empty_when_disabled():
+    assert resolve_mesh_token({"enabled": False, "token": ""}) == ""
+    assert resolve_mesh_token({}) == ""
+
+
+def test_resolve_mesh_token_returns_configured_token():
+    assert resolve_mesh_token({"enabled": True, "token": "s3cr3t"}) == "s3cr3t"
 
 
 # --- build_agent_card ------------------------------------------------------

@@ -16,6 +16,7 @@ from .formatters import get_formatter, get_prompt_suffix
 from .prompt_log import PromptStore
 from .sse import transform_notification
 from .store import JobStore
+from .url_safety import validate_outbound_url
 from .utils import run_pty_subprocess
 from .webhook import WebhookSender, chunk_text
 
@@ -71,9 +72,11 @@ class JobManager:
                  webhook_url: str = "", webhook_token: str = "", base_url: str = "",
                  webhook_format: str = "openclaw", webhook_secret: str = "",
                  db_path: str = "data/jobs.db",
-                 prompt_store: PromptStore | None = None):
+                 prompt_store: PromptStore | None = None,
+                 allow_private_urls: bool = False):
         self._pool = pool
         self._pty_configs = pty_configs or {}
+        self._allow_private_urls = allow_private_urls
         self._app = None  # set by main.py after app creation
         self._jobs: dict[str, Job] = {}
         self._stats = None  # set by main.py after StatsCollector init
@@ -152,6 +155,10 @@ class JobManager:
     def submit(self, agent: str, session_id: str, prompt: str,
                callback_url: str = "", callback_meta: dict | None = None,
                cwd: str = "") -> Job:
+        # callback_url is client-supplied (POST /jobs); the server-configured
+        # fallback (self._webhook_url) is trusted config and skips this check.
+        if callback_url:
+            validate_outbound_url(callback_url, allow_private=self._allow_private_urls)
         complexity = estimate_complexity(prompt)
         meta = dict(callback_meta or {})
         meta.setdefault("complexity", complexity.value)

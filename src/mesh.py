@@ -25,6 +25,24 @@ DEFAULT_PRICING = {"model": "free", "rate": 0, "currency": "USD", "unit": "per_1
 VALID_MODES = ("private", "public", "dual")
 
 
+def resolve_mesh_token(mesh_cfg: dict) -> str:
+    """Return mesh.token from config, failing closed if mesh is enabled but
+    unset.
+
+    /a2a and /a2a/announce carry no auth from the global Bearer middleware —
+    they're listed in security.NO_AUTH_PATHS precisely because mesh.token is
+    meant to be their sole gate (src/routes/mesh.py checks `if mesh.token:`).
+    An empty token must refuse to start, not silently disable mesh auth,
+    mirroring the security.auth_token guard in main.py.
+    """
+    token = mesh_cfg.get("token", "")
+    if mesh_cfg.get("enabled", False) and not token:
+        raise ValueError(
+            "mesh.token resolved to an empty value; refusing to start with mesh.enabled=true"
+        )
+    return token
+
+
 def _extract_ip(url: str) -> str:
     """Extract IP from a URL like http://1.2.3.4:18010."""
     m = re.search(r"//([^:/]+)", url or "")

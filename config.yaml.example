@@ -30,6 +30,12 @@ security:
   allowed_ips:
     - "127.0.0.1"
     # - "<client-ip>"
+  # allow_private_callback_urls: false          # SSRF guard for jobs.callback_url and
+                                                 # mesh ws_in/ws_out (client-supplied URLs).
+                                                 # Default false blocks loopback/link-local/
+                                                 # private/metadata targets. Set true only if
+                                                 # you intentionally point callbacks at a
+                                                 # private-network service (e.g. self-hosted n8n).
 
 # litellm (optional): shared LLM proxy for agents without native Bedrock support
 # If url is set, bridge checks reachability on startup;
@@ -231,7 +237,10 @@ agents:
 #   self_url: "http://10.0.2.100:18010"  # backward-compat fallback (used if mode not set)
 #   announce_interval: 300            # seconds; doubles as heartbeat
 #   max_hops: 1                       # reserved gossip depth field
-#   token: "${MESH_TOKEN}"            # shared secret for /a2a/announce auth
+#   token: "${MESH_TOKEN}"            # shared secret for /a2a/announce auth — REQUIRED
+                                       # when mesh.enabled is true: /a2a and /a2a/announce
+                                       # get no auth from the global Bearer middleware, so
+                                       # an empty token here refuses to start (fail-closed).
 #   seeds:                            # initial peers to announce to on startup
 #     - "http://10.0.3.50:18010"
 #   pricing:                          # this node's declared pricing (L0: free only)

@@ -12,6 +12,8 @@ import logging
 
 from acp_sdk.models import Message, MessagePart
 
+from .url_safety import UnsafeUrlError, validate_outbound_url
+
 log = logging.getLogger("acp-bridge.mesh.a2a")
 
 FREE_COST = {"amount": 0, "currency": "USD"}
@@ -54,11 +56,13 @@ async def _drain(agent, input: list[Message]) -> str:
 class A2AAdapter:
     """Dispatches A2A JSON-RPC methods against this node's local agents + job store."""
 
-    def __init__(self, agents_provider, job_mgr=None, remote_skills=None, pool=None):
+    def __init__(self, agents_provider, job_mgr=None, remote_skills=None, pool=None,
+                 allow_private_urls: bool = False):
         # agents_provider: callable -> {name: Agent}; deferred so app.state is ready.
         self._agents_provider = agents_provider
         self._job_mgr = job_mgr
         self._pool = pool  # L3: needed to run a local agent with an explicit cwd
+        self._allow_private_urls = allow_private_urls
         # L2: names registered as a2a-remote handlers (forward to a peer). Used to
         # enforce the 1-hop limit: an inbound hopped request must not re-forward.
         self.remote_skills = remote_skills if remote_skills is not None else set()
@@ -109,12 +113,21 @@ class A2AAdapter:
 
     async def _tasks_send_workspace(self, rpc_id, skill, params, ws_in, ws_out) -> dict:
         """L3 (B side): download workspace → run agent with that cwd → upload result."""
+        if self._pool is None:
+            return _rpc_error(rpc_id, -32010, "workspace step requires a process pool")
+        # Validate before anything else — including the imports below, which
+        # pull in the agent-execution machinery. Untrusted ws_in/ws_out never
+        # get that far if they're unsafe.
+        try:
+            validate_outbound_url(ws_in, allow_private=self._allow_private_urls)
+            if ws_out:
+                validate_outbound_url(ws_out, allow_private=self._allow_private_urls)
+        except UnsafeUrlError as e:
+            return _rpc_error(rpc_id, -32014, f"unsafe workspace url: {e}")
         import tempfile, uuid
         import httpx
         from src import s3 as _s3
         from src.agents import _call_acp_agent_internal
-        if self._pool is None:
-            return _rpc_error(rpc_id, -32010, "workspace step requires a process pool")
         prompt = "".join(p.get("text", "") for p in (params.get("message") or {}).get("parts", []))
         tmp = tempfile.mkdtemp(prefix="mesh-ws-")
         try:

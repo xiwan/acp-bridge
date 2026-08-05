@@ -97,3 +97,53 @@ async def test_tasks_get_not_found():
     resp = await a.dispatch({"jsonrpc": "2.0", "id": 3, "method": "tasks/get",
                              "params": {"id": "nope"}})
     assert resp["error"]["code"] == -32001
+
+
+# --- L3 workspace relay: SSRF guard on ws_in/ws_out -------------------------
+
+def _workspace_send(skill, ws_in, ws_out=""):
+    params = {"skill": skill, "message": {"parts": [{"type": "text", "text": "hi"}]},
+              "workspace_in_url": ws_in}
+    if ws_out:
+        params["workspace_out_url"] = ws_out
+    return {"jsonrpc": "2.0", "id": 1, "method": "tasks/send", "params": params}
+
+
+@pytest.mark.asyncio
+async def test_workspace_relay_rejects_private_ws_in():
+    a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
+                   pool=object())  # any non-None pool; validation runs before it's used
+    resp = await a.dispatch(_workspace_send("kiro", "http://127.0.0.1:9000/ws.tar"))
+    assert resp["error"]["code"] == -32014
+    assert "unsafe workspace url" in resp["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_workspace_relay_rejects_private_ws_out():
+    a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
+                   pool=object())
+    resp = await a.dispatch(_workspace_send(
+        "kiro", "https://example.com/ws.tar", "http://169.254.169.254/latest/meta-data/"))
+    assert resp["error"]["code"] == -32014
+
+
+@pytest.mark.asyncio
+async def test_workspace_relay_allow_private_urls_bypasses_guard(monkeypatch):
+    """With allow_private_urls=True, the SSRF check is skipped — execution
+    reaches past it into the download step (which then fails, since nothing
+    is actually listening), proving the guard let it through rather than
+    blocking it with -32014."""
+    import sys, types
+    fake_agents = types.ModuleType("src.agents")
+
+    async def _fake_call(*a, **kw):
+        return
+        yield  # pragma: no cover - never reached, makes this an async generator
+
+    fake_agents._call_acp_agent_internal = _fake_call
+    monkeypatch.setitem(sys.modules, "src.agents", fake_agents)
+
+    a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
+                   pool=object(), allow_private_urls=True)
+    resp = await a.dispatch(_workspace_send("kiro", "http://127.0.0.1:1/ws.tar"))
+    assert resp["error"]["code"] != -32014
