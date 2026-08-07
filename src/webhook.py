@@ -8,6 +8,8 @@ import logging
 
 import httpx
 
+from .url_safety import SafeTarget, UnsafeUrlError, validate_outbound_url
+
 log = logging.getLogger("acp-bridge.webhook")
 
 _CHUNK_SIZE = 1800  # safe for Discord 2000-char limit after JSON overhead
@@ -24,11 +26,13 @@ class WebhookSender:
     """Sends JSON payloads to a webhook URL with optional Bearer token or HMAC signing."""
 
     def __init__(self, default_url: str = "", default_token: str = "",
-                 default_format: str = "openclaw", default_secret: str = ""):
+                 default_format: str = "openclaw", default_secret: str = "",
+                 allowed_targets: frozenset[str] = frozenset()):
         self._url = default_url
         self._token = default_token
         self._format = default_format
         self._secret = default_secret
+        self._allowed_targets = allowed_targets
         self._http: httpx.AsyncClient | None = None
 
     @property
@@ -44,16 +48,24 @@ class WebhookSender:
             self._http = httpx.AsyncClient(timeout=10)
         return self._http
 
-    async def _post(self, client: httpx.AsyncClient, url: str,
+    async def _post(self, client: httpx.AsyncClient, target: SafeTarget,
                     payload: dict, headers: dict, secret: str) -> httpx.Response:
-        """Post a single payload, handling HMAC signing if needed."""
-        req_headers = dict(headers)
+        """Post a single payload, handling HMAC signing if needed.
+
+        Connects to `target.pinned_url` (the literal IP validated by
+        `validate_outbound_url`), not a fresh resolution of the hostname —
+        see url_safety.py for why the two must not diverge.
+        """
+        req_headers = {**headers, "Host": target.host}
+        extensions = {"sni_hostname": target.host}
         if secret:
             body_bytes = _json.dumps(payload, ensure_ascii=False).encode()
             sig = _hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
             req_headers["X-Webhook-Signature"] = sig
-            return await client.post(url, content=body_bytes, headers=req_headers)
-        return await client.post(url, json=payload, headers=req_headers)
+            return await client.post(target.pinned_url, content=body_bytes,
+                                      headers=req_headers, extensions=extensions)
+        return await client.post(target.pinned_url, json=payload,
+                                  headers=req_headers, extensions=extensions)
 
     @staticmethod
     def _extract_id(resp: httpx.Response) -> str:
@@ -76,6 +88,11 @@ class WebhookSender:
         For other channels: thread_content payloads are sent normally.
         """
         if not url or not payloads:
+            return False
+        try:
+            target = validate_outbound_url(url, allowed_targets=self._allowed_targets)
+        except UnsafeUrlError as e:
+            log.warning("%s_blocked: unsafe callback url: %s", log_prefix, e)
             return False
 
         headers = {"Content-Type": "application/json"}
@@ -105,7 +122,7 @@ class WebhookSender:
                         thread_payload = dict(payload)
                         thread_payload["action"] = "thread-create"
                         thread_payload["args"] = {"messageId": first_message_id, "threadName": thread_name}
-                        resp = await self._post(client, url, thread_payload, headers, secret)
+                        resp = await self._post(client, target, thread_payload, headers, secret)
                         log.info("%s: thread-create status=%d", log_prefix, resp.status_code)
                         if resp.status_code < 300:
                             thread_id = self._extract_id(resp)
@@ -117,14 +134,7 @@ class WebhookSender:
                         payload["args"] = {**payload.get("args", {}), "target": thread_id}
                     # else: fallback — send as normal message (no thread_id)
 
-                req_headers = dict(headers)
-                if secret:
-                    body_bytes = _json.dumps(payload, ensure_ascii=False).encode()
-                    sig = _hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
-                    req_headers["X-Webhook-Signature"] = sig
-                    resp = await client.post(url, content=body_bytes, headers=req_headers)
-                else:
-                    resp = await client.post(url, json=payload, headers=req_headers)
+                resp = await self._post(client, target, payload, headers, secret)
                 log.info("%s: status=%d part=%d/%d thread=%s",
                          log_prefix, resp.status_code, idx + 1, len(payloads), is_thread)
                 if resp.status_code >= 300:

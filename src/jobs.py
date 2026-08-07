@@ -73,10 +73,10 @@ class JobManager:
                  webhook_format: str = "openclaw", webhook_secret: str = "",
                  db_path: str = "data/jobs.db",
                  prompt_store: PromptStore | None = None,
-                 allow_private_urls: bool = False):
+                 allowed_private_targets: frozenset[str] = frozenset()):
         self._pool = pool
         self._pty_configs = pty_configs or {}
-        self._allow_private_urls = allow_private_urls
+        self._allowed_private_targets = allowed_private_targets
         self._app = None  # set by main.py after app creation
         self._jobs: dict[str, Job] = {}
         self._stats = None  # set by main.py after StatsCollector init
@@ -86,6 +86,7 @@ class JobManager:
         self._sender = WebhookSender(
             default_url=webhook_url, default_token=webhook_token,
             default_format=webhook_format, default_secret=webhook_secret,
+            allowed_targets=allowed_private_targets,
         )
         self._store = JobStore(db_path)
         self._prompt_store = prompt_store
@@ -157,8 +158,14 @@ class JobManager:
                cwd: str = "") -> Job:
         # callback_url is client-supplied (POST /jobs); the server-configured
         # fallback (self._webhook_url) is trusted config and skips this check.
+        # This is a fail-fast UX check only (reject obviously bad URLs at
+        # submit time) — it is NOT the security boundary. The enforced check
+        # is in WebhookSender.send(), which validates+pins right before the
+        # actual connection; a URL that passes here can still be blocked (or
+        # rebind-safe-pinned) later, e.g. if DNS changes between submit and
+        # send, or on retry of a URL persisted before this guard existed.
         if callback_url:
-            validate_outbound_url(callback_url, allow_private=self._allow_private_urls)
+            validate_outbound_url(callback_url, allowed_targets=self._allowed_private_targets)
         complexity = estimate_complexity(prompt)
         meta = dict(callback_meta or {})
         meta.setdefault("complexity", complexity.value)

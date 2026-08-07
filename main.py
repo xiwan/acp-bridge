@@ -222,9 +222,11 @@ def main():
         sys.exit(1)
 
     # SSRF guard for client-supplied outbound URLs (jobs.callback_url, mesh
-    # ws_in/ws_out). Off by default; opt in per-deployment for trusted
-    # private-network callback targets (e.g. a self-hosted n8n instance).
-    allow_private_callback_urls = sec_cfg.get("allow_private_callback_urls", False)
+    # ws_in/ws_out). Empty by default (blocks all loopback/link-local/
+    # private/reserved targets); list specific trusted hosts/CIDRs here for
+    # a private-network callback target (e.g. a self-hosted n8n instance).
+    # Cloud metadata hosts/IPs are always blocked, regardless of this list.
+    allowed_private_targets = frozenset(sec_cfg.get("allowed_private_targets", []))
 
     host = args.host or srv_cfg.get("host", "0.0.0.0")
     port = args.port or srv_cfg.get("port", 18010)
@@ -295,7 +297,7 @@ def main():
         webhook_secret=webhook_cfg.get("secret", ""),
         base_url=base_url,
         prompt_store=prompt_store,
-        allow_private_urls=allow_private_callback_urls,
+        allowed_private_targets=allowed_private_targets,
     ) if (pool or pty_agents) else None
 
     # --- Fallback chain (load from YAML, fallback to built-in defaults) ---
@@ -408,7 +410,7 @@ def main():
             job_mgr=job_mgr,
             remote_skills=_remote_skills,
             pool=pool,  # L3: run a workspace step with an explicit cwd
-            allow_private_urls=allow_private_callback_urls,
+            allowed_private_targets=allowed_private_targets,
         )
         mesh_routes.register(app, mesh_mgr, adapter=a2a_adapter)
         # L2: A2A Client — register remote handlers for peer-only skills each cycle.

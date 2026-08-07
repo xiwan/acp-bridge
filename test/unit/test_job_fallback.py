@@ -79,7 +79,7 @@ def make_manager(pool, db_path=None):
     mgr._sender = MagicMock()
     mgr._store = JobStore(db_path)
     mgr._pending_recovery = []
-    mgr._allow_private_urls = False
+    mgr._allowed_private_targets = frozenset()
     return mgr
 
 

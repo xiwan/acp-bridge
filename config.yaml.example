@@ -30,12 +30,19 @@ security:
   allowed_ips:
     - "127.0.0.1"
     # - "<client-ip>"
-  # allow_private_callback_urls: false          # SSRF guard for jobs.callback_url and
+  # allowed_private_targets: []                 # SSRF guard for jobs.callback_url and
                                                  # mesh ws_in/ws_out (client-supplied URLs).
-                                                 # Default false blocks loopback/link-local/
-                                                 # private/metadata targets. Set true only if
-                                                 # you intentionally point callbacks at a
-                                                 # private-network service (e.g. self-hosted n8n).
+                                                 # Empty (default) blocks loopback/link-local/
+                                                 # private/reserved/metadata targets. List
+                                                 # specific hostnames or CIDRs here only if you
+                                                 # intentionally point callbacks at a private-
+                                                 # network service (e.g. self-hosted n8n).
+                                                 # Cloud metadata hosts/IPs are always blocked,
+                                                 # even for an allowlisted CIDR that covers them.
+                                                 # Example:
+                                                 #   allowed_private_targets:
+                                                 #     - "n8n.internal"
+                                                 #     - "10.0.4.0/24"
 
 # litellm (optional): shared LLM proxy for agents without native Bedrock support
 # If url is set, bridge checks reachability on startup;

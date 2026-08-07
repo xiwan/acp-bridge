@@ -128,11 +128,11 @@ async def test_workspace_relay_rejects_private_ws_out():
 
 
 @pytest.mark.asyncio
-async def test_workspace_relay_allow_private_urls_bypasses_guard(monkeypatch):
-    """With allow_private_urls=True, the SSRF check is skipped — execution
-    reaches past it into the download step (which then fails, since nothing
-    is actually listening), proving the guard let it through rather than
-    blocking it with -32014."""
+async def test_workspace_relay_allowed_private_targets_lets_listed_host_through(monkeypatch):
+    """With allowed_private_targets covering the exact target, the range check
+    is skipped for it — execution reaches past it into the download step
+    (which then fails, since nothing is actually listening), proving the
+    guard let it through rather than blocking it with -32014."""
     import sys, types
     fake_agents = types.ModuleType("src.agents")
 
@@ -146,6 +146,16 @@ async def test_workspace_relay_allow_private_urls_bypasses_guard(monkeypatch):
     monkeypatch.setitem(sys.modules, "src.agents", fake_agents)
 
     a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
-                   pool=object(), allow_private_urls=True)
+                   pool=object(), allowed_private_targets=frozenset({"127.0.0.1"}))
     resp = await a.dispatch(_workspace_send("kiro", "http://127.0.0.1:1/ws.tar"))
     assert resp["error"]["code"] != -32014
+
+
+@pytest.mark.asyncio
+async def test_workspace_relay_allowed_private_targets_never_cover_metadata():
+    """The most severe gap from the upstream review: an allowlisted CIDR
+    broad enough to cover a metadata IP must still not let it through."""
+    a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
+                   pool=object(), allowed_private_targets=frozenset({"0.0.0.0/0"}))
+    resp = await a.dispatch(_workspace_send("kiro", "http://169.254.169.254/latest/meta-data/"))
+    assert resp["error"]["code"] == -32014

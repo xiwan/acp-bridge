@@ -34,8 +34,9 @@ security:
   auth_token: "${ACP_BRIDGE_TOKEN}"             # required, non-empty Bearer token
   allowed_ips:                                  # IP allowlist
     - "127.0.0.1"
-  allow_private_callback_urls: false            # SSRF guard opt-out for jobs.callback_url and
-                                                 # mesh ws_in/ws_out — see docs/security.md#ssrf-protection
+  allowed_private_targets: []                   # SSRF guard allowlist (hostnames/CIDRs) for
+                                                 # jobs.callback_url and mesh ws_in/ws_out — never
+                                                 # covers metadata targets. See docs/security.md#ssrf-protection
 
 litellm:
   url: "http://localhost:4000"                  # LiteLLM proxy URL

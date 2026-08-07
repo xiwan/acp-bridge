@@ -5,24 +5,35 @@ request rather than trusted server config: `callback_url` (POST /jobs) and the
 mesh L3 workspace relay (`ws_in`/`ws_out`, reachable via POST /a2a). Blocks
 loopback, link-local, private, reserved, and cloud-metadata targets by
 default. Deployments that intentionally point callbacks at a private-network
-service (e.g. a self-hosted n8n instance) can opt in per-target via
-`allow_private=True`, wired from `security.allow_private_callback_urls`.
+service (e.g. a self-hosted n8n instance) can opt specific hosts/CIDRs out of
+the private-range checks via `allowed_targets` (wired from
+`security.allowed_private_targets`) — cloud metadata hosts/IPs are always
+blocked regardless, since no legitimate callback target is a metadata
+endpoint.
 
-Known limitations (see docs/security.md "SSRF Protection" for detail): this
-validates the hostname's DNS resolution at check time, but the HTTP client
-that later fetches the URL resolves independently — a DNS-rebinding attacker
-could still redirect the actual connection after validation passes. The
-resolution below is also a blocking call, not offloaded to a thread executor,
-so a slow-to-resolve host adds latency to whichever request path calls this.
+`validate_outbound_url` returns a `SafeTarget` pinned to the exact IP it
+validated, rather than just raising-or-not: the DNS resolution done here and
+the one the HTTP client performs when it actually connects are two separate
+lookups, and an attacker controlling DNS for the host can answer them
+differently (rebind to a private/metadata address between the two). Callers
+must issue the real request against `SafeTarget.pinned_url` (not the original
+URL) with `extensions={"sni_hostname": target.host}` so TLS still validates
+against the real hostname, and a `Host: <target.host>` header for
+virtual-hosted targets — see webhook.py and mesh_a2a.py.
+
+Known limitation: the resolution below is a blocking call, not offloaded to a
+thread executor, so a slow-to-resolve host adds latency to whichever request
+path calls this.
 """
 
 import ipaddress
 import socket
-from urllib.parse import urlparse
+from dataclasses import dataclass
+from urllib.parse import urlparse, urlunparse
 
 ALLOWED_SCHEMES = {"http", "https"}
 # DNS names that resolve to metadata endpoints (not literal IPs, so they can't
-# be caught by the range checks in _is_unsafe_ip below).
+# be caught by the range checks below).
 _METADATA_HOSTNAMES = {"metadata.google.internal"}
 # Metadata IPs outside the standard loopback/link-local/private/reserved
 # ranges — must be checked explicitly, whether they appear as a literal URL
@@ -38,10 +49,22 @@ class UnsafeUrlError(ValueError):
     """Raised when a user-supplied URL fails outbound SSRF validation."""
 
 
-def _is_unsafe_ip(ip) -> bool:
+@dataclass(frozen=True)
+class SafeTarget:
+    """A URL that passed SSRF validation, pinned to the IP that was checked."""
+
+    pinned_url: str
+    host: str
+    ip: str
+
+
+def _is_metadata(ip) -> bool:
+    return ip in _METADATA_IPS
+
+
+def _is_private_range(ip) -> bool:
     return (
-        ip in _METADATA_IPS
-        or ip.is_loopback
+        ip.is_loopback
         or ip.is_link_local
         or ip.is_private
         or ip.is_reserved
@@ -50,13 +73,47 @@ def _is_unsafe_ip(ip) -> bool:
     )
 
 
-def validate_outbound_url(url: str, *, allow_private: bool = False) -> None:
-    """Raise UnsafeUrlError if `url` is unsafe for the server to fetch/POST to.
+def _target_allowed(host: str, ip, allowed_targets) -> bool:
+    """True if `host`/`ip` opts out of the private-range check via `allowed_targets`.
 
-    Checks the scheme against an allowlist, then resolves the host and rejects
-    loopback/link-local/private/reserved ranges plus known cloud metadata
-    hostnames — unless `allow_private` opts a trusted deployment out of the
-    range checks (scheme validation still applies).
+    Entries containing "/" are matched as CIDR networks against the resolved
+    IP; other entries are matched as exact hostnames. Never consulted for the
+    metadata check — see validate_outbound_url.
+    """
+    host_l = host.lower()
+    for entry in allowed_targets:
+        if "/" in entry:
+            try:
+                if ip in ipaddress.ip_network(entry, strict=False):
+                    return True
+            except ValueError:
+                continue
+        elif host_l == entry.lower():
+            return True
+    return False
+
+
+def _pin_host(parsed, ip: str) -> str:
+    """Rebuild `parsed`'s URL with its host replaced by the literal `ip`."""
+    netloc_host = f"[{ip}]" if ":" in ip else ip
+    if parsed.port:
+        netloc_host = f"{netloc_host}:{parsed.port}"
+    if parsed.username:
+        userinfo = parsed.username
+        if parsed.password:
+            userinfo += f":{parsed.password}"
+        netloc_host = f"{userinfo}@{netloc_host}"
+    return urlunparse(parsed._replace(netloc=netloc_host))
+
+
+def validate_outbound_url(url: str, *, allowed_targets: frozenset[str] = frozenset()) -> SafeTarget:
+    """Raise UnsafeUrlError if `url` is unsafe, else return a pinned SafeTarget.
+
+    Checks the scheme against an allowlist, resolves the host, and rejects
+    loopback/link-local/private/reserved/multicast ranges plus cloud metadata
+    hosts/IPs. `allowed_targets` (hostnames or CIDR strings) opts specific
+    private-network targets out of the range checks — metadata targets are
+    never exempt.
     """
     if not url:
         raise UnsafeUrlError("empty url")
@@ -66,23 +123,28 @@ def validate_outbound_url(url: str, *, allow_private: bool = False) -> None:
     host = parsed.hostname
     if not host:
         raise UnsafeUrlError("missing host")
-    if allow_private:
-        return
     if host.lower() in _METADATA_HOSTNAMES:
         raise UnsafeUrlError(f"blocked metadata host: {host}")
+
     try:
-        ip = ipaddress.ip_address(host)
+        literal_ip = ipaddress.ip_address(host)
     except ValueError:
-        ip = None
-    if ip is not None:
-        if _is_unsafe_ip(ip):
-            raise UnsafeUrlError(f"blocked address: {host}")
-        return
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror as e:
-        raise UnsafeUrlError(f"cannot resolve host: {host} ({e})") from e
-    for info in infos:
-        resolved = ipaddress.ip_address(info[4][0])
-        if _is_unsafe_ip(resolved):
-            raise UnsafeUrlError(f"host {host} resolves to blocked address: {resolved}")
+        literal_ip = None
+
+    if literal_ip is not None:
+        candidates = [literal_ip]
+    else:
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except socket.gaierror as e:
+            raise UnsafeUrlError(f"cannot resolve host: {host} ({e})") from e
+        candidates = [ipaddress.ip_address(info[4][0]) for info in infos]
+
+    for candidate in candidates:
+        if _is_metadata(candidate):
+            raise UnsafeUrlError(f"blocked metadata address: {candidate}")
+        if _is_private_range(candidate) and not _target_allowed(host, candidate, allowed_targets):
+            raise UnsafeUrlError(f"blocked address: {candidate}")
+
+    resolved_ip = str(candidates[0])
+    return SafeTarget(pinned_url=_pin_host(parsed, resolved_ip), host=host, ip=resolved_ip)

@@ -55,18 +55,19 @@ File and Pipeline artifact downloads require the normal Bearer token. The LiteLL
 
 ## SSRF Protection
 
-Two request fields let a caller supply a URL that Bridge itself then fetches or posts to server-side: `callback_url` on `POST /jobs` (see [Async Jobs](async-jobs.md)) and `workspace_in_url`/`workspace_out_url` on the mesh L3 workspace relay (`POST /a2a` `tasks/send`, see [A2A Mesh](mesh.md)). Both are validated by `src/url_safety.py` before Bridge touches them:
+Two request fields let a caller supply a URL that Bridge itself then fetches or posts to server-side: `callback_url` on `POST /jobs` (see [Async Jobs](async-jobs.md)) and `workspace_in_url`/`workspace_out_url` on the mesh L3 workspace relay (`POST /a2a` `tasks/send`, see [A2A Mesh](mesh.md)). Both are validated by `src/url_safety.py`, immediately before Bridge connects to them — not just once at submission:
 
 - Scheme must be `http` or `https`.
-- The resolved host must not be loopback, link-local, private (RFC 1918), reserved, multicast, or a known cloud metadata endpoint (`169.254.169.254`, `metadata.google.internal`, and Alibaba Cloud's `100.100.100.200`, which falls outside the standard private/link-local ranges).
+- The resolved host must not be loopback, link-local, private (RFC 1918), reserved, multicast, or a known cloud metadata endpoint (`169.254.169.254`, `metadata.google.internal`, and Alibaba Cloud's `100.100.100.200`, which falls outside the standard private/link-local ranges) — cloud metadata targets are blocked unconditionally, see below.
 
-An invalid `callback_url` returns `400` with `{"error": "unsafe callback_url: ..."}` before the job is created. An invalid workspace URL returns JSON-RPC error `-32014` before any download is attempted.
+`validate_outbound_url` returns a `SafeTarget` pinned to the exact IP it just checked, and the actual request (`WebhookSender.send()` for job callbacks, the workspace download/upload in `mesh_a2a.py`) connects to that pinned IP — with a `Host` header and TLS SNI set to the original hostname — instead of letting the HTTP client re-resolve the hostname itself. This closes DNS rebinding: there is only ever one resolution per request, and it's the one that was checked. Job callbacks are revalidated this way on every send, including webhook retries and jobs recovered from the store after a restart, not just at `POST /jobs` time — a `callback_url` that was safe when persisted but resolves unsafely later (or was never re-checked before) is blocked at send time, not just accepted from the store.
 
-Set `security.allow_private_callback_urls: true` to disable the range checks (scheme validation still applies) for deployments that intentionally point callbacks at a private-network service — e.g. a self-hosted n8n instance reachable only from Bridge's own network. Default is `false`.
+An invalid `callback_url` returns `400` with `{"error": "unsafe callback_url: ..."}` at submission (fail-fast; the enforced check happens again at send time regardless). An invalid workspace URL returns JSON-RPC error `-32014` before any download is attempted.
+
+List specific trusted hosts/CIDRs in `security.allowed_private_targets` (a YAML list, empty by default) to opt them out of the loopback/link-local/private/reserved/multicast range checks — e.g. a self-hosted n8n instance reachable only from Bridge's own network. This allowlist only ever affects the private-range checks: cloud metadata hosts/IPs are always blocked, even if an allowlisted CIDR happens to cover them (e.g. `0.0.0.0/0`) — there is no configuration that permits a metadata target.
 
 ### Known limitations
 
-- **DNS rebinding (TOCTOU).** Validation resolves the hostname once, at request time. The HTTP client that later performs the actual fetch (`httpx`) resolves independently. An attacker who controls the target hostname's authoritative DNS server could answer a public IP during validation and a private/loopback IP moments later, bypassing the guard. Closing this fully requires pinning the validated IP and connecting directly to it (a custom transport), which hasn't been implemented — accepted as residual risk given Bridge's current threat model (harnesses you run yourself, not open to hostile internet traffic).
 - **Blocking DNS resolution.** The hostname resolution in `validate_outbound_url` is a synchronous `socket.getaddrinfo()` call with no explicit timeout. On `POST /jobs` this runs inside the async request handler; on the mesh workspace relay it joins pre-existing synchronous `httpx.get`/`httpx.put` calls in the same code path (up to 120s timeout each). A slow-to-resolve or non-responding hostname in a client-supplied URL can stall the single asyncio event loop for the OS resolver's timeout, delaying every other in-flight request. Not currently offloaded to a thread executor.
 
 ## Heartbeat & Environment Awareness

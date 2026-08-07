@@ -37,10 +37,10 @@ class _FakePool:
         pass
 
 
-def _app(allow_private_urls=False):
+def _app(allowed_private_targets=frozenset()):
     db_path = os.path.join(tempfile.mkdtemp(), "test.db")
     job_mgr = JobManager(
-        pool=_FakePool(), db_path=db_path, allow_private_urls=allow_private_urls
+        pool=_FakePool(), db_path=db_path, allowed_private_targets=allowed_private_targets
     )
     app = FastAPI()
     jobs_routes.register(app, job_mgr, webhook_account_id="", webhook_default_target="")
@@ -98,7 +98,7 @@ async def test_post_jobs_without_callback_url_is_unaffected():
 
 @pytest.mark.asyncio
 async def test_post_jobs_allows_private_callback_url_when_opted_in():
-    app, _job_mgr = _app(allow_private_urls=True)
+    app, _job_mgr = _app(allowed_private_targets=frozenset({"127.0.0.1"}))
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
@@ -111,3 +111,22 @@ async def test_post_jobs_allows_private_callback_url_when_opted_in():
         )
     assert resp.status_code == 200
     await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_post_jobs_allowed_private_targets_never_cover_metadata():
+    """allowed_private_targets is scoped to the private-range check only —
+    a broad allowlisted CIDR must not also unblock cloud metadata targets."""
+    app, job_mgr = _app(allowed_private_targets=frozenset({"0.0.0.0/0"}))
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/jobs",
+            json={
+                "agent_name": "kiro",
+                "prompt": "hi",
+                "callback_url": "http://169.254.169.254/latest/meta-data/",
+            },
+        )
+    assert resp.status_code == 400
+    assert job_mgr._jobs == {}

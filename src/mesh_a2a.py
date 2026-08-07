@@ -57,12 +57,12 @@ class A2AAdapter:
     """Dispatches A2A JSON-RPC methods against this node's local agents + job store."""
 
     def __init__(self, agents_provider, job_mgr=None, remote_skills=None, pool=None,
-                 allow_private_urls: bool = False):
+                 allowed_private_targets: frozenset[str] = frozenset()):
         # agents_provider: callable -> {name: Agent}; deferred so app.state is ready.
         self._agents_provider = agents_provider
         self._job_mgr = job_mgr
         self._pool = pool  # L3: needed to run a local agent with an explicit cwd
-        self._allow_private_urls = allow_private_urls
+        self._allowed_private_targets = allowed_private_targets
         # L2: names registered as a2a-remote handlers (forward to a peer). Used to
         # enforce the 1-hop limit: an inbound hopped request must not re-forward.
         self.remote_skills = remote_skills if remote_skills is not None else set()
@@ -117,10 +117,16 @@ class A2AAdapter:
             return _rpc_error(rpc_id, -32010, "workspace step requires a process pool")
         # Validate before anything else — including the imports below, which
         # pull in the agent-execution machinery. Untrusted ws_in/ws_out never
-        # get that far if they're unsafe.
+        # get that far if they're unsafe. Each SafeTarget pins the exact IP
+        # validated here; the httpx calls below connect to that IP directly
+        # rather than re-resolving the hostname, closing the DNS-rebinding
+        # TOCTOU a separate validate-then-fetch would leave open.
         try:
-            for target in filter(None, (ws_in, ws_out)):
-                validate_outbound_url(target, allow_private=self._allow_private_urls)
+            ws_in_target = validate_outbound_url(ws_in, allowed_targets=self._allowed_private_targets)
+            ws_out_target = (
+                validate_outbound_url(ws_out, allowed_targets=self._allowed_private_targets)
+                if ws_out else None
+            )
         except UnsafeUrlError as e:
             return _rpc_error(rpc_id, -32014, f"unsafe workspace url: {e}")
         import tempfile, uuid
@@ -130,7 +136,9 @@ class A2AAdapter:
         prompt = "".join(p.get("text", "") for p in (params.get("message") or {}).get("parts", []))
         tmp = tempfile.mkdtemp(prefix="mesh-ws-")
         try:
-            r = httpx.get(ws_in, timeout=120)
+            r = httpx.get(ws_in_target.pinned_url, timeout=120,
+                          headers={"Host": ws_in_target.host},
+                          extensions={"sni_hostname": ws_in_target.host})
             r.raise_for_status()
             _s3.unpack_dir(r.content, tmp)
         except Exception as e:
@@ -146,9 +154,11 @@ class A2AAdapter:
         except Exception as e:
             log.warning("a2a workspace step failed skill=%s err=%s", skill, e)
             return _rpc_error(rpc_id, -32000, f"agent error: {e}")
-        if ws_out:
+        if ws_out_target:
             try:
-                httpx.put(ws_out, content=_s3.pack_dir(tmp), timeout=120).raise_for_status()
+                httpx.put(ws_out_target.pinned_url, content=_s3.pack_dir(tmp), timeout=120,
+                         headers={"Host": ws_out_target.host},
+                         extensions={"sni_hostname": ws_out_target.host}).raise_for_status()
             except Exception as e:
                 return _rpc_error(rpc_id, -32013, f"workspace upload failed: {e}")
         return _rpc_result(rpc_id, {
