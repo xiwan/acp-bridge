@@ -80,3 +80,64 @@ async def test_send_allowed_targets_never_bypass_metadata():
 
     assert ok is False
     assert captured == []
+
+
+@pytest.mark.asyncio
+async def test_configured_default_url_is_exempt_from_the_ssrf_guard():
+    """The server-configured webhook.url is trusted operator config, not
+    client input. Pointing it at a private-network gateway (the documented
+    OpenClaw deployment) must keep working with no allowlist entry — the guard
+    exists to contain caller-supplied URLs only.
+    """
+    captured: list[httpx.Request] = []
+    sender = WebhookSender(default_url="http://10.0.1.79:18789/tools/invoke")
+    sender._http = httpx.AsyncClient(transport=_mock_transport(captured))
+
+    ok = await sender.send("http://10.0.1.79:18789/tools/invoke", [{"message": "hi"}])
+
+    assert ok is True
+    assert len(captured) == 1
+    # Not pinned: a trusted target keeps its hostname and resolves normally.
+    assert captured[0].url.host == "10.0.1.79"
+
+
+@pytest.mark.asyncio
+async def test_client_supplied_url_is_still_guarded_when_a_default_is_configured():
+    """The exemption is scoped to the exact configured URL — a different
+    private URL arriving as a per-job callback_url must still be blocked.
+    """
+    captured: list[httpx.Request] = []
+    sender = WebhookSender(default_url="http://10.0.1.79:18789/tools/invoke")
+    sender._http = httpx.AsyncClient(transport=_mock_transport(captured))
+
+    ok = await sender.send("http://10.0.1.80:18789/tools/invoke", [{"message": "hi"}])
+
+    assert ok is False
+    assert captured == []
+
+
+@pytest.mark.asyncio
+async def test_host_header_preserves_non_default_port():
+    """Since the connection goes to a literal IP, the Host header has to carry
+    the original authority including its port, or virtual-hosted targets get a
+    Host they never expected.
+    """
+    captured: list[httpx.Request] = []
+    sender = WebhookSender()
+    sender._http = httpx.AsyncClient(transport=_mock_transport(captured))
+
+    ok = await sender.send("https://example.com:8443/hook", [{"message": "hi"}])
+
+    assert ok is True
+    assert captured[0].headers["host"] == "example.com:8443"
+    assert captured[0].extensions.get("sni_hostname") == "example.com"
+
+
+@pytest.mark.asyncio
+async def test_client_does_not_follow_redirects():
+    """Pinning only covers the connection that was validated; following a 30x
+    would re-resolve the redirect target unchecked.
+    """
+    sender = WebhookSender()
+    client = await sender._get_http()
+    assert client.follow_redirects is False

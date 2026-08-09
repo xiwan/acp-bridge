@@ -370,6 +370,7 @@ def main():
                                    webhook_token=webhook_cfg.get("token", ""),
                                    webhook_format=webhook_cfg.get("format", "openclaw"),
                                    webhook_secret=webhook_cfg.get("secret", ""),
+                                   allowed_private_targets=allowed_private_targets,
                                    prompt_store=prompt_store) if pool else None
     pipelines_routes.register(app, pipeline_mgr, webhook_account_id, webhook_default_target,
                               prompt_store=prompt_store)

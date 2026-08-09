@@ -1382,3 +1382,22 @@ class TestStepProgressEvents:
         progress = [e for e in pl._event_history if e["event"] == "step_progress"]
         assert len(progress) == 2
         assert all(e["data"]["kind"] == "message.part" for e in progress)
+
+
+def test_pipeline_manager_forwards_ssrf_allowlist(tmp_path):
+    """PipelineManager builds its own WebhookSender, so it needs the allowlist
+    wired through too — otherwise a private-network webhook target configured
+    via security.allowed_private_targets works for jobs but silently fails for
+    pipelines, with no configuration able to fix it.
+    """
+    from unittest.mock import Mock
+
+    from src.pipeline import PipelineManager
+
+    pool = Mock()
+    pool._connections = {}
+    mgr = PipelineManager(pool=pool, agents_cfg={},
+                          webhook_url="http://10.0.4.7:8080/hook",
+                          allowed_private_targets=frozenset({"10.0.4.0/24"}),
+                          db_path=str(tmp_path / "p.db"))
+    assert mgr._sender._allowed_targets == frozenset({"10.0.4.0/24"})

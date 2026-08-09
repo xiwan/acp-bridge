@@ -136,8 +136,12 @@ class A2AAdapter:
         prompt = "".join(p.get("text", "") for p in (params.get("message") or {}).get("parts", []))
         tmp = tempfile.mkdtemp(prefix="mesh-ws-")
         try:
-            r = httpx.get(ws_in_target.pinned_url, timeout=120,
-                          headers={"Host": ws_in_target.host},
+            # httpx's module-level get/put accept no `extensions`, so pinning
+            # requires a real Client. follow_redirects stays off so a 30x can't
+            # escape the validated IP — see url_safety.py.
+            with httpx.Client(timeout=120, follow_redirects=False) as c:
+                r = c.get(ws_in_target.pinned_url,
+                          headers={"Host": ws_in_target.host_header},
                           extensions={"sni_hostname": ws_in_target.host})
             r.raise_for_status()
             _s3.unpack_dir(r.content, tmp)
@@ -156,9 +160,10 @@ class A2AAdapter:
             return _rpc_error(rpc_id, -32000, f"agent error: {e}")
         if ws_out_target:
             try:
-                httpx.put(ws_out_target.pinned_url, content=_s3.pack_dir(tmp), timeout=120,
-                         headers={"Host": ws_out_target.host},
-                         extensions={"sni_hostname": ws_out_target.host}).raise_for_status()
+                with httpx.Client(timeout=120, follow_redirects=False) as c:
+                    c.put(ws_out_target.pinned_url, content=_s3.pack_dir(tmp),
+                          headers={"Host": ws_out_target.host_header},
+                          extensions={"sni_hostname": ws_out_target.host}).raise_for_status()
             except Exception as e:
                 return _rpc_error(rpc_id, -32013, f"workspace upload failed: {e}")
         return _rpc_result(rpc_id, {

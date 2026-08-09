@@ -130,13 +130,15 @@ class PipelineManager:
                  webhook_url: str = "", webhook_token: str = "",
                  webhook_format: str = "openclaw", webhook_secret: str = "",
                  db_path: str = "data/jobs.db",
-                 prompt_store: PromptStore | None = None):
+                 prompt_store: PromptStore | None = None,
+                 allowed_private_targets: frozenset[str] = frozenset()):
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._pipelines: dict[str, Pipeline] = {}
         self._sender = WebhookSender(
             default_url=webhook_url, default_token=webhook_token,
             default_format=webhook_format, default_secret=webhook_secret,
+            allowed_targets=allowed_private_targets,
         )
         self._store = PipelineStore(db_path)
         self._prompt_store = prompt_store

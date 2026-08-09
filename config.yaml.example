@@ -30,13 +30,15 @@ security:
   allowed_ips:
     - "127.0.0.1"
     # - "<client-ip>"
-  # allowed_private_targets: []                 # SSRF guard for jobs.callback_url and
-                                                 # mesh ws_in/ws_out (client-supplied URLs).
+  # allowed_private_targets: []                 # SSRF guard for client-supplied URLs
+                                                 # (jobs.callback_url, mesh ws_in/ws_out).
                                                  # Empty (default) blocks loopback/link-local/
                                                  # private/reserved/metadata targets. List
-                                                 # specific hostnames or CIDRs here only if you
-                                                 # intentionally point callbacks at a private-
-                                                 # network service (e.g. self-hosted n8n).
+                                                 # specific hostnames or CIDRs here only if
+                                                 # clients legitimately name a private-network
+                                                 # callback target (e.g. self-hosted n8n).
+                                                 # The webhook.url configured below is trusted
+                                                 # config and never needs listing here.
                                                  # Cloud metadata hosts/IPs are always blocked,
                                                  # even for an allowlisted CIDR that covers them.
                                                  # Example:

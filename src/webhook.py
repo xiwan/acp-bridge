@@ -8,7 +8,12 @@ import logging
 
 import httpx
 
-from .url_safety import SafeTarget, UnsafeUrlError, validate_outbound_url
+from .url_safety import (
+    SafeTarget,
+    UnsafeUrlError,
+    trusted_target,
+    validate_outbound_url,
+)
 
 log = logging.getLogger("acp-bridge.webhook")
 
@@ -45,7 +50,10 @@ class WebhookSender:
 
     async def _get_http(self) -> httpx.AsyncClient:
         if self._http is None or self._http.is_closed:
-            self._http = httpx.AsyncClient(timeout=10)
+            # follow_redirects=False is load-bearing, not just httpx's default:
+            # the connection is pinned to a validated IP, but a 30x would be
+            # followed against a fresh unvalidated resolution. See url_safety.py.
+            self._http = httpx.AsyncClient(timeout=10, follow_redirects=False)
         return self._http
 
     async def _post(self, client: httpx.AsyncClient, target: SafeTarget,
@@ -56,7 +64,7 @@ class WebhookSender:
         `validate_outbound_url`), not a fresh resolution of the hostname —
         see url_safety.py for why the two must not diverge.
         """
-        req_headers = {**headers, "Host": target.host}
+        req_headers = {**headers, "Host": target.host_header}
         extensions = {"sni_hostname": target.host}
         if secret:
             body_bytes = _json.dumps(payload, ensure_ascii=False).encode()
@@ -89,11 +97,19 @@ class WebhookSender:
         """
         if not url or not payloads:
             return False
-        try:
-            target = validate_outbound_url(url, allowed_targets=self._allowed_targets)
-        except UnsafeUrlError as e:
-            log.warning("%s_blocked: unsafe callback url: %s", log_prefix, e)
-            return False
+        # The SSRF guard exists to contain URLs that came from a client
+        # request. The server-configured default (webhook.url, set by whoever
+        # deploys the Bridge) is trusted config and is deliberately exempt —
+        # pointing it at a private-network gateway is a normal deployment, not
+        # an attack, and must not require an allowlist entry to keep working.
+        if url == self._url:
+            target = trusted_target(url)
+        else:
+            try:
+                target = validate_outbound_url(url, allowed_targets=self._allowed_targets)
+            except UnsafeUrlError as e:
+                log.warning("%s_blocked: unsafe callback url: %s", log_prefix, e)
+                return False
 
         headers = {"Content-Type": "application/json"}
         if secret:

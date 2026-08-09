@@ -35,8 +35,10 @@ security:
   allowed_ips:                                  # IP allowlist
     - "127.0.0.1"
   allowed_private_targets: []                   # SSRF guard allowlist (hostnames/CIDRs) for
-                                                 # jobs.callback_url and mesh ws_in/ws_out — never
-                                                 # covers metadata targets. See docs/security.md#ssrf-protection
+                                                 # client-supplied jobs.callback_url and mesh
+                                                 # ws_in/ws_out — never covers metadata targets;
+                                                 # the configured webhook.url is exempt.
+                                                 # See docs/security.md#ssrf-protection
 
 litellm:
   url: "http://localhost:4000"                  # LiteLLM proxy URL

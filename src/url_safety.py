@@ -18,8 +18,13 @@ lookups, and an attacker controlling DNS for the host can answer them
 differently (rebind to a private/metadata address between the two). Callers
 must issue the real request against `SafeTarget.pinned_url` (not the original
 URL) with `extensions={"sni_hostname": target.host}` so TLS still validates
-against the real hostname, and a `Host: <target.host>` header for
+against the real hostname, and a `Host: <target.host_header>` header for
 virtual-hosted targets — see webhook.py and mesh_a2a.py.
+
+Callers must also keep redirects disabled (`follow_redirects=False`, httpx's
+default). Pinning only covers the connection this module validated; a `30x`
+response pointing at a private or metadata address would be followed against a
+fresh, unvalidated resolution, reopening the hole from the other side.
 
 Known limitation: the resolution below is a blocking call, not offloaded to a
 thread executor, so a slow-to-resolve host adds latency to whichever request
@@ -51,10 +56,18 @@ class UnsafeUrlError(ValueError):
 
 @dataclass(frozen=True)
 class SafeTarget:
-    """A URL that passed SSRF validation, pinned to the IP that was checked."""
+    """A URL that passed SSRF validation, pinned to the IP that was checked.
+
+    `host` is the bare hostname, for TLS SNI. `host_header` is what the
+    original URL's authority would have produced as a `Host` header — i.e.
+    including a non-default port — because the connection is made to a literal
+    IP and the origin server still needs the real authority to route
+    virtual-hosted requests correctly.
+    """
 
     pinned_url: str
     host: str
+    host_header: str
     ip: str
 
 
@@ -106,6 +119,24 @@ def _pin_host(parsed, ip: str) -> str:
     return urlunparse(parsed._replace(netloc=netloc_host))
 
 
+def trusted_target(url: str) -> SafeTarget:
+    """Build a SafeTarget for a URL that comes from trusted server config.
+
+    No validation and no DNS resolution: the operator chose this destination
+    (e.g. `webhook.url` pointing at an OpenClaw gateway on a private address),
+    so the SSRF guard — which exists to contain *client-supplied* URLs — must
+    not apply to it. `pinned_url` is the original URL, so the HTTP client
+    resolves it normally; `host`/`host_header` match what it would have sent
+    anyway, keeping callers uniform.
+    """
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    host_header = f"[{host}]" if ":" in host else host
+    if parsed.port:
+        host_header = f"{host_header}:{parsed.port}"
+    return SafeTarget(pinned_url=url, host=host, host_header=host_header, ip="")
+
+
 def validate_outbound_url(url: str, *, allowed_targets: frozenset[str] = frozenset()) -> SafeTarget:
     """Raise UnsafeUrlError if `url` is unsafe, else return a pinned SafeTarget.
 
@@ -147,4 +178,8 @@ def validate_outbound_url(url: str, *, allowed_targets: frozenset[str] = frozens
             raise UnsafeUrlError(f"blocked address: {candidate}")
 
     resolved_ip = str(candidates[0])
-    return SafeTarget(pinned_url=_pin_host(parsed, resolved_ip), host=host, ip=resolved_ip)
+    host_header = f"[{host}]" if ":" in host else host
+    if parsed.port:
+        host_header = f"{host_header}:{parsed.port}"
+    return SafeTarget(pinned_url=_pin_host(parsed, resolved_ip), host=host,
+                      host_header=host_header, ip=resolved_ip)
