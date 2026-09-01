@@ -8,6 +8,7 @@ log = logging.getLogger("acp-bridge.metrics")
 
 try:
     from prometheus_client import Counter, Gauge, Histogram, start_http_server
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
@@ -17,14 +18,33 @@ class MetricsCollector:
     def __init__(self):
         self._server_started = False
         if PROMETHEUS_AVAILABLE:
-            self.agent_calls = Counter("agent_calls_total", "Total agent calls", ["agent", "status"])
-            self.agent_duration = Histogram("agent_call_duration_seconds", "Agent call latency", ["agent"], buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60])
-            self.fallback_triggered = Counter("fallback_triggered_total", "Fallback attempts", ["from_agent", "to_agent", "success"])
-            self.fallback_exhausted = Counter("fallback_exhausted_total", "Fallback chain exhausted", ["agent"])
-            self.fallback_duration = Histogram("fallback_duration_seconds", "Fallback decision latency", ["from_agent"])
-            self.cb_state = Gauge("circuit_breaker_state", "CB state (0=closed,1=half_open,2=open)", ["agent"])
+            self.agent_calls = Counter(
+                "agent_calls_total", "Total agent calls", ["agent", "status"]
+            )
+            self.agent_duration = Histogram(
+                "agent_call_duration_seconds",
+                "Agent call latency",
+                ["agent"],
+                buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60],
+            )
+            self.fallback_triggered = Counter(
+                "fallback_triggered_total",
+                "Fallback attempts",
+                ["from_agent", "to_agent", "success"],
+            )
+            self.fallback_exhausted = Counter(
+                "fallback_exhausted_total", "Fallback chain exhausted", ["agent"]
+            )
+            self.fallback_duration = Histogram(
+                "fallback_duration_seconds", "Fallback decision latency", ["from_agent"]
+            )
+            self.cb_state = Gauge(
+                "circuit_breaker_state", "CB state (0=closed,1=half_open,2=open)", ["agent"]
+            )
             self.cb_opened = Counter("circuit_breaker_opened_total", "CB opened count", ["agent"])
-            self.pool_connections = Gauge("pool_connections", "Connections by state", ["agent", "state"])
+            self.pool_connections = Gauge(
+                "pool_connections", "Connections by state", ["agent", "state"]
+            )
 
     def _has(self, attr):
         return hasattr(self, attr)
@@ -47,9 +67,17 @@ class MetricsCollector:
                 self.agent_duration.labels(agent=agent).observe(duration)
 
     def record_fallback(self, from_agent, to_agent, success=True, duration=0.0):
-        log.info("fallback: from=%s to=%s success=%s duration=%.3fs", from_agent, to_agent, success, duration)
+        log.info(
+            "fallback: from=%s to=%s success=%s duration=%.3fs",
+            from_agent,
+            to_agent,
+            success,
+            duration,
+        )
         if self._has("fallback_triggered"):
-            self.fallback_triggered.labels(from_agent=from_agent, to_agent=to_agent, success=str(success)).inc()
+            self.fallback_triggered.labels(
+                from_agent=from_agent, to_agent=to_agent, success=str(success)
+            ).inc()
             if duration > 0:
                 self.fallback_duration.labels(from_agent=from_agent).observe(duration)
 

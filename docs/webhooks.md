@@ -74,9 +74,11 @@ Set one or the other, not both. If `secret` is set, it takes priority. If neithe
 ```python
 import hmac, hashlib
 
+
 def verify(body: bytes, signature: str, secret: str) -> bool:
     expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
+
 
 # signature = request.headers["X-Webhook-Signature"]
 ```

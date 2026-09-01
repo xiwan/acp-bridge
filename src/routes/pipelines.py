@@ -50,9 +50,13 @@ class PipelineRequest(BaseModel):
     config: dict = {}
 
 
-def register(app, pipeline_mgr: PipelineManager | None,
-             webhook_account_id: str = "", webhook_default_target: str = "",
-             prompt_store: PromptStore | None = None):
+def register(
+    app,
+    pipeline_mgr: PipelineManager | None,
+    webhook_account_id: str = "",
+    webhook_default_target: str = "",
+    prompt_store: PromptStore | None = None,
+):
 
     @app.post("/pipelines")
     async def submit_pipeline(req: PipelineRequest):
@@ -62,13 +66,21 @@ def register(app, pipeline_mgr: PipelineManager | None,
             return JSONResponse({"error": f"invalid mode: {req.mode}"}, status_code=400)
         if req.mode == "conversation":
             if len(req.participants) < 2:
-                return JSONResponse({"error": "conversation requires at least 2 participants"}, status_code=400)
+                return JSONResponse(
+                    {"error": "conversation requires at least 2 participants"}, status_code=400
+                )
             if not req.topic:
                 return JSONResponse({"error": "conversation requires a topic"}, status_code=400)
             context = req.context.copy()
-            context.update({"participants": req.participants, "topic": req.topic,
-                            "initial_context": req.initial_context, "solo": req.solo,
-                            "config": req.config})
+            context.update(
+                {
+                    "participants": req.participants,
+                    "topic": req.topic,
+                    "initial_context": req.initial_context,
+                    "solo": req.solo,
+                    "config": req.config,
+                }
+            )
             steps = [PipelineStepRequest(agent=p, prompt="") for p in req.participants]
         else:
             if not req.steps:
@@ -81,7 +93,8 @@ def register(app, pipeline_mgr: PipelineManager | None,
         uid = ""
         if req.input or req.vars:
             step_dicts, context, uid, missing = render_payload(
-                step_dicts, context, req.input, req.vars)
+                step_dicts, context, req.input, req.vars
+            )
             if missing:
                 return JSONResponse({"error": format_missing(missing)}, status_code=400)
         artifacts = extract_artifacts(step_dicts)
@@ -140,8 +153,8 @@ def register(app, pipeline_mgr: PipelineManager | None,
             d["uid"] = pl.context["_uid"]
         if pl.context.get("_artifacts"):
             d["artifacts"] = resolve_artifacts(
-                pl.context["_artifacts"], d.get("steps", []),
-                pl.context.get("shared_cwd", ""))
+                pl.context["_artifacts"], d.get("steps", []), pl.context.get("shared_cwd", "")
+            )
         return d
 
     @app.post("/pipelines/{pipeline_id}/pause")
@@ -152,9 +165,13 @@ def register(app, pipeline_mgr: PipelineManager | None,
         if not pl:
             return JSONResponse({"error": "pipeline not found"}, status_code=404)
         if pl.mode != "conversation":
-            return JSONResponse({"error": "pause only supported for conversation mode"}, status_code=400)
+            return JSONResponse(
+                {"error": "pause only supported for conversation mode"}, status_code=400
+            )
         if pl.status not in ("running", "paused"):
-            return JSONResponse({"error": f"cannot pause pipeline in status: {pl.status}"}, status_code=400)
+            return JSONResponse(
+                {"error": f"cannot pause pipeline in status: {pl.status}"}, status_code=400
+            )
         pl._gate.clear()
         return {"pipeline_id": pipeline_id, "paused": True}
 
@@ -176,7 +193,9 @@ def register(app, pipeline_mgr: PipelineManager | None,
         if not pl:
             return JSONResponse({"error": "pipeline not found"}, status_code=404)
         if pl.mode != "conversation":
-            return JSONResponse({"error": "inject only supported for conversation mode"}, status_code=400)
+            return JSONResponse(
+                {"error": "inject only supported for conversation mode"}, status_code=400
+            )
         message = req.get("message", "").strip()
         if not message:
             return JSONResponse({"error": "message is required"}, status_code=400)
@@ -196,9 +215,14 @@ def register(app, pipeline_mgr: PipelineManager | None,
             new_pl = pipeline_mgr.rerun(pipeline_id, prompt_override, from_step)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
-        return {"pipeline_id": new_pl.pipeline_id, "rerun_from": pipeline_id,
-                "status": new_pl.status, "mode": new_pl.mode,
-                "from_step": from_step, "steps": len(new_pl.steps)}
+        return {
+            "pipeline_id": new_pl.pipeline_id,
+            "rerun_from": pipeline_id,
+            "status": new_pl.status,
+            "mode": new_pl.mode,
+            "from_step": from_step,
+            "steps": len(new_pl.steps),
+        }
 
     @app.get("/pipelines/{pipeline_id}/events")
     async def stream_pipeline_events(pipeline_id: str = PathParam(...)):
@@ -233,6 +257,7 @@ def register(app, pipeline_mgr: PipelineManager | None,
                     except asyncio.TimeoutError:
                         # Heartbeat keeps connection alive
                         import time as _t
+
                         yield f"event: heartbeat\ndata: {json.dumps({'ts': _t.time()})}\n\n"
                         continue
                     if evt is None:
@@ -261,18 +286,27 @@ def register(app, pipeline_mgr: PipelineManager | None,
         if step_index < 0 or step_index >= len(pl.steps):
             return JSONResponse({"error": "step index out of range"}, status_code=400)
         step = pl.steps[step_index]
-        content = step.result if step.status in ("completed", "failed") else "".join(step._live_parts)
+        content = (
+            step.result if step.status in ("completed", "failed") else "".join(step._live_parts)
+        )
         thinking = "".join(getattr(step, "_thinking_parts", []))
-        return {"pipeline_id": pipeline_id, "step": step_index, "agent": step.agent,
-                "status": step.status, "content": content,
-                "thinking": thinking,
-                "tools": list(getattr(step, "tools", [])),
-                "parts_count": len(step._live_parts)}
+        return {
+            "pipeline_id": pipeline_id,
+            "step": step_index,
+            "agent": step.agent,
+            "status": step.status,
+            "content": content,
+            "thinking": thinking,
+            "tools": list(getattr(step, "tools", [])),
+            "parts_count": len(step._live_parts),
+        }
 
     @app.get("/pipelines/{pipeline_id}/prompts")
     async def get_pipeline_prompts(
         pipeline_id: str = PathParam(...),
-        include: str = Query("", description="comma-separated extras: 'final' to include full prompt fields"),
+        include: str = Query(
+            "", description="comma-separated extras: 'final' to include full prompt fields"
+        ),
     ):
         """Return prompt_log records for a pipeline (one per step / conversation
         turn). Default response omits large prompt fields; pass ?include=final
@@ -289,6 +323,7 @@ def register(app, pipeline_mgr: PipelineManager | None,
     @app.get("/pipelines/{pipeline_id}/artifacts")
     async def list_artifacts(pipeline_id: str = PathParam(...)):
         import os
+
         if not pipeline_mgr:
             return JSONResponse({"error": "pipeline not available"}, status_code=503)
         pl = pipeline_mgr.get(pipeline_id)
@@ -315,6 +350,7 @@ def register(app, pipeline_mgr: PipelineManager | None,
         import os
 
         from starlette.responses import FileResponse
+
         if not pipeline_mgr:
             return JSONResponse({"error": "pipeline not available"}, status_code=503)
         pl = pipeline_mgr.get(pipeline_id)

@@ -3,6 +3,7 @@
 Only registered when mesh.enabled is true (see main.py wiring), so default
 deployments are unaffected.
 """
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -46,9 +47,9 @@ def register(app, mesh: MeshManager, adapter: A2AAdapter | None = None):
             rpc = await request.json()
         except Exception:
             return JSONResponse(
-                {"jsonrpc": "2.0", "id": None,
-                 "error": {"code": -32700, "message": "parse error"}},
-                status_code=400)
+                {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}},
+                status_code=400,
+            )
         inbound_hop = request.headers.get("x-a2a-hop") is not None
         return await adapter.dispatch(rpc, inbound_hop=inbound_hop)
 

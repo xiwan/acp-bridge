@@ -80,6 +80,7 @@ def _write_config(content: str = _SAMPLE_CONFIG) -> str:
 # load / reload
 # ---------------------------------------------------------------------------
 
+
 def test_load_basic():
     path = _write_config()
     reg = CapabilityRegistry()
@@ -152,6 +153,7 @@ def test_reload_atomic_replace():
 # search / get_best
 # ---------------------------------------------------------------------------
 
+
 def test_search_domain_match():
     path = _write_config()
     reg = CapabilityRegistry()
@@ -215,6 +217,7 @@ def test_get_best_none():
 # scoring details
 # ---------------------------------------------------------------------------
 
+
 def test_prefer_tags_boost():
     path = _write_config()
     reg = CapabilityRegistry()
@@ -266,17 +269,21 @@ def test_complexity_penalty():
 # version matching
 # ---------------------------------------------------------------------------
 
+
 def test_version_match_true():
     assert _version_match(True, "3.10") is True
     assert _version_match("3.10", True) is True
+
 
 def test_version_match_exact():
     assert _version_match(["3.10", "3.11"], "3.10") is True
     assert _version_match(["3.10", "3.11"], "3.9") is False
 
+
 def test_version_match_ge():
-    assert _version_match(["1.70+"], "1.60+") is True   # 1.70 >= 1.60
-    assert _version_match(["1.60+"], "1.70+") is False   # 1.60 < 1.70
+    assert _version_match(["1.70+"], "1.60+") is True  # 1.70 >= 1.60
+    assert _version_match(["1.60+"], "1.70+") is False  # 1.60 < 1.70
+
 
 def test_version_match_list_req():
     assert _version_match(["3.10", "3.11", "3.12"], ["3.10+"]) is True
@@ -287,13 +294,16 @@ def test_version_match_list_req():
 # normalize_languages
 # ---------------------------------------------------------------------------
 
+
 def test_normalize_dict():
     assert _normalize_languages({"python": True}) == {"python": True}
+
 
 def test_normalize_list():
     raw = [{"python": ["3.10"]}, "go"]
     result = _normalize_languages(raw)
     assert result == {"python": ["3.10"], "go": True}
+
 
 def test_normalize_none():
     assert _normalize_languages(None) == {}
@@ -302,6 +312,7 @@ def test_normalize_none():
 # ---------------------------------------------------------------------------
 # edge cases
 # ---------------------------------------------------------------------------
+
 
 def test_empty_requirements():
     path = _write_config()

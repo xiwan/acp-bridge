@@ -44,15 +44,28 @@ class StatsCollector:
         self._db.executescript(_SCHEMA)
         self._lock = threading.Lock()
 
-    def record(self, agent: str, session_id: str, success: bool,
-               duration: float, tools: list[str] | None = None):
+    def record(
+        self,
+        agent: str,
+        session_id: str,
+        success: bool,
+        duration: float,
+        tools: list[str] | None = None,
+    ):
         tools = tools or []
         with self._lock:
             self._db.execute(
                 "INSERT INTO agent_stats (agent, session_id, success, duration, tool_count, tools, created_at) "
                 "VALUES (?,?,?,?,?,?,?)",
-                (agent, session_id, int(success), duration, len(tools),
-                 json.dumps(tools), time.time()),
+                (
+                    agent,
+                    session_id,
+                    int(success),
+                    duration,
+                    len(tools),
+                    json.dumps(tools),
+                    time.time(),
+                ),
             )
             self._db.commit()
 
@@ -65,15 +78,15 @@ class StatsCollector:
             ).fetchall()
         else:
             rows = self._db.execute(
-                "SELECT * FROM agent_stats WHERE created_at > ?", (cutoff,),
+                "SELECT * FROM agent_stats WHERE created_at > ?",
+                (cutoff,),
             ).fetchall()
 
         agents: dict[str, dict] = {}
         for r in rows:
             a = r["agent"]
             if a not in agents:
-                agents[a] = {"total": 0, "success": 0, "failed": 0,
-                             "durations": [], "tools": {}}
+                agents[a] = {"total": 0, "success": 0, "failed": 0, "durations": [], "tools": {}}
             s = agents[a]
             s["total"] += 1
             if r["success"]:
@@ -117,29 +130,38 @@ class StatsCollector:
         cutoff = time.time() - max_age
         with self._lock:
             cur = self._db.execute(
-                "DELETE FROM agent_stats WHERE created_at < ?", (cutoff,),
+                "DELETE FROM agent_stats WHERE created_at < ?",
+                (cutoff,),
             )
             cur2 = self._db.execute(
-                "DELETE FROM fallback_stats WHERE created_at < ?", (cutoff,),
+                "DELETE FROM fallback_stats WHERE created_at < ?",
+                (cutoff,),
             )
             self._db.commit()
             return cur.rowcount + cur2.rowcount
 
-    def record_fallback(self, original_agent: str, fallback_agent: str,
-                        tried_agents: list[str], success: bool):
+    def record_fallback(
+        self, original_agent: str, fallback_agent: str, tried_agents: list[str], success: bool
+    ):
         with self._lock:
             self._db.execute(
                 "INSERT INTO fallback_stats (original_agent, fallback_agent, tried_agents, success, created_at) "
                 "VALUES (?,?,?,?,?)",
-                (original_agent, fallback_agent, json.dumps(tried_agents),
-                 int(success), time.time()),
+                (
+                    original_agent,
+                    fallback_agent,
+                    json.dumps(tried_agents),
+                    int(success),
+                    time.time(),
+                ),
             )
             self._db.commit()
 
     def query_fallback(self, hours: float = 24) -> dict:
         cutoff = time.time() - hours * 3600
         rows = self._db.execute(
-            "SELECT * FROM fallback_stats WHERE created_at > ?", (cutoff,),
+            "SELECT * FROM fallback_stats WHERE created_at > ?",
+            (cutoff,),
         ).fetchall()
 
         total = len(rows)

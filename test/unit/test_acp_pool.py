@@ -1,4 +1,5 @@
 """Tests for AcpProcessPool.get_or_create bounded wait (v0.40.0)."""
+
 import asyncio
 import time
 
@@ -8,8 +9,9 @@ from src.acp_client import AcpProcessPool, PoolExhaustedError
 
 
 def make_pool(timeout: float, agents: dict | None = None) -> AcpProcessPool:
-    pool = AcpProcessPool(agents_config=agents or {"a": {}, "b": {}},
-                          max_processes=2, max_per_agent=1)
+    pool = AcpProcessPool(
+        agents_config=agents or {"a": {}, "b": {}}, max_processes=2, max_per_agent=1
+    )
     pool._acquire_timeout = timeout
     return pool
 
@@ -99,6 +101,7 @@ async def test_wait_does_not_block_other_agents(monkeypatch):
 async def test_other_errors_propagate_immediately(monkeypatch):
     """Non-pool errors (e.g. AcpError) are not retried by the wait loop."""
     from src.acp_client import AcpError
+
     pool = make_pool(timeout=10)
     calls = {"n": 0}
 

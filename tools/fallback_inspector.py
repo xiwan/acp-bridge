@@ -24,9 +24,7 @@ def query_stats(db_path: str, hours: float) -> dict:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cutoff = time.time() - hours * 3600
-    rows = conn.execute(
-        "SELECT * FROM agent_stats WHERE created_at > ?", (cutoff,)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM agent_stats WHERE created_at > ?", (cutoff,)).fetchall()
     conn.close()
 
     agents: dict[str, dict] = {}
@@ -69,7 +67,8 @@ def query_cost(db_path: str, hours: float) -> dict:
     cutoff = time.time() - hours * 3600
     rows = conn.execute(
         "SELECT agent, input_tokens, output_tokens, cost_usd FROM jobs "
-        "WHERE completed_at > ? AND status = 'completed'", (cutoff,)
+        "WHERE completed_at > ? AND status = 'completed'",
+        (cutoff,),
     ).fetchall()
     conn.close()
     agents: dict[str, dict] = {}
@@ -93,14 +92,14 @@ def query_raw_rows(db_path: str, hours: float) -> list[dict]:
     cutoff = time.time() - hours * 3600
     rows = conn.execute(
         "SELECT agent, success, duration, created_at FROM agent_stats "
-        "WHERE created_at > ? ORDER BY created_at", (cutoff,)
+        "WHERE created_at > ? ORDER BY created_at",
+        (cutoff,),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def monitor_alerts(db_path: str, hours: float, p95_threshold: float,
-                   chain_path: str) -> int:
+def monitor_alerts(db_path: str, hours: float, p95_threshold: float, chain_path: str) -> int:
     """Monitor mode: alert + auto-disable. Returns exit code 0/1/2."""
     stats = query_stats(db_path, hours)
     raw = query_raw_rows(db_path, hours)
@@ -114,7 +113,9 @@ def monitor_alerts(db_path: str, hours: float, p95_threshold: float,
     for agent, s in stats.items():
         rate = s["success"] / s["total"] if s["total"] else 1.0
         if rate < 0.8:
-            alerts.append(("WARNING", f"{agent} success rate {rate:.0%} ({s['success']}/{s['total']})"))
+            alerts.append(
+                ("WARNING", f"{agent} success rate {rate:.0%} ({s['success']}/{s['total']})")
+            )
 
     # (2) P95 latency
     per_agent_durs: dict[str, list[float]] = {}
@@ -157,6 +158,7 @@ def _auto_disable_agents(agents: list[str], chain_path: str) -> None:
     """Remove agents from all fallback chains and persist."""
     try:
         import yaml
+
         if not Path(chain_path).exists():
             return
         with open(chain_path) as f:
@@ -188,8 +190,7 @@ def check_health(db_path: str, hours: float) -> int:
     for agent, s in stats.items():
         rate = s["success"] / s["total"] if s["total"] else 1.0
         if rate < 0.8:
-            print(f"WARNING: {agent} success rate {rate:.0%} < 80% "
-                  f"({s['success']}/{s['total']})")
+            print(f"WARNING: {agent} success rate {rate:.0%} < 80% ({s['success']}/{s['total']})")
             level = max(level, 1)
 
     # Check consecutive timeouts (duration > 440s) from raw rows
@@ -199,7 +200,8 @@ def check_health(db_path: str, hours: float) -> int:
         cutoff = time.time() - hours * 3600
         rows = conn.execute(
             "SELECT agent, duration FROM agent_stats "
-            "WHERE created_at > ? ORDER BY agent, created_at", (cutoff,)
+            "WHERE created_at > ? ORDER BY agent, created_at",
+            (cutoff,),
         ).fetchall()
         conn.close()
 
@@ -225,22 +227,41 @@ def check_health(db_path: str, hours: float) -> int:
 
 def main():
     parser = argparse.ArgumentParser(description="ACP Bridge Fallback Inspector")
-    parser.add_argument("--hours", type=float, default=1.0,
-                        help="Stats window in hours (default: 1)")
-    parser.add_argument("--db", type=str, default="data/jobs.db",
-                        help="SQLite DB path (default: data/jobs.db)")
-    parser.add_argument("--idle", nargs="*", default=[],
-                        help="Agents to mark as idle (space-separated), e.g. --idle kiro claude")
-    parser.add_argument("--check", action="store_true",
-                        help="Health check mode: OK(0), WARNING(1), CRITICAL(2)")
-    parser.add_argument("--monitor", action="store_true",
-                        help="Monitor mode: alerts + auto-disable failing agents")
-    parser.add_argument("--p95", type=float, default=120.0,
-                        help="P95 latency alert threshold in seconds (default: 120)")
-    parser.add_argument("--chain", type=str, default="config/fallback_chain.yaml",
-                        help="Fallback chain YAML path for auto-disable")
-    parser.add_argument("--cost", action="store_true",
-                        help="Cost analysis mode: show duration share per agent as cost proxy")
+    parser.add_argument(
+        "--hours", type=float, default=1.0, help="Stats window in hours (default: 1)"
+    )
+    parser.add_argument(
+        "--db", type=str, default="data/jobs.db", help="SQLite DB path (default: data/jobs.db)"
+    )
+    parser.add_argument(
+        "--idle",
+        nargs="*",
+        default=[],
+        help="Agents to mark as idle (space-separated), e.g. --idle kiro claude",
+    )
+    parser.add_argument(
+        "--check", action="store_true", help="Health check mode: OK(0), WARNING(1), CRITICAL(2)"
+    )
+    parser.add_argument(
+        "--monitor", action="store_true", help="Monitor mode: alerts + auto-disable failing agents"
+    )
+    parser.add_argument(
+        "--p95",
+        type=float,
+        default=120.0,
+        help="P95 latency alert threshold in seconds (default: 120)",
+    )
+    parser.add_argument(
+        "--chain",
+        type=str,
+        default="config/fallback_chain.yaml",
+        help="Fallback chain YAML path for auto-disable",
+    )
+    parser.add_argument(
+        "--cost",
+        action="store_true",
+        help="Cost analysis mode: show duration share per agent as cost proxy",
+    )
     args = parser.parse_args()
 
     if args.check:
@@ -268,18 +289,22 @@ def main():
         total_usd = sum(c["cost_usd"] for c in cost_data.values())
         rows_cost = sorted(cost_data.items(), key=lambda x: -x[1]["cost_usd"])
         print()
-        print(f"{BOLD}{'─'*68}{RESET}")
+        print(f"{BOLD}{'─' * 68}{RESET}")
         print(f"{BOLD}  ACP Bridge — Cost Analysis  (last {args.hours}h){RESET}")
-        print(f"{BOLD}{'─'*68}{RESET}")
-        print(f"  {BOLD}{'AGENT':<12} {'CALLS':>6} {'IN_TOK':>8} {'OUT_TOK':>8} {'USD':>10} {'SHARE':>7}  BAR{RESET}")
-        print(f"  {'─'*64}")
+        print(f"{BOLD}{'─' * 68}{RESET}")
+        print(
+            f"  {BOLD}{'AGENT':<12} {'CALLS':>6} {'IN_TOK':>8} {'OUT_TOK':>8} {'USD':>10} {'SHARE':>7}  BAR{RESET}"
+        )
+        print(f"  {'─' * 64}")
         for agent, c in rows_cost:
             share = c["cost_usd"] / total_usd if total_usd > 0 else 0
             bar = "█" * int(share * 25) + "░" * (25 - int(share * 25))
-            print(f"{CYAN}  {agent:<12} {c['calls']:>6} {c['in_tok']:>8} {c['out_tok']:>8} ${c['cost_usd']:>8.4f} {share:>6.0%}  {bar}{RESET}")
-        print(f"  {'─'*64}")
+            print(
+                f"{CYAN}  {agent:<12} {c['calls']:>6} {c['in_tok']:>8} {c['out_tok']:>8} ${c['cost_usd']:>8.4f} {share:>6.0%}  {bar}{RESET}"
+            )
+        print(f"  {'─' * 64}")
         print(f"{DIM}  Total: ${total_usd:.4f}  |  Pricing from BEDROCK_PRICING table{RESET}")
-        print(f"{BOLD}{'─'*68}{RESET}")
+        print(f"{BOLD}{'─' * 68}{RESET}")
         print()
         return
 
@@ -292,15 +317,17 @@ def main():
         rate = success / total if total > 0 else 0.5
         has_idle = agent in idle_set
         final = score_agent(rate, avg_dur, has_idle)
-        rows.append({
-            "agent": agent,
-            "total": total,
-            "success": success,
-            "rate": rate,
-            "avg_dur": avg_dur,
-            "has_idle": has_idle,
-            "score": final,
-        })
+        rows.append(
+            {
+                "agent": agent,
+                "total": total,
+                "success": success,
+                "rate": rate,
+                "avg_dur": avg_dur,
+                "has_idle": has_idle,
+                "score": final,
+            }
+        )
 
     rows.sort(key=lambda x: -x["score"])
     max_score = rows[0]["score"] if rows else 1.0
@@ -313,13 +340,14 @@ def main():
     DIM = "\033[2m"
 
     print()
-    print(f"{BOLD}{'─'*72}{RESET}")
-    print(f"{BOLD}  ACP Bridge — Fallback Routing Inspector  "
-          f"(last {args.hours}h){RESET}")
-    print(f"{BOLD}{'─'*72}{RESET}")
-    print(f"  {BOLD}{'AGENT':<12} {'TOTAL':>6} {'SUCCESS':>8} {'RATE':>7} "
-          f"{'AVG_DUR':>8} {'IDLE':>5} {'SCORE':>7}  BAR{RESET}")
-    print(f"  {'─'*68}")
+    print(f"{BOLD}{'─' * 72}{RESET}")
+    print(f"{BOLD}  ACP Bridge — Fallback Routing Inspector  (last {args.hours}h){RESET}")
+    print(f"{BOLD}{'─' * 72}{RESET}")
+    print(
+        f"  {BOLD}{'AGENT':<12} {'TOTAL':>6} {'SUCCESS':>8} {'RATE':>7} "
+        f"{'AVG_DUR':>8} {'IDLE':>5} {'SCORE':>7}  BAR{RESET}"
+    )
+    print(f"  {'─' * 68}")
 
     for i, r in enumerate(rows):
         color = GREEN if i == 0 else (CYAN if i == 1 else RESET)
@@ -332,10 +360,9 @@ def main():
             f"{r['score']:>7.1f}  {bar}{crown}{RESET}"
         )
 
-    print(f"  {'─'*68}")
-    print(f"{DIM}  Scoring: base = 100*rate + 20/(1+dur/30), "
-          f"×1.5 if idle{RESET}")
-    print(f"{BOLD}{'─'*72}{RESET}")
+    print(f"  {'─' * 68}")
+    print(f"{DIM}  Scoring: base = 100*rate + 20/(1+dur/30), ×1.5 if idle{RESET}")
+    print(f"{BOLD}{'─' * 72}{RESET}")
     print()
 
 

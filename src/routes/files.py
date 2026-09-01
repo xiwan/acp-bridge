@@ -26,7 +26,9 @@ def register(app, upload_dir: str, max_size: int = 3 * 1024 * 1024):
         name = _sanitize(file.filename or "upload")
         data = await file.read()
         if len(data) > max_size:
-            return JSONResponse({"error": f"file too large ({len(data)} bytes, max {max_size})"}, status_code=413)
+            return JSONResponse(
+                {"error": f"file too large ({len(data)} bytes, max {max_size})"}, status_code=413
+            )
         dest = os.path.join(upload_dir, name)
         # Avoid overwrite: append suffix
         if os.path.exists(dest):
@@ -63,6 +65,7 @@ def register(app, upload_dir: str, max_size: int = 3 * 1024 * 1024):
     @app.get("/files/{filename}/download")
     async def download_file(filename: str):
         from starlette.responses import FileResponse
+
         name = _sanitize(filename)
         fp = os.path.join(upload_dir, name)
         if not os.path.isfile(fp):

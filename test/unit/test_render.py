@@ -33,16 +33,19 @@ from src.routes import pipelines as pipelines_routes
 # Pure functions
 # ============================================================================
 
+
 def test_render_is_recursive_into_nested_context():
     steps = [{"agent": "harness", "prompt": "idea: {{input}} -> gdd-{{uid}}.md"}]
     context = {
         "shared_cwd": "/tmp/opengame",
-        "next": {"mode": "sequence", "steps": [
-            {"agent": "qwen", "prompt": "upload to s3://{{bucket}}/{{uid}}/index.html"},
-        ]},
+        "next": {
+            "mode": "sequence",
+            "steps": [
+                {"agent": "qwen", "prompt": "upload to s3://{{bucket}}/{{uid}}/index.html"},
+            ],
+        },
     }
-    steps, context, uid, missing = render_payload(steps, context, "racing game",
-                                                  {"bucket": "b1"})
+    steps, context, uid, missing = render_payload(steps, context, "racing game", {"bucket": "b1"})
     assert missing == []
     assert steps[0]["prompt"] == f"idea: racing game -> gdd-{uid}.md"
     # 4 levels deep: context.next.steps[0].prompt
@@ -65,22 +68,22 @@ def test_uid_is_full_entropy_and_differs_per_call():
 
 
 def test_scope_precedence_vars_override_auto_and_input():
-    scope = build_scope("from-input", {"uid": "FORCED", "date": "1999-01-01",
-                                       "input": "from-vars"})
+    scope = build_scope("from-input", {"uid": "FORCED", "date": "1999-01-01", "input": "from-vars"})
     assert scope["uid"] == "FORCED"
     assert scope["date"] == "1999-01-01"
     assert scope["input"] == "from-vars"
 
 
 def test_explicit_uid_is_honoured():
-    _, _, uid, _ = render_payload([{"agent": "a", "prompt": "{{uid}}"}], {},
-                                  "x", {}, uid="REUSED")
+    _, _, uid, _ = render_payload([{"agent": "a", "prompt": "{{uid}}"}], {}, "x", {}, uid="REUSED")
     assert uid == "REUSED"
 
 
 def test_unresolved_variables_are_reported_with_paths_and_left_verbatim():
-    steps = [{"agent": "a", "prompt": "ok"},
-             {"agent": "b", "prompt": "{{distribution_id}} and {{nope}}"}]
+    steps = [
+        {"agent": "a", "prompt": "ok"},
+        {"agent": "b", "prompt": "{{distribution_id}} and {{nope}}"},
+    ]
     context = {"next": {"steps": [{"agent": "c", "prompt": "{{alsomissing}}"}]}}
     steps, _context, _uid, missing = render_payload(steps, context, "x", {})
     names = {m[0] for m in missing}
@@ -93,24 +96,28 @@ def test_unresolved_variables_are_reported_with_paths_and_left_verbatim():
 
 
 def test_format_missing_dedupes_and_names_paths():
-    msg = format_missing([("cdn", "steps[0].prompt"), ("cdn", "steps[0].prompt"),
-                          ("cdn", "steps[1].prompt")])
+    msg = format_missing(
+        [("cdn", "steps[0].prompt"), ("cdn", "steps[0].prompt"), ("cdn", "steps[1].prompt")]
+    )
     assert msg.count("{{cdn}}") == 2
     assert "steps[0].prompt" in msg and "steps[1].prompt" in msg
 
 
 def test_non_string_scalars_survive_rendering():
     steps, _c, _u, _m = render_payload(
-        [{"agent": "a", "prompt": "{{input}}", "timeout": 300, "output_as": ""}],
-        {}, "hi", {})
+        [{"agent": "a", "prompt": "{{input}}", "timeout": 300, "output_as": ""}], {}, "hi", {}
+    )
     assert steps[0]["timeout"] == 300 and isinstance(steps[0]["timeout"], int)
     assert steps[0]["prompt"] == "hi"
 
 
 def test_extract_artifacts_aligns_with_steps_and_strips_field():
     steps = [
-        {"agent": "harness", "prompt": "a",
-         "artifact": {"type": "file", "label": "GDD", "pattern": "gdd-1.md"}},
+        {
+            "agent": "harness",
+            "prompt": "a",
+            "artifact": {"type": "file", "label": "GDD", "pattern": "gdd-1.md"},
+        },
         {"agent": "opengame", "prompt": "b"},
         {"agent": "kiro", "prompt": "c", "artifact": None},
     ]
@@ -125,9 +132,11 @@ def test_resolve_artifacts_finds_files_in_shared_cwd():
     cwd = tempfile.mkdtemp()
     with open(os.path.join(cwd, "gdd-abcd.md"), "w") as f:
         f.write("x")
-    artifacts = [{"type": "file", "label": "GDD", "pattern": "gdd-abcd.md"},
-                 None,
-                 {"type": "url", "label": "CDN", "pattern": "https://cdn.example/g/"}]
+    artifacts = [
+        {"type": "file", "label": "GDD", "pattern": "gdd-abcd.md"},
+        None,
+        {"type": "url", "label": "CDN", "pattern": "https://cdn.example/g/"},
+    ]
     steps = [{"agent": "harness"}, {"agent": "opengame"}, {"agent": "kiro"}]
     out = resolve_artifacts(artifacts, steps, cwd)
     assert [e["step"] for e in out] == [0, 2]
@@ -147,13 +156,22 @@ def test_resolve_artifacts_marks_missing_file():
 # Chained artifacts (v0.38.0) — context.next.steps[].artifact
 # ============================================================================
 
+
 def test_extract_chained_stashes_where_auto_chain_will_inherit():
     """_auto_chain does next_def["context"].copy() -> child sees _artifacts."""
-    context = {"next": {"mode": "sequence", "steps": [
-        {"agent": "qwen", "prompt": "sum",
-         "artifact": {"type": "file", "label": "报告", "pattern": "report.md"}},
-        {"agent": "kiro", "prompt": "ppt"},
-    ]}}
+    context = {
+        "next": {
+            "mode": "sequence",
+            "steps": [
+                {
+                    "agent": "qwen",
+                    "prompt": "sum",
+                    "artifact": {"type": "file", "label": "报告", "pattern": "report.md"},
+                },
+                {"agent": "kiro", "prompt": "ppt"},
+            ],
+        }
+    }
     found = extract_chained_artifacts(context)
     assert found == 1
     child = context["next"]["context"]["_artifacts"]
@@ -165,10 +183,19 @@ def test_extract_chained_stashes_where_auto_chain_will_inherit():
 
 def test_extract_chained_simulates_auto_chain_inheritance():
     """Replicates src/pipeline.py:_auto_chain context construction verbatim."""
-    context = {"shared_cwd": "/tmp/opengame", "next": {"mode": "sequence", "steps": [
-        {"agent": "qwen", "prompt": "sum",
-         "artifact": {"type": "file", "label": "报告", "pattern": "report.md"}},
-    ]}}
+    context = {
+        "shared_cwd": "/tmp/opengame",
+        "next": {
+            "mode": "sequence",
+            "steps": [
+                {
+                    "agent": "qwen",
+                    "prompt": "sum",
+                    "artifact": {"type": "file", "label": "报告", "pattern": "report.md"},
+                },
+            ],
+        },
+    }
     extract_chained_artifacts(context)
     propagate_uid(context, "deadbeef")
 
@@ -182,14 +209,24 @@ def test_extract_chained_simulates_auto_chain_inheritance():
 
 
 def test_extract_chained_recurses_through_nested_next():
-    context = {"next": {
-        "mode": "sequence",
-        "steps": [{"agent": "a", "prompt": "x",
-                   "artifact": {"type": "file", "pattern": "a.md"}}],
-        "next": {"mode": "sequence",
-                 "steps": [{"agent": "b", "prompt": "y",
-                            "artifact": {"type": "url", "pattern": "https://d/"}}]},
-    }}
+    context = {
+        "next": {
+            "mode": "sequence",
+            "steps": [
+                {"agent": "a", "prompt": "x", "artifact": {"type": "file", "pattern": "a.md"}}
+            ],
+            "next": {
+                "mode": "sequence",
+                "steps": [
+                    {
+                        "agent": "b",
+                        "prompt": "y",
+                        "artifact": {"type": "url", "pattern": "https://d/"},
+                    }
+                ],
+            },
+        }
+    }
     assert extract_chained_artifacts(context) == 2
     assert context["next"]["context"]["_artifacts"][0]["pattern"] == "a.md"
     assert context["next"]["next"]["context"]["_artifacts"][0]["pattern"] == "https://d/"
@@ -209,20 +246,29 @@ def test_extract_chained_leaves_no_context_key_when_no_artifacts():
 
 def test_chained_patterns_are_rendered_before_extraction():
     """render_payload runs first, so extracted patterns carry the real uid."""
-    context = {"next": {"mode": "sequence", "steps": [
-        {"agent": "light-agent", "prompt": "deploy",
-         "artifact": {"type": "url", "label": "PPT",
-                      "pattern": "https://cdn/reports/{{uid}}/"}},
-    ]}}
+    context = {
+        "next": {
+            "mode": "sequence",
+            "steps": [
+                {
+                    "agent": "light-agent",
+                    "prompt": "deploy",
+                    "artifact": {
+                        "type": "url",
+                        "label": "PPT",
+                        "pattern": "https://cdn/reports/{{uid}}/",
+                    },
+                },
+            ],
+        }
+    }
     _steps, context, uid, _missing = render_payload([], context, "x", {})
     extract_chained_artifacts(context)
-    assert context["next"]["context"]["_artifacts"][0]["pattern"] == \
-        f"https://cdn/reports/{uid}/"
+    assert context["next"]["context"]["_artifacts"][0]["pattern"] == f"https://cdn/reports/{uid}/"
 
 
 def test_propagate_uid_reaches_every_chain_level():
-    context = {"next": {"mode": "sequence", "steps": [],
-                        "next": {"mode": "sequence", "steps": []}}}
+    context = {"next": {"mode": "sequence", "steps": [], "next": {"mode": "sequence", "steps": []}}}
     propagate_uid(context, "cafe1234")
     assert context["next"]["context"]["_uid"] == "cafe1234"
     assert context["next"]["next"]["context"]["_uid"] == "cafe1234"
@@ -238,6 +284,7 @@ def test_propagate_uid_ignores_empty_uid():
 # Route wiring
 # ============================================================================
 
+
 class _FakePipeline:
     def __init__(self, mode, steps, context, pipeline_id="pl-test"):
         self.pipeline_id = pipeline_id
@@ -247,10 +294,12 @@ class _FakePipeline:
         self.context = context
 
     def to_dict(self):
-        return {"pipeline_id": self.pipeline_id, "mode": self.mode,
-                "status": self.status,
-                "steps": [{"agent": s["agent"], "status": "completed"}
-                          for s in self.steps]}
+        return {
+            "pipeline_id": self.pipeline_id,
+            "mode": self.mode,
+            "status": self.status,
+            "steps": [{"agent": s["agent"], "status": "completed"} for s in self.steps],
+        }
 
 
 class _FakePipelineManager:
@@ -294,14 +343,19 @@ async def _post(app, payload):
 @pytest.mark.asyncio
 async def test_route_renders_payload_before_submit():
     app, mgr = _app()
-    resp = await _post(app, {
-        "mode": "sequence",
-        "input": "racing game",
-        "vars": {"bucket": "opengame-demo"},
-        "context": {"shared_cwd": "/tmp/opengame"},
-        "steps": [{"agent": "harness", "prompt": "idea: {{input}} -> gdd-{{uid}}.md"},
-                  {"agent": "qwen", "prompt": "s3://{{bucket}}/{{uid}}/"}],
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "sequence",
+            "input": "racing game",
+            "vars": {"bucket": "opengame-demo"},
+            "context": {"shared_cwd": "/tmp/opengame"},
+            "steps": [
+                {"agent": "harness", "prompt": "idea: {{input}} -> gdd-{{uid}}.md"},
+                {"agent": "qwen", "prompt": "s3://{{bucket}}/{{uid}}/"},
+            ],
+        },
+    )
     assert resp.status_code == 200
     uid = resp.json()["uid"]
     submitted = mgr.submitted["steps"]
@@ -313,11 +367,14 @@ async def test_route_renders_payload_before_submit():
 @pytest.mark.asyncio
 async def test_route_rejects_unresolved_variables_and_submits_nothing():
     app, mgr = _app()
-    resp = await _post(app, {
-        "mode": "sequence",
-        "input": "racing game",
-        "steps": [{"agent": "harness", "prompt": "upload to s3://{{bucket}}/"}],
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "sequence",
+            "input": "racing game",
+            "steps": [{"agent": "harness", "prompt": "upload to s3://{{bucket}}/"}],
+        },
+    )
     assert resp.status_code == 400
     assert "{{bucket}}" in resp.json()["error"]
     assert "steps[0].prompt" in resp.json()["error"]
@@ -328,10 +385,13 @@ async def test_route_rejects_unresolved_variables_and_submits_nothing():
 async def test_route_is_backward_compatible_without_input_or_vars():
     """No input/vars -> no rendering at all; literal {{uid}} passes through."""
     app, mgr = _app()
-    resp = await _post(app, {
-        "mode": "sequence",
-        "steps": [{"agent": "harness", "prompt": "literal {{uid}} stays"}],
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "sequence",
+            "steps": [{"agent": "harness", "prompt": "literal {{uid}} stays"}],
+        },
+    )
     assert resp.status_code == 200
     assert "uid" not in resp.json()
     assert mgr.submitted["steps"][0]["prompt"] == "literal {{uid}} stays"
@@ -342,15 +402,21 @@ async def test_route_is_backward_compatible_without_input_or_vars():
 @pytest.mark.asyncio
 async def test_route_strips_artifact_from_steps_and_stashes_in_context():
     app, mgr = _app()
-    resp = await _post(app, {
-        "mode": "sequence",
-        "input": "racing game",
-        "steps": [
-            {"agent": "harness", "prompt": "{{input}}",
-             "artifact": {"type": "file", "label": "GDD", "pattern": "gdd-{{uid}}.md"}},
-            {"agent": "opengame", "prompt": "build"},
-        ],
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "sequence",
+            "input": "racing game",
+            "steps": [
+                {
+                    "agent": "harness",
+                    "prompt": "{{input}}",
+                    "artifact": {"type": "file", "label": "GDD", "pattern": "gdd-{{uid}}.md"},
+                },
+                {"agent": "opengame", "prompt": "build"},
+            ],
+        },
+    )
     assert resp.status_code == 200
     uid = resp.json()["uid"]
     # pipeline.submit() must not see the artifact key — src/pipeline.py is untouched
@@ -364,12 +430,15 @@ async def test_route_strips_artifact_from_steps_and_stashes_in_context():
 async def test_route_does_not_mutate_caller_context_dict():
     """context.copy() before injecting _artifacts/_uid."""
     app, mgr = _app()
-    resp = await _post(app, {
-        "mode": "sequence",
-        "input": "x",
-        "context": {"shared_cwd": "/tmp/opengame"},
-        "steps": [{"agent": "a", "prompt": "{{input}}"}],
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "sequence",
+            "input": "x",
+            "context": {"shared_cwd": "/tmp/opengame"},
+            "steps": [{"agent": "a", "prompt": "{{input}}"}],
+        },
+    )
     assert resp.status_code == 200
     assert mgr.submitted["context"]["shared_cwd"] == "/tmp/opengame"
 
@@ -378,14 +447,21 @@ async def test_route_does_not_mutate_caller_context_dict():
 async def test_get_pipeline_resolves_artifacts_from_shared_cwd():
     app, mgr = _app()
     cwd = tempfile.mkdtemp()
-    resp = await _post(app, {
-        "mode": "sequence",
-        "input": "racing",
-        "context": {"shared_cwd": cwd},
-        "steps": [{"agent": "harness", "prompt": "{{input}}",
-                   "artifact": {"type": "file", "label": "GDD",
-                                "pattern": "gdd-{{uid}}.md"}}],
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "sequence",
+            "input": "racing",
+            "context": {"shared_cwd": cwd},
+            "steps": [
+                {
+                    "agent": "harness",
+                    "prompt": "{{input}}",
+                    "artifact": {"type": "file", "label": "GDD", "pattern": "gdd-{{uid}}.md"},
+                }
+            ],
+        },
+    )
     uid = resp.json()["uid"]
     with open(os.path.join(cwd, f"gdd-{uid}.md"), "w") as f:
         f.write("done")
@@ -402,14 +478,17 @@ async def test_get_pipeline_resolves_artifacts_from_shared_cwd():
 @pytest.mark.asyncio
 async def test_conversation_mode_renders_topic_and_initial_context():
     app, mgr = _app()
-    resp = await _post(app, {
-        "mode": "conversation",
-        "input": "microservices vs monolith",
-        "vars": {"style": "socratic"},
-        "participants": ["kiro", "claude"],
-        "topic": "debate: {{input}}",
-        "initial_context": "style={{style}}, run={{uid}}",
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "conversation",
+            "input": "microservices vs monolith",
+            "vars": {"style": "socratic"},
+            "participants": ["kiro", "claude"],
+            "topic": "debate: {{input}}",
+            "initial_context": "style={{style}}, run={{uid}}",
+        },
+    )
     assert resp.status_code == 200
     uid = resp.json()["uid"]
     ctx = mgr.submitted["context"]
@@ -421,25 +500,40 @@ async def test_conversation_mode_renders_topic_and_initial_context():
 # Route wiring — real agent-space artifacts.json payload shapes (v0.38.0)
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_route_handles_make_game_shape_all_artifacts_top_level():
     """artifacts.json `make-game`: sequence, 3 artifacts on top-level steps."""
     app, mgr = _app()
-    resp = await _post(app, {
-        "mode": "sequence",
-        "input": "赛车游戏",
-        "context": {"shared_cwd": "/tmp/opengame"},
-        "steps": [
-            {"agent": "harness", "prompt": "想法：{{input}}，写 gdd.md",
-             "artifact": {"type": "file", "label": "GDD", "pattern": "gdd.md"}},
-            {"agent": "opengame", "prompt": "实现为 {{uid}}.html",
-             "artifact": {"type": "file", "label": "游戏文件",
-                          "pattern": "{{uid}}.html"}},
-            {"agent": "kiro", "prompt": "部署 {{uid}}.html",
-             "artifact": {"type": "url", "label": "URL",
-                          "pattern": "https://d1x0y8igxbg2j0.cloudfront.net"}},
-        ],
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "sequence",
+            "input": "赛车游戏",
+            "context": {"shared_cwd": "/tmp/opengame"},
+            "steps": [
+                {
+                    "agent": "harness",
+                    "prompt": "想法：{{input}}，写 gdd.md",
+                    "artifact": {"type": "file", "label": "GDD", "pattern": "gdd.md"},
+                },
+                {
+                    "agent": "opengame",
+                    "prompt": "实现为 {{uid}}.html",
+                    "artifact": {"type": "file", "label": "游戏文件", "pattern": "{{uid}}.html"},
+                },
+                {
+                    "agent": "kiro",
+                    "prompt": "部署 {{uid}}.html",
+                    "artifact": {
+                        "type": "url",
+                        "label": "URL",
+                        "pattern": "https://d1x0y8igxbg2j0.cloudfront.net",
+                    },
+                },
+            ],
+        },
+    )
     assert resp.status_code == 200
     body = resp.json()
     uid = body["uid"]
@@ -454,31 +548,53 @@ async def test_route_handles_make_game_shape_all_artifacts_top_level():
 async def test_route_handles_stock_research_shape_artifacts_only_in_chain():
     """artifacts.json `stock-research`: parallel, all 3 artifacts in context.next."""
     app, mgr = _app()
-    resp = await _post(app, {
-        "mode": "parallel",
-        "input": "贵州茅台",
-        "context": {"next": {"mode": "sequence", "inject_upstream": "text", "steps": [
-            {"agent": "qwen", "prompt": "汇总",
-             "artifact": {"type": "file", "label": "报告", "pattern": "report.md"}},
-            {"agent": "kiro", "prompt": "做 PPT",
-             "artifact": {"type": "file", "label": "PPT", "pattern": "ppt.html"}},
-            {"agent": "light-agent", "prompt": "部署 {{uid}}",
-             "artifact": {"type": "url", "label": "PPT",
-                          "pattern": "https://cdn/reports/{{uid}}/"}},
-        ]}},
-        "steps": [{"agent": "kiro-stock", "prompt": "基本面 {{input}}"},
-                  {"agent": "kiro-stock", "prompt": "技术面 {{input}}"}],
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "parallel",
+            "input": "贵州茅台",
+            "context": {
+                "next": {
+                    "mode": "sequence",
+                    "inject_upstream": "text",
+                    "steps": [
+                        {
+                            "agent": "qwen",
+                            "prompt": "汇总",
+                            "artifact": {"type": "file", "label": "报告", "pattern": "report.md"},
+                        },
+                        {
+                            "agent": "kiro",
+                            "prompt": "做 PPT",
+                            "artifact": {"type": "file", "label": "PPT", "pattern": "ppt.html"},
+                        },
+                        {
+                            "agent": "light-agent",
+                            "prompt": "部署 {{uid}}",
+                            "artifact": {
+                                "type": "url",
+                                "label": "PPT",
+                                "pattern": "https://cdn/reports/{{uid}}/",
+                            },
+                        },
+                    ],
+                }
+            },
+            "steps": [
+                {"agent": "kiro-stock", "prompt": "基本面 {{input}}"},
+                {"agent": "kiro-stock", "prompt": "技术面 {{input}}"},
+            ],
+        },
+    )
     assert resp.status_code == 200
     body = resp.json()
     uid = body["uid"]
-    assert "artifacts" not in body           # nothing on the top-level steps
-    assert body["chained_artifacts"] == 3    # but the chain declares 3
+    assert "artifacts" not in body  # nothing on the top-level steps
+    assert body["chained_artifacts"] == 3  # but the chain declares 3
     ctx = mgr.submitted["context"]
     assert "_artifacts" not in ctx
     child = ctx["next"]["context"]["_artifacts"]
-    assert [a["pattern"] for a in child] == \
-        ["report.md", "ppt.html", f"https://cdn/reports/{uid}/"]
+    assert [a["pattern"] for a in child] == ["report.md", "ppt.html", f"https://cdn/reports/{uid}/"]
     assert child[2]["pattern"] == f"https://cdn/reports/{uid}/"
     assert ctx["next"]["context"]["_uid"] == uid
     # the child pipeline's steps must be clean for PipelineManager.submit()
@@ -490,17 +606,32 @@ async def test_route_handles_stock_research_shape_artifacts_only_in_chain():
 async def test_route_handles_brainstorm_shape_conversation_plus_chain():
     """artifacts.json `brainstorm`: conversation, 1 artifact in context.next."""
     app, mgr = _app()
-    resp = await _post(app, {
-        "mode": "conversation",
-        "input": "AI agent 的未来",
-        "participants": ["kiro", "claude"],
-        "topic": "{{input}}",
-        "context": {"next": {"mode": "sequence", "inject_upstream": "text", "steps": [
-            {"agent": "light-agent", "prompt": "总结并上传 {{uid}}.md",
-             "artifact": {"type": "url", "label": "📄 总结",
-                          "pattern": "https://cdn/reports/"}},
-        ]}},
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "conversation",
+            "input": "AI agent 的未来",
+            "participants": ["kiro", "claude"],
+            "topic": "{{input}}",
+            "context": {
+                "next": {
+                    "mode": "sequence",
+                    "inject_upstream": "text",
+                    "steps": [
+                        {
+                            "agent": "light-agent",
+                            "prompt": "总结并上传 {{uid}}.md",
+                            "artifact": {
+                                "type": "url",
+                                "label": "📄 总结",
+                                "pattern": "https://cdn/reports/",
+                            },
+                        },
+                    ],
+                }
+            },
+        },
+    )
     assert resp.status_code == 200
     body = resp.json()
     uid = body["uid"]
@@ -516,14 +647,25 @@ async def test_route_handles_brainstorm_shape_conversation_plus_chain():
 async def test_route_chained_artifacts_work_without_rendering():
     """Chain extraction is independent of input/vars — pre-rendered payloads too."""
     app, mgr = _app()
-    resp = await _post(app, {
-        "mode": "parallel",
-        "steps": [{"agent": "a", "prompt": "x"}],
-        "context": {"next": {"mode": "sequence", "steps": [
-            {"agent": "qwen", "prompt": "sum",
-             "artifact": {"type": "file", "label": "R", "pattern": "report.md"}},
-        ]}},
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "parallel",
+            "steps": [{"agent": "a", "prompt": "x"}],
+            "context": {
+                "next": {
+                    "mode": "sequence",
+                    "steps": [
+                        {
+                            "agent": "qwen",
+                            "prompt": "sum",
+                            "artifact": {"type": "file", "label": "R", "pattern": "report.md"},
+                        },
+                    ],
+                }
+            },
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["chained_artifacts"] == 1
     assert "uid" not in resp.json()
@@ -537,16 +679,31 @@ async def test_get_child_pipeline_resolves_inherited_artifacts():
     """The child pipeline's own GET resolves what it inherited from the chain."""
     app, mgr = _app()
     cwd = tempfile.mkdtemp()
-    resp = await _post(app, {
-        "mode": "parallel",
-        "input": "贵州茅台",
-        "context": {"shared_cwd": cwd, "next": {"mode": "sequence", "steps": [
-            {"agent": "qwen", "prompt": "汇总",
-             "artifact": {"type": "file", "label": "报告",
-                          "pattern": "report-{{uid}}.md"}},
-        ]}},
-        "steps": [{"agent": "kiro-stock", "prompt": "{{input}}"}],
-    })
+    resp = await _post(
+        app,
+        {
+            "mode": "parallel",
+            "input": "贵州茅台",
+            "context": {
+                "shared_cwd": cwd,
+                "next": {
+                    "mode": "sequence",
+                    "steps": [
+                        {
+                            "agent": "qwen",
+                            "prompt": "汇总",
+                            "artifact": {
+                                "type": "file",
+                                "label": "报告",
+                                "pattern": "report-{{uid}}.md",
+                            },
+                        },
+                    ],
+                },
+            },
+            "steps": [{"agent": "kiro-stock", "prompt": "{{input}}"}],
+        },
+    )
     uid = resp.json()["uid"]
 
     # Simulate _auto_chain building + submitting the child pipeline
@@ -595,6 +752,7 @@ STEPS3 = [{"agent": "harness"}, {"agent": "kiro"}, {"agent": "claude"}]
 @pytest.mark.asyncio
 async def test_publish_artifacts_uploads_existing_files(monkeypatch):
     from src import s3
+
     monkeypatch.setattr(s3, "is_available", lambda: True)
     uploaded = {}
 
@@ -607,13 +765,14 @@ async def test_publish_artifacts_uploads_existing_files(monkeypatch):
         out = await publish_artifacts(_ws_with_artifact(td), STEPS3)
     assert out[0]["url"] == "https://s3.example/artifacts/ab12/gdd-ab12.md?sig=1"
     assert list(uploaded) == ["artifacts/ab12/gdd-ab12.md"]
-    assert out[1]["exists"] is False and "url" not in out[1]   # missing: no upload
-    assert out[2]["url"].startswith("https://cdn.example.com") # url type passthrough
+    assert out[1]["exists"] is False and "url" not in out[1]  # missing: no upload
+    assert out[2]["url"].startswith("https://cdn.example.com")  # url type passthrough
 
 
 @pytest.mark.asyncio
 async def test_publish_artifacts_degrades_without_s3(monkeypatch):
     from src import s3
+
     monkeypatch.setattr(s3, "is_available", lambda: False)
     with tempfile.TemporaryDirectory() as td:
         out = await publish_artifacts(_ws_with_artifact(td), STEPS3)
@@ -624,6 +783,7 @@ async def test_publish_artifacts_degrades_without_s3(monkeypatch):
 @pytest.mark.asyncio
 async def test_publish_artifacts_never_raises_on_upload_error(monkeypatch):
     from src import s3
+
     monkeypatch.setattr(s3, "is_available", lambda: True)
 
     def boom(path, key):

@@ -34,7 +34,8 @@ async def test_probe_endpoints_do_not_require_bearer_token():
             assert response.status_code == 200
         protected = await client.get("/protected")
         authorized = await client.get(
-            "/protected", headers={"Authorization": "Bearer unit"},
+            "/protected",
+            headers={"Authorization": "Bearer unit"},
         )
 
     assert protected.status_code == 401
@@ -68,7 +69,8 @@ async def test_downloads_require_bearer_token():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         denied = await client.get("/files/report/download")
         allowed = await client.get(
-            "/files/report/download", headers={"Authorization": "Bearer unit"},
+            "/files/report/download",
+            headers={"Authorization": "Bearer unit"},
         )
     assert denied.status_code == 401
     assert allowed.status_code == 200

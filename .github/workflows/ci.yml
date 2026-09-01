@@ -13,9 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv tool run ruff check .
-      # NOTE: `ruff format --check .` is intentionally omitted for now. The
-      # repo has never been formatter-clean; the full reformat lands in a
-      # separate PR to keep this change reviewable. Re-add it once that merges.
+      - run: uv tool run ruff format --check .
 
   test:
     runs-on: ubuntu-latest

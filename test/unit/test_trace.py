@@ -23,8 +23,10 @@ from src.trace import TraceIdFilter, TraceIdMiddleware, current_trace_id
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_app():
     """Create a minimal Starlette app with TraceIdMiddleware."""
+
     async def homepage(request: Request):
         # Echo the current trace_id in the body so tests can assert it
         tid = current_trace_id()
@@ -38,6 +40,7 @@ def make_app():
 # ---------------------------------------------------------------------------
 # P0: TraceIdMiddleware — Basic Behavior
 # ---------------------------------------------------------------------------
+
 
 class TestTraceIdMiddleware:
     """Core middleware behavior."""
@@ -88,6 +91,7 @@ class TestTraceIdMiddleware:
 # P0: Default State
 # ---------------------------------------------------------------------------
 
+
 class TestDefaultTraceId:
     """current_trace_id() outside a request context."""
 
@@ -102,6 +106,7 @@ class TestDefaultTraceId:
 # P0: TraceIdFilter — Log Record Injection
 # ---------------------------------------------------------------------------
 
+
 class TestTraceIdFilter:
     """Logging filter injects trace_id into log records."""
 
@@ -109,12 +114,18 @@ class TestTraceIdFilter:
         """TraceIdFilter.filter() adds record.trace_id with the current trace ID."""
         # Simulate being inside a request with a known trace_id
         from src.trace import _trace_id_var
+
         token = _trace_id_var.set("abc123def456")
         try:
             log_filter = TraceIdFilter()
             record = logging.LogRecord(
-                name="test", level=logging.INFO, pathname="", lineno=0,
-                msg="test message", args=(), exc_info=None
+                name="test",
+                level=logging.INFO,
+                pathname="",
+                lineno=0,
+                msg="test message",
+                args=(),
+                exc_info=None,
             )
             result = log_filter.filter(record)
             assert result is True  # filter should always pass
@@ -126,8 +137,13 @@ class TestTraceIdFilter:
         """TraceIdFilter injects '-' when no trace ID is set."""
         log_filter = TraceIdFilter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="test message", args=(), exc_info=None
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="test message",
+            args=(),
+            exc_info=None,
         )
         log_filter.filter(record)
         assert record.trace_id == "-"
@@ -136,6 +152,7 @@ class TestTraceIdFilter:
 # ---------------------------------------------------------------------------
 # P1: Async Isolation — Concurrent Coroutines Get Independent Trace IDs
 # ---------------------------------------------------------------------------
+
 
 class TestAsyncIsolation:
     """

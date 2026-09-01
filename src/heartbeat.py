@@ -22,12 +22,19 @@ HEARTBEAT_IDLE_TIMEOUT = 30
 class EnvCollector:
     """Collects agent environment snapshots, refreshed by cleanup_loop."""
 
-    def __init__(self, pool: AcpProcessPool | None, agents_cfg: dict, port: int = 18010,
-                 client_script: str = "", job_mgr=None, language: str = "en",
-                 shared_workdir: str = "/tmp/acp-public",
-                 active_hours: tuple[int, int] = (0, 24),
-                 timezone_offset: int = 8,
-                 acp_agents_provider=None):
+    def __init__(
+        self,
+        pool: AcpProcessPool | None,
+        agents_cfg: dict,
+        port: int = 18010,
+        client_script: str = "",
+        job_mgr=None,
+        language: str = "en",
+        shared_workdir: str = "/tmp/acp-public",
+        active_hours: tuple[int, int] = (0, 24),
+        timezone_offset: int = 8,
+        acp_agents_provider=None,
+    ):
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._port = port
@@ -100,6 +107,7 @@ class EnvCollector:
     def is_active_time(self) -> bool:
         """Check if current time is within active hours (in configured timezone)."""
         from datetime import datetime, timedelta, timezone
+
         now = datetime.now(timezone(timedelta(hours=self._tz_offset)))
         hour = now.hour
         start, end = self._active_hours
@@ -126,6 +134,7 @@ class EnvCollector:
     def heartbeat_session_id(self, agent_name: str) -> str:
         """Return a session_id that rotates every HEARTBEAT_ROUNDS_PER_SESSION rounds."""
         import uuid
+
         count = self._round_counter.get(agent_name, 0)
         epoch = count // HEARTBEAT_ROUNDS_PER_SESSION
         return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"heartbeat:{agent_name}:{epoch}"))
@@ -136,6 +145,7 @@ class EnvCollector:
     def snapshot_changed(self) -> bool:
         """Return True if the snapshot changed since last check."""
         import hashlib
+
         h = hashlib.md5(self._snapshot.encode()).hexdigest()
         if h == self._last_snapshot_hash:
             return False
@@ -146,21 +156,23 @@ class EnvCollector:
     def _sanitize(text: str) -> str:
         """Strip absolute paths to avoid leaking project locations."""
         import re
-        return re.sub(r'/home/\S+/', '.../', text)
+
+        return re.sub(r"/home/\S+/", ".../", text)
 
     @staticmethod
     def clean_response(text: str) -> str:
         """Post-process heartbeat response: replace CLI commands with natural language,
         collapse excessive newlines."""
         import re
+
         # acp-client.sh -a <agent> "msg" → 对<agent>说：msg
         text = re.sub(
-            r'(?:acp-client\.sh|./acp-client\.sh)\s+-a\s+(\S+)\s+"([^"]*)"',
-            r'对\1说：\2', text)
+            r'(?:acp-client\.sh|./acp-client\.sh)\s+-a\s+(\S+)\s+"([^"]*)"', r"对\1说：\2", text
+        )
         # Strip trailing [SILENT] (agents often append it after real content)
-        text = re.sub(r'\s*\[SILENT\]\s*$', '', text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*\[SILENT\]\s*$", "", text, flags=re.IGNORECASE)
         # Collapse 2+ consecutive newlines into one
-        text = re.sub(r'\n{2,}', '\n', text)
+        text = re.sub(r"\n{2,}", "\n", text)
         return text.strip()
 
     @staticmethod
@@ -224,8 +236,9 @@ class EnvCollector:
         tpl = get_template("heartbeat", f"static_prefix_{self._language}_{agent_name}", "")
         if not tpl:
             tpl = get_template("heartbeat", f"static_prefix_{self._language}", "")
-        return tpl.format(agent_name=agent_name, client=self._client,
-                          shared_workdir=self._shared_workdir)
+        return tpl.format(
+            agent_name=agent_name, client=self._client, shared_workdir=self._shared_workdir
+        )
 
     def build_heartbeat_prompt(self, agent_name: str) -> list[dict]:
         """Full prompt = static prefix (cached) + dynamic env update suffix.
@@ -244,43 +257,55 @@ class EnvCollector:
             {"type": "text", "text": dynamic},
         ]
 
-    def record(self, agent: str, prompt: "str | list[dict]", response: str, silent: bool, duration: float,
-               snapshot: dict | None = None):
+    def record(
+        self,
+        agent: str,
+        prompt: "str | list[dict]",
+        response: str,
+        silent: bool,
+        duration: float,
+        snapshot: dict | None = None,
+    ):
         """Record a heartbeat exchange to history."""
-        prompt_text = "".join(p.get("text", "") for p in prompt) if isinstance(prompt, list) else prompt
-        self._history.append({
-            "ts": time.time(),
-            "agent": agent,
-            "prompt": prompt_text,
-            "response": response,
-            "silent": silent,
-            "duration": round(duration, 1),
-            "snapshot": snapshot,
-        })
+        prompt_text = (
+            "".join(p.get("text", "") for p in prompt) if isinstance(prompt, list) else prompt
+        )
+        self._history.append(
+            {
+                "ts": time.time(),
+                "agent": agent,
+                "prompt": prompt_text,
+                "response": response,
+                "silent": silent,
+                "duration": round(duration, 1),
+                "snapshot": snapshot,
+            }
+        )
 
 
-def register(app, env_collector: "EnvCollector", pool: AcpProcessPool,
-             prompt_store=None):
+def register(app, env_collector: "EnvCollector", pool: AcpProcessPool, prompt_store=None):
     from starlette.responses import JSONResponse
 
     _ALLOWED_INTERVALS = [30, 60, 180, 600, 1800, 3600]
 
     @app.get("/heartbeat")
     async def heartbeat_status():
-        return JSONResponse({
-            "enabled_agents": sorted(env_collector._enabled_agents),
-            "interval": env_collector._interval,
-            "allowed_intervals": _ALLOWED_INTERVALS,
-            "snapshot": env_collector.get_snapshot(),
-        })
+        return JSONResponse(
+            {
+                "enabled_agents": sorted(env_collector._enabled_agents),
+                "interval": env_collector._interval,
+                "allowed_intervals": _ALLOWED_INTERVALS,
+                "snapshot": env_collector.get_snapshot(),
+            }
+        )
 
     @app.put("/heartbeat/interval")
     async def set_heartbeat_interval(req: dict):
         interval = req.get("interval")
         if interval not in _ALLOWED_INTERVALS:
             return JSONResponse(
-                {"error": f"interval must be one of {_ALLOWED_INTERVALS}"},
-                status_code=400)
+                {"error": f"interval must be one of {_ALLOWED_INTERVALS}"}, status_code=400
+            )
         old = env_collector._interval
         env_collector._interval = interval
         log.info("heartbeat_interval_changed: %d -> %d", old, interval)
@@ -313,14 +338,20 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool,
         entry = {"text": text, "ttl": ttl, "created_at": time.time()}
         env_collector._injected_contexts.append(entry)
         log.info("heartbeat_context_injected: ttl=%d text=%s", ttl, text[:80])
-        return JSONResponse({"status": "ok", "ttl": ttl, "active_contexts": len(env_collector._injected_contexts)})
+        return JSONResponse(
+            {"status": "ok", "ttl": ttl, "active_contexts": len(env_collector._injected_contexts)}
+        )
 
     @app.get("/heartbeat/context")
     async def list_contexts():
-        return JSONResponse({"contexts": [
-            {"text": c["text"], "ttl": c["ttl"], "created_at": c["created_at"]}
-            for c in env_collector._injected_contexts
-        ]})
+        return JSONResponse(
+            {
+                "contexts": [
+                    {"text": c["text"], "ttl": c["ttl"], "created_at": c["created_at"]}
+                    for c in env_collector._injected_contexts
+                ]
+            }
+        )
 
     @app.delete("/heartbeat/context")
     async def clear_contexts():
@@ -343,26 +374,34 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool,
 
         session_id = env_collector.heartbeat_session_id(agent_name)
         try:
-            conn = await pool.get_or_create(agent_name, session_id,
-                                            cwd=cfg.get("working_dir", "/tmp"))
+            conn = await pool.get_or_create(
+                agent_name, session_id, cwd=cfg.get("working_dir", "/tmp")
+            )
         except (PoolExhaustedError, AcpError) as e:
             return JSONResponse({"error": str(e)}, status_code=503)
 
         if prompt_store:
             prompt_store.record(
-                parent_type="heartbeat", parent_id=agent_name,
-                agent=agent_name, mode="acp",
+                parent_type="heartbeat",
+                parent_id=agent_name,
+                agent=agent_name,
+                mode="acp",
                 session_id=session_id,
                 cwd=cfg.get("working_dir", "/tmp"),
-                template=prompt, rendered=prompt, final=prompt,
+                template=prompt,
+                rendered=prompt,
+                final=prompt,
                 decorations=["heartbeat_prompt"],
             )
 
         from .sse import transform_notification
+
         parts = []
         t0 = time.time()
         try:
-            async for notification in conn.session_prompt(prompt, idle_timeout=HEARTBEAT_IDLE_TIMEOUT):
+            async for notification in conn.session_prompt(
+                prompt, idle_timeout=HEARTBEAT_IDLE_TIMEOUT
+            ):
                 if "_prompt_result" in notification:
                     break
                 event = transform_notification(notification)
@@ -375,13 +414,21 @@ def register(app, env_collector: "EnvCollector", pool: AcpProcessPool,
         silent = env_collector.is_silent(response)
         duration = time.time() - t0
 
-        log.info("heartbeat_ping: agent=%s silent=%s len=%d dur=%.1fs", agent_name, silent, len(response), duration)
+        log.info(
+            "heartbeat_ping: agent=%s silent=%s len=%d dur=%.1fs",
+            agent_name,
+            silent,
+            len(response),
+            duration,
+        )
         env_collector.record(agent_name, prompt, response, silent, duration)
         env_collector.increment_round(agent_name)
 
-        return JSONResponse({
-            "agent": agent_name,
-            "silent": silent,
-            "response": response,
-            "snapshot": env_collector.get_snapshot(),
-        })
+        return JSONResponse(
+            {
+                "agent": agent_name,
+                "silent": silent,
+                "response": response,
+                "snapshot": env_collector.get_snapshot(),
+            }
+        )

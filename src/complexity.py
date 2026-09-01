@@ -15,11 +15,11 @@ TIMEOUT_MAP = {
     Complexity.HEAVY: 180,
 }
 
-_HEAVY_KW = ['重构', '实现', '开发', 'implement', 'refactor', 'build', '创建文件', '多个文件']
-_MEDIUM_KW = ['修改', '调试', 'fix', 'update', 'debug', '分析']
+_HEAVY_KW = ["重构", "实现", "开发", "implement", "refactor", "build", "创建文件", "多个文件"]
+_MEDIUM_KW = ["修改", "调试", "fix", "update", "debug", "分析"]
 
 
-_NEG_PATTERNS = ['不', '不要', '避免', 'no ', 'avoid', "don't", 'not ']
+_NEG_PATTERNS = ["不", "不要", "避免", "no ", "avoid", "don't", "not "]
 
 
 def estimate_complexity(prompt: str) -> Complexity:
@@ -40,7 +40,7 @@ def estimate_complexity(prompt: str) -> Complexity:
     elif any(kw in prompt for kw in _MEDIUM_KW):
         score += 1
 
-    fences = prompt.count('```')
+    fences = prompt.count("```")
     if fences >= 4:
         score += 2
     elif fences >= 2:

@@ -28,6 +28,7 @@ def make_store():
 # PerKeyEventMemoryStore
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_unrelated_write_does_not_wake_watcher():
     store = make_store()
@@ -113,6 +114,7 @@ async def test_key_event_garbage_collected_after_watcher_exits():
     await asyncio.wait_for(t, timeout=2)
     del t
     import gc
+
     # async generator finalization is scheduled on the loop; give it a tick
     for _ in range(5):
         gc.collect()
@@ -126,9 +128,11 @@ async def test_key_event_garbage_collected_after_watcher_exits():
 # Executor cancellation-watcher reaping
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_executor_patch_reaps_watcher_on_run_completion():
     from acp_sdk.server.executor import Executor
+
     apply_executor_patch()
 
     store = make_store()
@@ -150,6 +154,7 @@ async def test_executor_patch_reaps_watcher_on_run_completion():
 
 def test_executor_patch_is_idempotent():
     from acp_sdk.server.executor import Executor
+
     apply_executor_patch()
     first = Executor.execute
     apply_executor_patch()
@@ -160,10 +165,12 @@ def test_executor_patch_is_idempotent():
 # Streaming circuit-breaker gate (before_call/on_success/on_failure)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_manual_gate_success_and_failure_accounting():
-    cb = CircuitBreaker("t", CircuitBreakerConfig(
-        failure_threshold=2, expected_exceptions=(ValueError,)))
+    cb = CircuitBreaker(
+        "t", CircuitBreakerConfig(failure_threshold=2, expected_exceptions=(ValueError,))
+    )
 
     async def gen(fail):
         yield "a"
@@ -199,8 +206,9 @@ async def test_manual_gate_success_and_failure_accounting():
 async def test_call_still_works_via_public_gate():
     """CircuitBreaker.call refactored onto before_call/on_success/on_failure —
     behavior must be unchanged."""
-    cb = CircuitBreaker("t", CircuitBreakerConfig(
-        failure_threshold=1, expected_exceptions=(ValueError,)))
+    cb = CircuitBreaker(
+        "t", CircuitBreakerConfig(failure_threshold=1, expected_exceptions=(ValueError,))
+    )
 
     async def ok():
         return 42

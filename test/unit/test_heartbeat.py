@@ -29,7 +29,7 @@ def test_record_keeps_real_response_when_silent():
 
 def test_record_distinguishes_empty_from_silent():
     c = _collector()
-    c.record("kiro", "prompt", "", silent=True, duration=300.0)   # timeout: empty
+    c.record("kiro", "prompt", "", silent=True, duration=300.0)  # timeout: empty
     c.record("kiro", "prompt", "[SILENT]", silent=True, duration=3.0)  # real reply
     empty, real = c._history[-2], c._history[-1]
     # Both silent, but response content tells them apart.

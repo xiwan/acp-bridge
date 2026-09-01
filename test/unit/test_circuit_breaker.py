@@ -32,6 +32,7 @@ def _make_cb(**overrides) -> CircuitBreaker:
 
 # ── State machine basics ──────────────────────────────────────────────
 
+
 def test_initial_state_closed():
     cb = _make_cb()
     assert cb.state == CircuitState.CLOSED
@@ -85,6 +86,7 @@ def test_open_rejects_record_stays_open():
 
 # ── OPEN → HALF_OPEN → CLOSED / OPEN ─────────────────────────────────
 
+
 def test_open_to_half_open_after_timeout():
     cb = _make_cb(failure_threshold=2, open_timeout=0.05)
     cb.record_failure()
@@ -118,9 +120,11 @@ def test_half_open_failure_reopens():
 
 # ── Async call() integration ─────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_call_success():
     cb = _make_cb()
+
     async def ok():
         return "ok"
 
@@ -188,6 +192,7 @@ async def test_half_open_max_calls_exceeded():
 
 # ── Metrics ───────────────────────────────────────────────────────────
 
+
 def test_metrics():
     cb = _make_cb()
     cb.record_success()
@@ -214,6 +219,7 @@ def test_circuit_open_count():
 
 # ── Reset ─────────────────────────────────────────────────────────────
 
+
 def test_reset():
     cb = _make_cb(failure_threshold=2)
     cb.record_failure()
@@ -225,6 +231,7 @@ def test_reset():
 
 
 # ── Callback ──────────────────────────────────────────────────────────
+
 
 def test_on_state_change_callback():
     transitions = []
@@ -239,6 +246,7 @@ def test_on_state_change_callback():
 
 
 # ── Edge cases ────────────────────────────────────────────────────────
+
 
 def test_empty_window_no_open():
     cb = _make_cb(failure_threshold=100, failure_rate_threshold=0.5, window_size=10)
@@ -262,6 +270,7 @@ def test_window_slides():
 
 
 # ── Integration with agents.py fallback scoring ───────────────────────
+
 
 def test_ratelimit_does_not_trip_breaker():
     """AgentRateLimitError must NOT be counted as a circuit breaker failure.

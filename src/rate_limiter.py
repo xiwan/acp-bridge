@@ -25,8 +25,8 @@ import yaml
 
 @dataclass
 class AgentQuota:
-    rpm: int = 60               # max requests per minute
-    tpm: int = 100_000          # max tokens per minute
+    rpm: int = 60  # max requests per minute
+    tpm: int = 100_000  # max tokens per minute
     fallback: Optional[str] = None  # agent to fall back to when over quota
 
 
@@ -40,7 +40,7 @@ class RateLimiter:
 
     def __init__(self, config_path: str = "config.yaml"):
         self.quotas: Dict[str, AgentQuota] = {}
-        self._windows: Dict[str, deque] = {}   # agent -> deque[(ts, tokens)]
+        self._windows: Dict[str, deque] = {}  # agent -> deque[(ts, tokens)]
         self._lock = threading.Lock()
         self._total_requests: int = 0
         self._rejected_requests: int = 0
@@ -122,7 +122,7 @@ class RateLimiter:
             self._total_requests += 1
             quota = self.quotas.get(agent)
             if quota is None:
-                return (True, None)   # no limit configured → always allow
+                return (True, None)  # no limit configured → always allow
 
             # setdefault guards against a quota being added via configure()
             # after __init__ but before the first check for this agent

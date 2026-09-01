@@ -8,6 +8,7 @@ argument, so we pass None and avoid constructing the heavy SDK Context.
 
 Billing is reserved but free in L1: responses carry metadata.usage/cost placeholders.
 """
+
 import logging
 
 from acp_sdk.models import Message, MessagePart
@@ -34,8 +35,11 @@ def _a2a_parts_to_acp(message: dict) -> list[Message]:
     fresh per-agent session on this node. Local invocation paths (/runs, /jobs)
     remain the way to pin cwd/session.
     """
-    parts = [MessagePart(content=p.get("text", ""), content_type="text/plain")
-             for p in message.get("parts", []) if p.get("text")]
+    parts = [
+        MessagePart(content=p.get("text", ""), content_type="text/plain")
+        for p in message.get("parts", [])
+        if p.get("text")
+    ]
     return [Message(parts=parts)]
 
 
@@ -56,8 +60,14 @@ async def _drain(agent, input: list[Message]) -> str:
 class A2AAdapter:
     """Dispatches A2A JSON-RPC methods against this node's local agents + job store."""
 
-    def __init__(self, agents_provider, job_mgr=None, remote_skills=None, pool=None,
-                 allowed_private_targets: frozenset[str] = frozenset()):
+    def __init__(
+        self,
+        agents_provider,
+        job_mgr=None,
+        remote_skills=None,
+        pool=None,
+        allowed_private_targets: frozenset[str] = frozenset(),
+    ):
         # agents_provider: callable -> {name: Agent}; deferred so app.state is ready.
         self._agents_provider = agents_provider
         self._job_mgr = job_mgr
@@ -87,8 +97,7 @@ class A2AAdapter:
         skill = params.get("skill") or params.get("agent")
         # 1-hop limit: refuse to forward a remote skill for an already-hopped request.
         if inbound_hop and skill in self.remote_skills:
-            return _rpc_error(rpc_id, -32011,
-                              f"hop limit: {skill} is remote, refusing 2nd hop")
+            return _rpc_error(rpc_id, -32011, f"hop limit: {skill} is remote, refusing 2nd hop")
         agents = self._agents()
         agent = agents.get(skill)
         if agent is None:
@@ -105,11 +114,14 @@ class A2AAdapter:
         except Exception as e:
             log.warning("a2a tasks/send failed skill=%s err=%s", skill, e)
             return _rpc_error(rpc_id, -32000, f"agent error: {e}")
-        return _rpc_result(rpc_id, {
-            "status": {"state": "completed"},
-            "artifacts": [{"parts": [{"type": "text", "text": text}]}],
-            "metadata": {"usage": None, "cost": dict(FREE_COST)},
-        })
+        return _rpc_result(
+            rpc_id,
+            {
+                "status": {"state": "completed"},
+                "artifacts": [{"parts": [{"type": "text", "text": text}]}],
+                "metadata": {"usage": None, "cost": dict(FREE_COST)},
+            },
+        )
 
     async def _tasks_send_workspace(self, rpc_id, skill, params, ws_in, ws_out) -> dict:
         """L3 (B side): download workspace → run agent with that cwd → upload result."""
@@ -122,10 +134,13 @@ class A2AAdapter:
         # rather than re-resolving the hostname, closing the DNS-rebinding
         # TOCTOU a separate validate-then-fetch would leave open.
         try:
-            ws_in_target = validate_outbound_url(ws_in, allowed_targets=self._allowed_private_targets)
+            ws_in_target = validate_outbound_url(
+                ws_in, allowed_targets=self._allowed_private_targets
+            )
             ws_out_target = (
                 validate_outbound_url(ws_out, allowed_targets=self._allowed_private_targets)
-                if ws_out else None
+                if ws_out
+                else None
             )
         except UnsafeUrlError as e:
             return _rpc_error(rpc_id, -32014, f"unsafe workspace url: {e}")
@@ -137,6 +152,7 @@ class A2AAdapter:
 
         from src import s3 as _s3
         from src.agents import _call_acp_agent_internal
+
         prompt = "".join(p.get("text", "") for p in (params.get("message") or {}).get("parts", []))
         tmp = tempfile.mkdtemp(prefix="mesh-ws-")
 
@@ -147,9 +163,11 @@ class A2AAdapter:
         # stall the event loop (up to timeout=120s).
         def _download():
             with httpx.Client(timeout=120, follow_redirects=False) as c:
-                r = c.get(ws_in_target.pinned_url,
-                          headers={"Host": ws_in_target.host_header},
-                          extensions={"sni_hostname": ws_in_target.host})
+                r = c.get(
+                    ws_in_target.pinned_url,
+                    headers={"Host": ws_in_target.host_header},
+                    extensions={"sni_hostname": ws_in_target.host},
+                )
             r.raise_for_status()
             _s3.unpack_dir(r.content, tmp)
 
@@ -161,28 +179,42 @@ class A2AAdapter:
         parts: list[str] = []
         try:
             async for y in _call_acp_agent_internal(
-                agent_name=skill, prompt=prompt, pool=self._pool,
-                profile=None, session_id=session_id, cwd=tmp, enrich_prompt=False):
+                agent_name=skill,
+                prompt=prompt,
+                pool=self._pool,
+                profile=None,
+                session_id=session_id,
+                cwd=tmp,
+                enrich_prompt=False,
+            ):
                 if getattr(y, "content", ""):
                     parts.append(y.content)
         except Exception as e:
             log.warning("a2a workspace step failed skill=%s err=%s", skill, e)
             return _rpc_error(rpc_id, -32000, f"agent error: {e}")
         if ws_out_target:
+
             def _upload():
                 with httpx.Client(timeout=120, follow_redirects=False) as c:
-                    c.put(ws_out_target.pinned_url, content=_s3.pack_dir(tmp),
-                          headers={"Host": ws_out_target.host_header},
-                          extensions={"sni_hostname": ws_out_target.host}).raise_for_status()
+                    c.put(
+                        ws_out_target.pinned_url,
+                        content=_s3.pack_dir(tmp),
+                        headers={"Host": ws_out_target.host_header},
+                        extensions={"sni_hostname": ws_out_target.host},
+                    ).raise_for_status()
+
             try:
                 await asyncio.to_thread(_upload)
             except Exception as e:
                 return _rpc_error(rpc_id, -32013, f"workspace upload failed: {e}")
-        return _rpc_result(rpc_id, {
-            "status": {"state": "completed"},
-            "artifacts": [{"parts": [{"type": "text", "text": "".join(parts)}]}],
-            "metadata": {"usage": None, "cost": dict(FREE_COST)},
-        })
+        return _rpc_result(
+            rpc_id,
+            {
+                "status": {"state": "completed"},
+                "artifacts": [{"parts": [{"type": "text", "text": "".join(parts)}]}],
+                "metadata": {"usage": None, "cost": dict(FREE_COST)},
+            },
+        )
 
     def _tasks_get(self, rpc_id, params: dict) -> dict:
         task_id = params.get("id") or params.get("task_id")
@@ -191,8 +223,11 @@ class A2AAdapter:
         job = self._job_mgr.get(task_id)
         if job is None:
             return _rpc_error(rpc_id, -32001, f"task not found: {task_id}")
-        state = "completed" if job.status == "completed" else (
-            "failed" if job.status == "failed" else "working")
+        state = (
+            "completed"
+            if job.status == "completed"
+            else ("failed" if job.status == "failed" else "working")
+        )
         result = {"id": task_id, "status": {"state": state}}
         if getattr(job, "result", None):
             result["artifacts"] = [{"parts": [{"type": "text", "text": job.result}]}]

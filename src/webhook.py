@@ -24,15 +24,20 @@ def chunk_text(text: str, size: int = _CHUNK_SIZE) -> list[str]:
     """Split text into chunks of at most `size` characters."""
     if not text:
         return [""]
-    return [text[i:i + size] for i in range(0, len(text), size)]
+    return [text[i : i + size] for i in range(0, len(text), size)]
 
 
 class WebhookSender:
     """Sends JSON payloads to a webhook URL with optional Bearer token or HMAC signing."""
 
-    def __init__(self, default_url: str = "", default_token: str = "",
-                 default_format: str = "openclaw", default_secret: str = "",
-                 allowed_targets: frozenset[str] = frozenset()):
+    def __init__(
+        self,
+        default_url: str = "",
+        default_token: str = "",
+        default_format: str = "openclaw",
+        default_secret: str = "",
+        allowed_targets: frozenset[str] = frozenset(),
+    ):
         self._url = default_url
         self._token = default_token
         self._format = default_format
@@ -56,8 +61,14 @@ class WebhookSender:
             self._http = httpx.AsyncClient(timeout=10, follow_redirects=False)
         return self._http
 
-    async def _post(self, client: httpx.AsyncClient, target: SafeTarget,
-                    payload: dict, headers: dict, secret: str) -> httpx.Response:
+    async def _post(
+        self,
+        client: httpx.AsyncClient,
+        target: SafeTarget,
+        payload: dict,
+        headers: dict,
+        secret: str,
+    ) -> httpx.Response:
         """Post a single payload, handling HMAC signing if needed.
 
         Connects to `target.pinned_url` (the literal IP validated by
@@ -70,25 +81,37 @@ class WebhookSender:
             body_bytes = _json.dumps(payload, ensure_ascii=False).encode()
             sig = _hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
             req_headers["X-Webhook-Signature"] = sig
-            return await client.post(target.pinned_url, content=body_bytes,
-                                      headers=req_headers, extensions=extensions)
-        return await client.post(target.pinned_url, json=payload,
-                                  headers=req_headers, extensions=extensions)
+            return await client.post(
+                target.pinned_url, content=body_bytes, headers=req_headers, extensions=extensions
+            )
+        return await client.post(
+            target.pinned_url, json=payload, headers=req_headers, extensions=extensions
+        )
 
     @staticmethod
     def _extract_id(resp: httpx.Response) -> str:
         """Extract message/thread id from OpenClaw response."""
         try:
             d = resp.json()
-            return (d.get("id") or d.get("message_id") or
-                    d.get("data", {}).get("id", "") or
-                    d.get("data", {}).get("message_id", ""))
+            return (
+                d.get("id")
+                or d.get("message_id")
+                or d.get("data", {}).get("id", "")
+                or d.get("data", {}).get("message_id", "")
+            )
         except Exception:
             return ""
 
-    async def send(self, url: str, payloads: list[dict], *,
-                   secret: str = "", account_id: str = "",
-                   channel: str = "", log_prefix: str = "webhook") -> bool:
+    async def send(
+        self,
+        url: str,
+        payloads: list[dict],
+        *,
+        secret: str = "",
+        account_id: str = "",
+        channel: str = "",
+        log_prefix: str = "webhook",
+    ) -> bool:
         """Send payloads to url. Returns True if all succeeded.
 
         For Discord: thread_content payloads are folded into a real thread
@@ -137,7 +160,10 @@ class WebhookSender:
                         thread_name = payload.pop("thread_name", "Thread")
                         thread_payload = dict(payload)
                         thread_payload["action"] = "thread-create"
-                        thread_payload["args"] = {"messageId": first_message_id, "threadName": thread_name}
+                        thread_payload["args"] = {
+                            "messageId": first_message_id,
+                            "threadName": thread_name,
+                        }
                         resp = await self._post(client, target, thread_payload, headers, secret)
                         log.info("%s: thread-create status=%d", log_prefix, resp.status_code)
                         if resp.status_code < 300:
@@ -151,11 +177,21 @@ class WebhookSender:
                     # else: fallback — send as normal message (no thread_id)
 
                 resp = await self._post(client, target, payload, headers, secret)
-                log.info("%s: status=%d part=%d/%d thread=%s",
-                         log_prefix, resp.status_code, idx + 1, len(payloads), is_thread)
+                log.info(
+                    "%s: status=%d part=%d/%d thread=%s",
+                    log_prefix,
+                    resp.status_code,
+                    idx + 1,
+                    len(payloads),
+                    is_thread,
+                )
                 if resp.status_code >= 300:
-                    log.warning("%s_rejected: status=%d body=%s",
-                                log_prefix, resp.status_code, resp.text[:500])
+                    log.warning(
+                        "%s_rejected: status=%d body=%s",
+                        log_prefix,
+                        resp.status_code,
+                        resp.text[:500],
+                    )
                     return False
 
                 # Capture message_id from first (summary) message

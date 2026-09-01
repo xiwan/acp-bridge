@@ -11,6 +11,7 @@ the L1 POST /a2a `tasks/send` protocol with `X-A2A-Hop: 1` (1-hop limit) and mes
 Local agents always take priority: remote handlers are only registered for skills
 not present locally (see reconcile()).
 """
+
 import logging
 from collections.abc import AsyncGenerator
 
@@ -26,9 +27,15 @@ def make_a2a_remote_handler(agent_name: str, peer_url: str, mesh_token: str):
 
     async def handler(input: list[Message], context) -> AsyncGenerator[MessagePart, None]:
         prompt = "".join(p.content for m in input for p in m.parts if p.content)
-        body = {"jsonrpc": "2.0", "id": 1, "method": "tasks/send",
-                "params": {"skill": agent_name,
-                           "message": {"parts": [{"type": "text", "text": prompt}]}}}
+        body = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tasks/send",
+            "params": {
+                "skill": agent_name,
+                "message": {"parts": [{"type": "text", "text": prompt}]},
+            },
+        }
         headers = {"X-A2A-Hop": "1"}
         if mesh_token:
             headers["Authorization"] = f"Bearer {mesh_token}"
@@ -38,14 +45,15 @@ def make_a2a_remote_handler(agent_name: str, peer_url: str, mesh_token: str):
                 r.raise_for_status()
                 resp = r.json()
         except Exception as e:
-            log.warning("a2a remote call failed agent=%s peer=%s err=%s",
-                        agent_name, peer_url, e)
-            yield MessagePart(content=f"[remote error] {agent_name}@{peer_url}: {e}",
-                              content_type="text/plain")
+            log.warning("a2a remote call failed agent=%s peer=%s err=%s", agent_name, peer_url, e)
+            yield MessagePart(
+                content=f"[remote error] {agent_name}@{peer_url}: {e}", content_type="text/plain"
+            )
             return
         if "error" in resp:
-            yield MessagePart(content=f"[remote error] {resp['error'].get('message')}",
-                              content_type="text/plain")
+            yield MessagePart(
+                content=f"[remote error] {resp['error'].get('message')}", content_type="text/plain"
+            )
             return
         for art in resp.get("result", {}).get("artifacts", []):
             for part in art.get("parts", []):
@@ -79,13 +87,14 @@ def reconcile(app, mesh, remote_skills=None) -> list[str]:
             skill_to_peer.setdefault(skill, p.url)
 
     from acp_sdk.server import Server
+
     added: list[str] = []
     for skill, peer_url in skill_to_peer.items():
         if skill in acp_agents and remote_skills is not None and skill in remote_skills:
             continue  # already registered as remote
         peer = peer_by_url.get(peer_url)
-        node = (peer.node_name if peer and peer.node_name else peer_url)
-        info = (peer.skill_info.get(skill, {}) if peer else {})
+        node = peer.node_name if peer and peer.node_name else peer_url
+        info = peer.skill_info.get(skill, {}) if peer else {}
         real_desc = info.get("description") or f"{skill} agent"
         # Description carries the human-readable location: "<real desc> (via mesh@<node>)"
         description = f"{real_desc} (via mesh@{node})"
@@ -94,9 +103,9 @@ def reconcile(app, mesh, remote_skills=None) -> list[str]:
         metadata = None
         try:
             from acp_sdk.models.models import Metadata
+
             peer_tags = info.get("tags") or []
-            metadata = Metadata(
-                tags=["mesh", f"node:{node}", f"peer:{peer_url}"] + list(peer_tags))
+            metadata = Metadata(tags=["mesh", f"node:{node}", f"peer:{peer_url}"] + list(peer_tags))
         except Exception as e:
             log.warning("mesh L2: could not build location metadata for %s: %s", skill, e)
         # Use resolved URL (mode-aware) for the remote handler

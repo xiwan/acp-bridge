@@ -71,9 +71,9 @@ _SECRET_PATTERNS = [
     (re.compile(r'(ANTHROPIC_API_KEY=)([^\s&\'"]{8,})'), True),
     (re.compile(r'(AWS_SECRET_ACCESS_KEY=)([^\s&\'"]+)'), True),
     # Bearer tokens in Authorization headers
-    (re.compile(r'(Bearer\s+)([A-Za-z0-9._\-]{16,})', re.IGNORECASE), True),
+    (re.compile(r"(Bearer\s+)([A-Za-z0-9._\-]{16,})", re.IGNORECASE), True),
     # AWS access key id (no prefix to preserve)
-    (re.compile(r'\b(AKIA[0-9A-Z]{16})\b'), False),
+    (re.compile(r"\b(AKIA[0-9A-Z]{16})\b"), False),
 ]
 
 
@@ -83,23 +83,24 @@ def redact_secrets(text: str) -> str:
         return text
     for pat, has_prefix in _SECRET_PATTERNS:
         if has_prefix:
-            text = pat.sub(lambda m: m.group(1) + '***REDACTED***', text)
+            text = pat.sub(lambda m: m.group(1) + "***REDACTED***", text)
         else:
-            text = pat.sub('***REDACTED***', text)
+            text = pat.sub("***REDACTED***", text)
     return text
 
 
 @dataclass
 class PromptRecord:
     """Strongly-typed representation of one prompt_log row."""
+
     record_id: str
-    parent_type: str          # 'job' | 'pipeline_step' | 'heartbeat'
-    parent_id: str            # job_id / pipeline_id / agent_name
-    parent_index: int         # step idx / turn idx; -1 if N/A
+    parent_type: str  # 'job' | 'pipeline_step' | 'heartbeat'
+    parent_id: str  # job_id / pipeline_id / agent_name
+    parent_index: int  # step idx / turn idx; -1 if N/A
     agent: str
     session_id: str
     cwd: str
-    mode: str                 # 'acp' | 'pty'
+    mode: str  # 'acp' | 'pty'
     template: str
     rendered: str
     final: str
@@ -119,8 +120,9 @@ class PromptStore:
                   truncated with a marker. Default 1 MB.
     """
 
-    def __init__(self, db_path: str = "data/jobs.db",
-                 redact: bool = True, max_size: int = 1_048_576):
+    def __init__(
+        self, db_path: str = "data/jobs.db", redact: bool = True, max_size: int = 1_048_576
+    ):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._db_path = db_path
         self._redact = redact
@@ -130,8 +132,7 @@ class PromptStore:
         self._db.execute("PRAGMA busy_timeout=5000")
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
-        log.info("prompt_log_init: db=%s redact=%s max_size=%d",
-                 db_path, redact, max_size)
+        log.info("prompt_log_init: db=%s redact=%s max_size=%d", db_path, redact, max_size)
 
     def _truncate(self, s: str) -> str:
         if not s or len(s) <= self._max_size:
@@ -145,10 +146,21 @@ class PromptStore:
             s = redact_secrets(s)
         return s
 
-    def record(self, *, parent_type: str, parent_id: str, agent: str, mode: str,
-               parent_index: int = -1, session_id: str = "", cwd: str = "",
-               template: str = "", rendered: str = "", final: str = "",
-               decorations: list | None = None) -> str:
+    def record(
+        self,
+        *,
+        parent_type: str,
+        parent_id: str,
+        agent: str,
+        mode: str,
+        parent_index: int = -1,
+        session_id: str = "",
+        cwd: str = "",
+        template: str = "",
+        rendered: str = "",
+        final: str = "",
+        decorations: list | None = None,
+    ) -> str:
         """Persist one prompt record. Returns record_id, or "" on failure."""
         try:
             t = self._process(template)
@@ -162,17 +174,34 @@ class PromptStore:
                     template, rendered, final, decorations,
                     created_at, final_len)
                    VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?)""",
-                (rec_id, parent_type, parent_id, parent_index,
-                 agent, session_id, cwd, mode,
-                 t, r, f, json.dumps(decorations or []),
-                 time.time(), len(f)),
+                (
+                    rec_id,
+                    parent_type,
+                    parent_id,
+                    parent_index,
+                    agent,
+                    session_id,
+                    cwd,
+                    mode,
+                    t,
+                    r,
+                    f,
+                    json.dumps(decorations or []),
+                    time.time(),
+                    len(f),
+                ),
             )
             self._db.commit()
             return rec_id
         except Exception as e:
             # Best-effort: never propagate logging errors to the agent call path.
-            log.warning("prompt_log_insert_failed: parent=%s/%s agent=%s err=%s",
-                        parent_type, parent_id, agent, e)
+            log.warning(
+                "prompt_log_insert_failed: parent=%s/%s agent=%s err=%s",
+                parent_type,
+                parent_id,
+                agent,
+                e,
+            )
             return ""
 
     def get(self, record_id: str) -> dict | None:
@@ -195,12 +224,12 @@ class PromptStore:
             ).fetchall()
             return [dict(r) for r in rows]
         except Exception as e:
-            log.warning("prompt_log_list_failed: parent=%s/%s err=%s",
-                        parent_type, parent_id, e)
+            log.warning("prompt_log_list_failed: parent=%s/%s err=%s", parent_type, parent_id, e)
             return []
 
-    def search(self, *, parent_type: str | None = None, agent: str | None = None,
-               limit: int = 50) -> list[dict]:
+    def search(
+        self, *, parent_type: str | None = None, agent: str | None = None, limit: int = 50
+    ) -> list[dict]:
         clauses, params = [], []
         if parent_type:
             clauses.append("parent_type=?")
@@ -212,8 +241,7 @@ class PromptStore:
         params.append(int(limit))
         try:
             rows = self._db.execute(
-                f"SELECT * FROM prompt_log {where} "
-                f"ORDER BY created_at DESC LIMIT ?",
+                f"SELECT * FROM prompt_log {where} ORDER BY created_at DESC LIMIT ?",
                 params,
             ).fetchall()
             return [dict(r) for r in rows]
@@ -230,9 +258,7 @@ class PromptStore:
             return 0
         try:
             cutoff = time.time() - retention_seconds
-            cur = self._db.execute(
-                "DELETE FROM prompt_log WHERE created_at < ?", (cutoff,)
-            )
+            cur = self._db.execute("DELETE FROM prompt_log WHERE created_at < ?", (cutoff,))
             self._db.commit()
             n = cur.rowcount
             if n:

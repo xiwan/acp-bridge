@@ -35,8 +35,12 @@ def _load_all() -> dict[str, dict]:
 
 def list_templates() -> list[dict]:
     return [
-        {"name": t["name"], "description": t.get("description", ""),
-         "agent": t.get("agent", ""), "variables": _VAR_RE.findall(t.get("prompt", ""))}
+        {
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "agent": t.get("agent", ""),
+            "variables": _VAR_RE.findall(t.get("prompt", "")),
+        }
         for t in _load_all().values()
     ]
 

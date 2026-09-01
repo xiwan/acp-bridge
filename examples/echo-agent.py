@@ -57,11 +57,14 @@ def handle(msg: dict) -> None:
 
     # ── initialize ──────────────────────────────────────────────────────────
     if method == "initialize":
-        send_response(req_id, {
-            "protocolVersion": 1,
-            "agentInfo": {"name": "echo-agent", "version": "0.7.1"},
-            "capabilities": {},
-        })
+        send_response(
+            req_id,
+            {
+                "protocolVersion": 1,
+                "agentInfo": {"name": "echo-agent", "version": "0.7.1"},
+                "capabilities": {},
+            },
+        )
 
     # ── session/new ─────────────────────────────────────────────────────────
     elif method == "session/new":
@@ -76,24 +79,28 @@ def handle(msg: dict) -> None:
             send_error(req_id, -32602, f"unknown session: {session_id}")
             return
         prompt_parts = params.get("prompt", [])
-        text = "".join(
-            p.get("text", "") for p in prompt_parts if p.get("type") == "text"
-        )
+        text = "".join(p.get("text", "") for p in prompt_parts if p.get("type") == "text")
 
         # 发送内容通知（agent_message_chunk）
-        send_notification("session/update", {
-            "sessionId": session_id,
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": {"text": f"echo: {text}"},
+        send_notification(
+            "session/update",
+            {
+                "sessionId": session_id,
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {"text": f"echo: {text}"},
+                },
             },
-        })
+        )
 
         # 发送最终响应
-        send_response(req_id, {
-            "sessionId": session_id,
-            "stopReason": "end_turn",
-        })
+        send_response(
+            req_id,
+            {
+                "sessionId": session_id,
+                "stopReason": "end_turn",
+            },
+        )
 
     # ── ping（可选）─────────────────────────────────────────────────────────
     elif method == "ping":

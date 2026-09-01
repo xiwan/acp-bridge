@@ -64,13 +64,18 @@ def _record_usage(model: str, usage: dict, duration: float):
         """INSERT INTO llm_usage (ts, model, input_tokens, output_tokens, total_tokens,
            cached_tokens, cache_creation_tokens, duration)
            VALUES (?,?,?,?,?,?,?,?)""",
-        (time.time(), model,
-         usage.get("prompt_tokens", 0),
-         usage.get("completion_tokens", 0),
-         usage.get("total_tokens", 0),
-         prompt_details.get("cached_tokens", 0) or usage.get("cache_read_input_tokens", 0),
-         prompt_details.get("cache_creation_tokens", 0) or usage.get("cache_creation_input_tokens", 0),
-         duration))
+        (
+            time.time(),
+            model,
+            usage.get("prompt_tokens", 0),
+            usage.get("completion_tokens", 0),
+            usage.get("total_tokens", 0),
+            prompt_details.get("cached_tokens", 0) or usage.get("cache_read_input_tokens", 0),
+            prompt_details.get("cache_creation_tokens", 0)
+            or usage.get("cache_creation_input_tokens", 0),
+            duration,
+        ),
+    )
     db.commit()
 
 
@@ -106,6 +111,7 @@ def register(app, litellm_cfg: dict):
                  by_model SQL 加 SUM(cache_creation_tokens) 修历史漏报.
         """
         from ..cost import calc_cost_v2  # 局部 import 避免顶部循环依赖
+
         db = _ensure_db()
         cutoff = time.time() - hours * 3600
         where, params = ["ts > ?"], [cutoff]
@@ -122,7 +128,9 @@ def register(app, litellm_cfg: dict):
                        COALESCE(SUM(cached_tokens),0) as cached_tokens,
                        COALESCE(SUM(cache_creation_tokens),0) as cache_creation_tokens,
                        COALESCE(AVG(duration),0) as avg_duration
-                FROM llm_usage WHERE {w}""", params).fetchone()
+                FROM llm_usage WHERE {w}""",
+            params,
+        ).fetchone()
 
         total_input = row["input_tokens"]
         cached = row["cached_tokens"]
@@ -135,7 +143,8 @@ def register(app, litellm_cfg: dict):
                        SUM(cached_tokens) as cached_tokens,
                        SUM(cache_creation_tokens) as cache_creation_tokens
                 FROM llm_usage WHERE {w} GROUP BY model ORDER BY calls DESC""",
-            params).fetchall()
+            params,
+        ).fetchall()
 
         # v0.23.0: per-model cost
         by_model = []
@@ -170,9 +179,7 @@ def register(app, litellm_cfg: dict):
     @app.get("/usage/recent")
     async def get_usage_recent(limit: int = 20):
         db = _ensure_db()
-        rows = db.execute(
-            "SELECT * FROM llm_usage ORDER BY ts DESC LIMIT ?", (limit,)
-        ).fetchall()
+        rows = db.execute("SELECT * FROM llm_usage ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
 
     @app.post("/internal/llm-callback")
@@ -192,7 +199,7 @@ def register(app, litellm_cfg: dict):
             cache_creation = entry.get("cache_creation_tokens", 0) or 0
             if not cached and not cache_creation:
                 usage_obj = (entry.get("hidden_params") or {}).get("usage_object") or {}
-                ptd = (usage_obj.get("prompt_tokens_details") or {})
+                ptd = usage_obj.get("prompt_tokens_details") or {}
                 cached = ptd.get("cached_tokens", 0) or 0
                 cache_creation = usage_obj.get("cache_creation_input_tokens", 0) or 0
             # Duration
@@ -204,21 +211,32 @@ def register(app, litellm_cfg: dict):
                 end = entry.get("endTime") or entry.get("end_time") or ""
                 try:
                     from datetime import datetime
+
                     t0 = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
                     t1 = datetime.fromisoformat(str(end).replace("Z", "+00:00"))
                     duration = (t1 - t0).total_seconds()
                 except Exception:
                     pass
             try:
-                def _insert(m=model, it=input_tokens, ot=output_tokens,
-                            tt=total_tokens, c=cached, cc=cache_creation, d=duration):
+
+                def _insert(
+                    m=model,
+                    it=input_tokens,
+                    ot=output_tokens,
+                    tt=total_tokens,
+                    c=cached,
+                    cc=cache_creation,
+                    d=duration,
+                ):
                     db = _ensure_db()
                     db.execute(
                         """INSERT INTO llm_usage (ts, model, input_tokens, output_tokens, total_tokens,
                            cached_tokens, cache_creation_tokens, duration)
                            VALUES (?,?,?,?,?,?,?,?)""",
-                        (time.time(), m, it, ot, tt, c, cc, d))
+                        (time.time(), m, it, ot, tt, c, cc, d),
+                    )
                     db.commit()
+
                 await asyncio.to_thread(_insert)
                 recorded += 1
             except Exception as e:

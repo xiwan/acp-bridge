@@ -78,4 +78,6 @@ async def ping_loop(pool: AcpProcessPool, interval: float = 300):
             for agent in list(_agent_healthy):
                 if not _agent_healthy[agent] and agent not in pinged_agents:
                     _agent_healthy.pop(agent)
-                    log.info("ping_reset: agent=%s no longer in pool, cleared unhealthy mark", agent)
+                    log.info(
+                        "ping_reset: agent=%s no longer in pool, cleared unhealthy mark", agent
+                    )

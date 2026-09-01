@@ -25,8 +25,13 @@ class JobRequest(BaseModel):
     channel: str = ""
 
 
-def register(app, job_mgr: JobManager | None, webhook_account_id: str, webhook_default_target: str,
-             prompt_store: PromptStore | None = None):
+def register(
+    app,
+    job_mgr: JobManager | None,
+    webhook_account_id: str,
+    webhook_default_target: str,
+    prompt_store: PromptStore | None = None,
+):
 
     @app.post("/jobs")
     async def submit_job(req: JobRequest):
@@ -44,8 +49,9 @@ def register(app, job_mgr: JobManager | None, webhook_account_id: str, webhook_d
         if req.channel:
             meta["channel"] = req.channel
         try:
-            job = job_mgr.submit(req.agent_name, sid, req.prompt,
-                                 req.callback_url, meta, cwd=req.cwd)
+            job = job_mgr.submit(
+                req.agent_name, sid, req.prompt, req.callback_url, meta, cwd=req.cwd
+            )
         except UnsafeUrlError as e:
             return JSONResponse({"error": f"unsafe callback_url: {e}"}, status_code=400)
         return {"job_id": job.job_id, "status": job.status, "agent": job.agent, "session_id": sid}
@@ -76,8 +82,13 @@ def register(app, job_mgr: JobManager | None, webhook_account_id: str, webhook_d
         if not job:
             return JSONResponse({"error": "job not found"}, status_code=404)
         content = job.result if job.status in ("completed", "failed") else "".join(job._live_parts)
-        return {"job_id": job_id, "agent": job.agent, "status": job.status,
-                "content": content, "parts_count": len(job._live_parts)}
+        return {
+            "job_id": job_id,
+            "agent": job.agent,
+            "status": job.status,
+            "content": content,
+            "parts_count": len(job._live_parts),
+        }
 
     @app.get("/jobs")
     async def list_jobs():
@@ -95,7 +106,9 @@ def register(app, job_mgr: JobManager | None, webhook_account_id: str, webhook_d
     @app.get("/jobs/{job_id}/prompts")
     async def get_job_prompts(
         job_id: str = PathParam(...),
-        include: str = Query("", description="comma-separated extras: 'final' to include full prompt fields"),
+        include: str = Query(
+            "", description="comma-separated extras: 'final' to include full prompt fields"
+        ),
     ):
         """Return prompt_log records for a job. Default response omits large
         prompt fields; pass ?include=final to also return template/rendered/final."""

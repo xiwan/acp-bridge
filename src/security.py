@@ -7,17 +7,31 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-NO_AUTH_PATHS = {"/live", "/ready", "/health", "/ui", "/internal/llm-callback",
-                 "/.well-known/agent.json", "/a2a/announce", "/a2a"}
+NO_AUTH_PATHS = {
+    "/live",
+    "/ready",
+    "/health",
+    "/ui",
+    "/internal/llm-callback",
+    "/.well-known/agent.json",
+    "/a2a/announce",
+    "/a2a",
+}
 NO_AUTH_PREFIXES = ("/static/",)
 LOCAL_ONLY_PATHS = {"/internal/llm-callback"}
 MAX_BODY_BYTES = 1 * 1024 * 1024  # 1 MB
 
 
 class SecurityMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, allowed_ips: list[str], auth_token: str = "",
-                 rate_limit: int = 60, rate_window: int = 60,
-                 max_body: int = MAX_BODY_BYTES):
+    def __init__(
+        self,
+        app,
+        allowed_ips: list[str],
+        auth_token: str = "",
+        rate_limit: int = 60,
+        rate_window: int = 60,
+        max_body: int = MAX_BODY_BYTES,
+    ):
         super().__init__(app)
         if not auth_token:
             raise ValueError("security.auth_token must not be empty")

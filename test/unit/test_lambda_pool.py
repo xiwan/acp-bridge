@@ -35,12 +35,14 @@ def _make_pool(**kwargs) -> LambdaPool:
 
 def _mock_invoke_success(pool: LambdaPool, output: str = "done", duration: float = 1.5):
     """Configure pool's client to return a successful Lambda response."""
-    payload_response = json.dumps({
-        "status": "completed",
-        "output": output,
-        "duration": duration,
-        "session_id": "test-session",
-    }).encode()
+    payload_response = json.dumps(
+        {
+            "status": "completed",
+            "output": output,
+            "duration": duration,
+            "session_id": "test-session",
+        }
+    ).encode()
     mock_payload = MagicMock()
     mock_payload.read.return_value = payload_response
     pool._client.invoke.return_value = {
@@ -51,13 +53,15 @@ def _mock_invoke_success(pool: LambdaPool, output: str = "done", duration: float
 
 def _mock_invoke_error(pool: LambdaPool, error_msg: str = "timeout"):
     """Configure pool's client to return a Lambda function error."""
-    payload_response = json.dumps({
-        "status": "error",
-        "error": error_msg,
-        "output": "",
-        "duration": 5.0,
-        "session_id": "test-session",
-    }).encode()
+    payload_response = json.dumps(
+        {
+            "status": "error",
+            "error": error_msg,
+            "output": "",
+            "duration": 5.0,
+            "session_id": "test-session",
+        }
+    ).encode()
     mock_payload = MagicMock()
     mock_payload.read.return_value = payload_response
     pool._client.invoke.return_value = {
@@ -191,10 +195,7 @@ async def test_batch_invoke():
     pool = _make_pool(max_concurrent=10)
     _mock_invoke_success(pool, output="ok")
 
-    prompts = [
-        {"prompt": f"task-{i}", "session_id": f"sid-{i}"}
-        for i in range(5)
-    ]
+    prompts = [{"prompt": f"task-{i}", "session_id": f"sid-{i}"} for i in range(5)]
     results = await pool.invoke_batch(prompts, profile={"tools": {}})
 
     assert len(results) == 5
@@ -334,8 +335,12 @@ async def test_reused_session_id_still_respects_capacity():
         inflight["peak"] = max(inflight["peak"], inflight["now"])
         await gate.wait()
         inflight["now"] -= 1
-        return {"status": "completed", "output": "ok", "duration": 1.0,
-                "session_id": payload["session_id"]}
+        return {
+            "status": "completed",
+            "output": "ok",
+            "duration": 1.0,
+            "session_id": payload["session_id"],
+        }
 
     with patch("src.lambda_pool.asyncio.to_thread", fake_to_thread):
         tasks = [
@@ -362,13 +367,16 @@ async def test_concurrent_slots_tracked_independently():
     async def fake_to_thread(fn, payload):
         observed.append(len(pool._active))
         await gate.wait()
-        return {"status": "completed", "output": "ok", "duration": 1.0,
-                "session_id": payload["session_id"]}
+        return {
+            "status": "completed",
+            "output": "ok",
+            "duration": 1.0,
+            "session_id": payload["session_id"],
+        }
 
     with patch("src.lambda_pool.asyncio.to_thread", fake_to_thread):
         tasks = [
-            asyncio.create_task(pool.invoke(prompt=f"p{i}", session_id="same"))
-            for i in range(3)
+            asyncio.create_task(pool.invoke(prompt=f"p{i}", session_id="same")) for i in range(3)
         ]
         await asyncio.sleep(0.1)
         assert len(pool._active) == 3, "same session_id must not collapse slots"
@@ -390,13 +398,16 @@ async def test_capacity_admission_is_atomic():
         inflight["peak"] = max(inflight["peak"], inflight["now"])
         await gate.wait()
         inflight["now"] -= 1
-        return {"status": "completed", "output": "ok", "duration": 1.0,
-                "session_id": payload["session_id"]}
+        return {
+            "status": "completed",
+            "output": "ok",
+            "duration": 1.0,
+            "session_id": payload["session_id"],
+        }
 
     with patch("src.lambda_pool.asyncio.to_thread", fake_to_thread):
         tasks = [
-            asyncio.create_task(pool.invoke(prompt=f"p{i}", session_id=f"s{i}"))
-            for i in range(20)
+            asyncio.create_task(pool.invoke(prompt=f"p{i}", session_id=f"s{i}")) for i in range(20)
         ]
         await asyncio.sleep(0.1)
         peak_while_open = inflight["peak"]
@@ -437,8 +448,12 @@ async def test_batch_result_order_matches_input():
     def per_prompt(payload):
         if payload["prompt"] == "bad":
             raise RuntimeError("boom")
-        return {"status": "completed", "output": payload["prompt"],
-                "duration": 1.0, "session_id": payload["session_id"]}
+        return {
+            "status": "completed",
+            "output": payload["prompt"],
+            "duration": 1.0,
+            "session_id": payload["session_id"],
+        }
 
     pool._lambda_invoke = per_prompt
 

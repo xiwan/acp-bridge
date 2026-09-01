@@ -8,12 +8,16 @@ from src.rate_limiter import AgentQuota, RateLimiter
 # Helpers
 # ---------------------------------------------------------------------------
 
-def make_limiter(agent: str, rpm: int = 5, tpm: int = 1000, fallback: str | None = None) -> RateLimiter:
+
+def make_limiter(
+    agent: str, rpm: int = 5, tpm: int = 1000, fallback: str | None = None
+) -> RateLimiter:
     """Create a RateLimiter with a single agent quota (no config file needed)."""
     rl = RateLimiter.__new__(RateLimiter)
     rl.quotas = {}
     rl._windows = {}
     import threading
+
     rl._lock = threading.Lock()
     rl._total_requests = 0
     rl._rejected_requests = 0
@@ -24,6 +28,7 @@ def make_limiter(agent: str, rpm: int = 5, tpm: int = 1000, fallback: str | None
 # ---------------------------------------------------------------------------
 # No-config passthrough
 # ---------------------------------------------------------------------------
+
 
 class TestNoConfig:
     def test_unknown_agent_always_allowed(self):
@@ -43,6 +48,7 @@ class TestNoConfig:
 # ---------------------------------------------------------------------------
 # RPM limiting
 # ---------------------------------------------------------------------------
+
 
 class TestRPMLimit:
     def test_within_rpm_allowed(self):
@@ -78,6 +84,7 @@ class TestRPMLimit:
 # TPM limiting
 # ---------------------------------------------------------------------------
 
+
 class TestTPMLimit:
     def test_within_tpm_allowed(self):
         rl = make_limiter("claude", rpm=100, tpm=500)
@@ -109,6 +116,7 @@ class TestTPMLimit:
 # Sliding window expiry
 # ---------------------------------------------------------------------------
 
+
 class TestSlidingWindow:
     def test_old_records_expire(self, monkeypatch):
         """Records >60s old should be evicted, freeing up quota."""
@@ -130,6 +138,7 @@ class TestSlidingWindow:
 # ---------------------------------------------------------------------------
 # get_stats
 # ---------------------------------------------------------------------------
+
 
 class TestGetStats:
     def test_stats_reflect_usage(self):
@@ -153,6 +162,7 @@ class TestGetStats:
         rl.quotas = {}
         rl._windows = {}
         import threading
+
         rl._lock = threading.Lock()
         rl._total_requests = 0
         rl._rejected_requests = 0
@@ -167,6 +177,7 @@ class TestGetStats:
 # get_stats() – global aggregate counters (total_requests / rejected_requests
 #               / rejection_rate)
 # ---------------------------------------------------------------------------
+
 
 class TestGetStatsGlobal:
     def test_initial_state_all_zeros(self):
@@ -202,9 +213,9 @@ class TestGetStatsGlobal:
         """rejection_rate == rejected_requests / total_requests."""
         rl = make_limiter("claude", rpm=3, tpm=100_000)
         for _ in range(3):
-            rl.check_and_consume("claude", 10)   # allowed
+            rl.check_and_consume("claude", 10)  # allowed
         for _ in range(2):
-            rl.check_and_consume("claude", 10)   # rejected (over rpm)
+            rl.check_and_consume("claude", 10)  # rejected (over rpm)
         stats = rl.get_stats()
         assert stats["total_requests"] == 5
         assert stats["rejected_requests"] == 2
@@ -214,7 +225,7 @@ class TestGetStatsGlobal:
         """rejection_rate must be 0.0 (not ZeroDivisionError) on a fresh limiter."""
         rl = make_limiter("claude", rpm=5, tpm=1000)
         stats = rl.get_stats()
-        assert stats["rejection_rate"] == 0.0   # no ZeroDivisionError
+        assert stats["rejection_rate"] == 0.0  # no ZeroDivisionError
 
     def test_unknown_agent_counts_as_total_not_rejected(self):
         """Requests for agents without a quota are allowed and counted in total."""
@@ -244,6 +255,7 @@ class TestGetStatsGlobal:
         assert global_stats["total_requests"] == 2
         assert global_stats["rejected_requests"] == 0
 
+
 class TestClaudeReviewFixes:
     def test_negative_tokens_raises(self):
         """Issue #3: negative estimated_tokens must be rejected (would bypass TPM limit)."""
@@ -257,6 +269,7 @@ class TestClaudeReviewFixes:
         rl.quotas = {}
         rl._windows = {}
         import threading
+
         rl._lock = threading.Lock()
         rl._total_requests = 0
         rl._rejected_requests = 0
@@ -269,6 +282,7 @@ class TestClaudeReviewFixes:
     def test_quota_read_inside_lock(self):
         """Issue #2: check_and_consume must see quota set by concurrent configure()."""
         import threading
+
         rl = make_limiter("claude", rpm=10, tpm=1000)
         results = []
 
@@ -282,8 +296,10 @@ class TestClaudeReviewFixes:
 
         t1 = threading.Thread(target=writer)
         t2 = threading.Thread(target=reader)
-        t1.start(); t1.join()
-        t2.start(); t2.join()
+        t1.start()
+        t1.join()
+        t2.start()
+        t2.join()
         assert results[0] is True  # quota present → allowed
 
     def test_fallback_cycle_detected(self):
@@ -292,6 +308,7 @@ class TestClaudeReviewFixes:
         rl.quotas = {}
         rl._windows = {}
         import threading
+
         rl._lock = threading.Lock()
         rl._total_requests = 0
         rl._rejected_requests = 0
@@ -305,6 +322,7 @@ class TestClaudeReviewFixes:
         rl.quotas = {}
         rl._windows = {}
         import threading
+
         rl._lock = threading.Lock()
         rl._total_requests = 0
         rl._rejected_requests = 0
@@ -357,13 +375,7 @@ class TestConfigLoading:
 
     def test_loads_from_yaml(self, tmp_path):
         cfg = tmp_path / "config.yaml"
-        cfg.write_text(
-            "rate_limits:\n"
-            "  claude:\n"
-            "    rpm: 50\n"
-            "    tpm: 80000\n"
-            "    fallback: qwen\n"
-        )
+        cfg.write_text("rate_limits:\n  claude:\n    rpm: 50\n    tpm: 80000\n    fallback: qwen\n")
         rl = RateLimiter(str(cfg))
         assert rl.quotas["claude"].rpm == 50
         assert rl.quotas["claude"].tpm == 80_000
@@ -372,17 +384,19 @@ class TestConfigLoading:
     def test_missing_config_file_is_tolerated(self):
         rl = RateLimiter("/nonexistent/path/config.yaml")
         allowed, _ = rl.check_and_consume("any", 0)
-        assert allowed is True   # no quota → allow
+        assert allowed is True  # no quota → allow
 
 
 # ---------------------------------------------------------------------------
 # Concurrent flooding test
 # ---------------------------------------------------------------------------
 
+
 class TestConcurrentFlood:
     def test_rpm_limiter_with_20_threads(self):
-        """ concurrent flooding test: 20 threads, rpm=5, expect exactly 5 allowed, 15 blocked """
+        """concurrent flooding test: 20 threads, rpm=5, expect exactly 5 allowed, 15 blocked"""
         import threading
+
         rl = make_limiter("claude", rpm=5, tpm=100_000)
 
         results = {"allowed": 0, "blocked": 0}

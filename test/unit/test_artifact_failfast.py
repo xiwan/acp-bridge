@@ -61,7 +61,9 @@ def test_glob_pattern_matches(manager, tmp_path):
 
 
 def test_url_artifact_not_checked(manager, tmp_path):
-    pl = _pipeline(tmp_path, [{"type": "url", "label": "URL", "pattern": "https://cdn.example.com"}])
+    pl = _pipeline(
+        tmp_path, [{"type": "url", "label": "URL", "pattern": "https://cdn.example.com"}]
+    )
     assert manager._check_step_artifact(pl, 0) == ""
 
 

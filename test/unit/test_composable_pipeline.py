@@ -20,11 +20,22 @@ from src.pipeline import Pipeline, PipelineManager, PipelineStep
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def agents_cfg():
     return {
-        "kiro": {"command": "echo", "working_dir": "/tmp", "description": "kiro agent", "mode": "acp"},
-        "claude": {"command": "echo", "working_dir": "/tmp", "description": "claude agent", "mode": "acp"},
+        "kiro": {
+            "command": "echo",
+            "working_dir": "/tmp",
+            "description": "kiro agent",
+            "mode": "acp",
+        },
+        "claude": {
+            "command": "echo",
+            "working_dir": "/tmp",
+            "description": "claude agent",
+            "mode": "acp",
+        },
     }
 
 
@@ -37,24 +48,34 @@ def manager(agents_cfg, tmp_path):
 
 def _conn(text="ok"):
     conn = AsyncMock(spec=AcpConnection)
+
     async def prompt(p, idle_timeout=300):
         yield {"method": "x", "params": {"type": "message.part", "content": text}}
         yield {"_prompt_result": {"result": {"stopReason": "end"}}}
+
     conn.session_prompt = prompt
     return conn
 
 
-_TN = patch("src.pipeline.transform_notification", side_effect=lambda n: (
-    {"type": "message.part", "content": n["params"]["content"]}
-    if "params" in n and "type" in n.get("params", {}) else None
-))
+_TN = patch(
+    "src.pipeline.transform_notification",
+    side_effect=lambda n: (
+        {"type": "message.part", "content": n["params"]["content"]}
+        if "params" in n and "type" in n.get("params", {})
+        else None
+    ),
+)
 _PS = patch("src.pipeline.get_prompt_suffix", return_value="")
-_LP = patch("src.pipeline._load_prompt", return_value="Topic: {topic}\nAgent: {agent}\n{participants}\n{shared_cwd}")
+_LP = patch(
+    "src.pipeline._load_prompt",
+    return_value="Topic: {topic}\nAgent: {agent}\n{participants}\n{shared_cwd}",
+)
 
 
 # ============================================================================
 # Test: shared_cwd inheritance
 # ============================================================================
+
 
 class TestSharedCwdInheritance:
     """shared_cwd passed in context is reused, not overwritten."""
@@ -63,8 +84,9 @@ class TestSharedCwdInheritance:
         """If context has a valid shared_cwd dir, _make_shared_cwd reuses it."""
         existing = str(tmp_path / "inherited-workspace")
         os.makedirs(existing)
-        pl = Pipeline(pipeline_id="inh-1", mode="parallel", steps=[],
-                      context={"shared_cwd": existing})
+        pl = Pipeline(
+            pipeline_id="inh-1", mode="parallel", steps=[], context={"shared_cwd": existing}
+        )
         result = manager._make_shared_cwd(pl)
         assert result == existing
 
@@ -77,8 +99,12 @@ class TestSharedCwdInheritance:
 
     def test_creates_new_if_shared_cwd_invalid(self, manager):
         """If shared_cwd path doesn't exist, creates a new one."""
-        pl = Pipeline(pipeline_id="inh-3", mode="sequence", steps=[],
-                      context={"shared_cwd": "/nonexistent/path/xyz"})
+        pl = Pipeline(
+            pipeline_id="inh-3",
+            mode="sequence",
+            steps=[],
+            context={"shared_cwd": "/nonexistent/path/xyz"},
+        )
         result = manager._make_shared_cwd(pl)
         assert os.path.isdir(result)
         assert result != "/nonexistent/path/xyz"
@@ -90,28 +116,38 @@ class TestSharedCwdInheritance:
         pool.get_or_create = AsyncMock(return_value=_conn("done"))
 
         # First pipeline creates a workspace
-        pl1 = Pipeline(pipeline_id="cross-1", mode="sequence", steps=[
-            PipelineStep(agent="kiro", prompt_template="init"),
-        ], context={})
+        pl1 = Pipeline(
+            pipeline_id="cross-1",
+            mode="sequence",
+            steps=[
+                PipelineStep(agent="kiro", prompt_template="init"),
+            ],
+            context={},
+        )
 
         with _TN, _PS:
-            with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
-                with patch.object(manager, '_webhook', new_callable=AsyncMock):
-                    with patch.object(manager, '_webhook_step', new_callable=AsyncMock):
+            with patch.object(manager, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(manager, "_webhook", new_callable=AsyncMock):
+                    with patch.object(manager, "_webhook_step", new_callable=AsyncMock):
                         await manager._run(pl1)
 
         shared_cwd = pl1.context["shared_cwd"]
         assert os.path.isdir(shared_cwd)
 
         # Second pipeline reuses it
-        pl2 = Pipeline(pipeline_id="cross-2", mode="sequence", steps=[
-            PipelineStep(agent="claude", prompt_template="continue"),
-        ], context={"shared_cwd": shared_cwd})
+        pl2 = Pipeline(
+            pipeline_id="cross-2",
+            mode="sequence",
+            steps=[
+                PipelineStep(agent="claude", prompt_template="continue"),
+            ],
+            context={"shared_cwd": shared_cwd},
+        )
 
         with _TN, _PS:
-            with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
-                with patch.object(manager, '_webhook', new_callable=AsyncMock):
-                    with patch.object(manager, '_webhook_step', new_callable=AsyncMock):
+            with patch.object(manager, "_webhook_start", new_callable=AsyncMock):
+                with patch.object(manager, "_webhook", new_callable=AsyncMock):
+                    with patch.object(manager, "_webhook_step", new_callable=AsyncMock):
                         await manager._run(pl2)
 
         assert pl2.context["shared_cwd"] == shared_cwd
@@ -120,6 +156,7 @@ class TestSharedCwdInheritance:
 # ============================================================================
 # Test: output_schema extraction
 # ============================================================================
+
 
 class TestOutputExtraction:
     """Conversation output extraction from final turn."""
@@ -132,18 +169,29 @@ class TestOutputExtraction:
         response = f"Here's the plan:\n\n```json\n{output_json}\n```\n\nSTATUS: DONE"
         pool.get_or_create = AsyncMock(return_value=_conn(response))
 
-        pl = Pipeline(pipeline_id="ext-1", mode="conversation", steps=[], context={
-            "participants": ["kiro", "claude"],
-            "topic": "game design",
-            "config": {"max_turns": 2, "stop_conditions": ["DONE"],
-                       "output_schema": {"type": "object"}, "a2a_rules": False},
-        })
+        pl = Pipeline(
+            pipeline_id="ext-1",
+            mode="conversation",
+            steps=[],
+            context={
+                "participants": ["kiro", "claude"],
+                "topic": "game design",
+                "config": {
+                    "max_turns": 2,
+                    "stop_conditions": ["DONE"],
+                    "output_schema": {"type": "object"},
+                    "a2a_rules": False,
+                },
+            },
+        )
 
         with _TN, _PS, _LP:
-            with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
-                with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
-                    with patch.object(manager, '_webhook', new_callable=AsyncMock):
-                        with patch.object(manager, '_webhook_conversation_turn', new_callable=AsyncMock):
+            with patch.object(manager, "_make_shared_cwd", return_value="/tmp/ws"):
+                with patch.object(manager, "_webhook_start", new_callable=AsyncMock):
+                    with patch.object(manager, "_webhook", new_callable=AsyncMock):
+                        with patch.object(
+                            manager, "_webhook_conversation_turn", new_callable=AsyncMock
+                        ):
                             await manager._run(pl)
 
         assert pl.context.get("output") == {"tasks": [{"agent": "kiro", "role": "frontend"}]}
@@ -155,18 +203,29 @@ class TestOutputExtraction:
         response = 'The result is {"role": "backend", "agent": "claude"} and STATUS: DONE'
         pool.get_or_create = AsyncMock(return_value=_conn(response))
 
-        pl = Pipeline(pipeline_id="ext-2", mode="conversation", steps=[], context={
-            "participants": ["kiro", "claude"],
-            "topic": "test",
-            "config": {"max_turns": 2, "stop_conditions": ["DONE"],
-                       "output_schema": True, "a2a_rules": False},
-        })
+        pl = Pipeline(
+            pipeline_id="ext-2",
+            mode="conversation",
+            steps=[],
+            context={
+                "participants": ["kiro", "claude"],
+                "topic": "test",
+                "config": {
+                    "max_turns": 2,
+                    "stop_conditions": ["DONE"],
+                    "output_schema": True,
+                    "a2a_rules": False,
+                },
+            },
+        )
 
         with _TN, _PS, _LP:
-            with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
-                with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
-                    with patch.object(manager, '_webhook', new_callable=AsyncMock):
-                        with patch.object(manager, '_webhook_conversation_turn', new_callable=AsyncMock):
+            with patch.object(manager, "_make_shared_cwd", return_value="/tmp/ws"):
+                with patch.object(manager, "_webhook_start", new_callable=AsyncMock):
+                    with patch.object(manager, "_webhook", new_callable=AsyncMock):
+                        with patch.object(
+                            manager, "_webhook_conversation_turn", new_callable=AsyncMock
+                        ):
                             await manager._run(pl)
 
         assert pl.context["output"]["role"] == "backend"
@@ -178,17 +237,24 @@ class TestOutputExtraction:
         response = '{"data": "test"} STATUS: DONE'
         pool.get_or_create = AsyncMock(return_value=_conn(response))
 
-        pl = Pipeline(pipeline_id="ext-3", mode="conversation", steps=[], context={
-            "participants": ["kiro", "claude"],
-            "topic": "test",
-            "config": {"max_turns": 2, "stop_conditions": ["DONE"], "a2a_rules": False},
-        })
+        pl = Pipeline(
+            pipeline_id="ext-3",
+            mode="conversation",
+            steps=[],
+            context={
+                "participants": ["kiro", "claude"],
+                "topic": "test",
+                "config": {"max_turns": 2, "stop_conditions": ["DONE"], "a2a_rules": False},
+            },
+        )
 
         with _TN, _PS, _LP:
-            with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
-                with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
-                    with patch.object(manager, '_webhook', new_callable=AsyncMock):
-                        with patch.object(manager, '_webhook_conversation_turn', new_callable=AsyncMock):
+            with patch.object(manager, "_make_shared_cwd", return_value="/tmp/ws"):
+                with patch.object(manager, "_webhook_start", new_callable=AsyncMock):
+                    with patch.object(manager, "_webhook", new_callable=AsyncMock):
+                        with patch.object(
+                            manager, "_webhook_conversation_turn", new_callable=AsyncMock
+                        ):
                             await manager._run(pl)
 
         assert "output" not in pl.context
@@ -196,10 +262,16 @@ class TestOutputExtraction:
     @pytest.mark.asyncio
     async def test_output_in_to_dict(self, manager):
         """Extracted output appears in to_dict()."""
-        pl = Pipeline(pipeline_id="ext-4", mode="conversation", steps=[], context={
-            "participants": ["kiro", "claude"], "topic": "t",
-            "output": {"tasks": [{"agent": "kiro"}]},
-        })
+        pl = Pipeline(
+            pipeline_id="ext-4",
+            mode="conversation",
+            steps=[],
+            context={
+                "participants": ["kiro", "claude"],
+                "topic": "t",
+                "output": {"tasks": [{"agent": "kiro"}]},
+            },
+        )
         d = pl.to_dict()
         assert d["output"] == {"tasks": [{"agent": "kiro"}]}
 
@@ -207,6 +279,7 @@ class TestOutputExtraction:
 # ============================================================================
 # Test: pause/resume/inject
 # ============================================================================
+
 
 class TestPauseResumeInject:
     """Human-in-the-loop: pause, resume, inject message."""
@@ -224,11 +297,16 @@ class TestPauseResumeInject:
 
         pool.get_or_create = AsyncMock(side_effect=counting_conn)
 
-        pl = Pipeline(pipeline_id="pr-1", mode="conversation", steps=[], context={
-            "participants": ["kiro", "claude"],
-            "topic": "test pause",
-            "config": {"max_turns": 4, "stop_conditions": [], "a2a_rules": False},
-        })
+        pl = Pipeline(
+            pipeline_id="pr-1",
+            mode="conversation",
+            steps=[],
+            context={
+                "participants": ["kiro", "claude"],
+                "topic": "test pause",
+                "config": {"max_turns": 4, "stop_conditions": [], "a2a_rules": False},
+            },
+        )
 
         async def pause_after_2_turns():
             """Pause after 2 turns, wait, then resume."""
@@ -244,10 +322,12 @@ class TestPauseResumeInject:
             pl._gate.set()
 
         with _TN, _PS, _LP:
-            with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
-                with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
-                    with patch.object(manager, '_webhook', new_callable=AsyncMock):
-                        with patch.object(manager, '_webhook_conversation_turn', new_callable=AsyncMock):
+            with patch.object(manager, "_make_shared_cwd", return_value="/tmp/ws"):
+                with patch.object(manager, "_webhook_start", new_callable=AsyncMock):
+                    with patch.object(manager, "_webhook", new_callable=AsyncMock):
+                        with patch.object(
+                            manager, "_webhook_conversation_turn", new_callable=AsyncMock
+                        ):
                             task = asyncio.create_task(manager._run(pl))
                             await pause_after_2_turns()
                             await task
@@ -261,17 +341,23 @@ class TestPauseResumeInject:
         pool = manager._pool
         pool.get_or_create = AsyncMock(return_value=_conn("acknowledged"))
 
-        pl = Pipeline(pipeline_id="inj-1", mode="conversation", steps=[], context={
-            "participants": ["kiro", "claude"],
-            "topic": "test inject",
-            "config": {"max_turns": 4, "stop_conditions": ["DONE"], "a2a_rules": False},
-        })
+        pl = Pipeline(
+            pipeline_id="inj-1",
+            mode="conversation",
+            steps=[],
+            context={
+                "participants": ["kiro", "claude"],
+                "topic": "test inject",
+                "config": {"max_turns": 4, "stop_conditions": ["DONE"], "a2a_rules": False},
+            },
+        )
 
         # Pre-load inject queue before running
         await pl._inject_queue.put("Use Phaser.js framework")
 
         # Make second turn return DONE
         call_count = 0
+
         async def conn_with_done(agent, sid, cwd=""):
             nonlocal call_count
             call_count += 1
@@ -282,10 +368,12 @@ class TestPauseResumeInject:
         pool.get_or_create = AsyncMock(side_effect=conn_with_done)
 
         with _TN, _PS, _LP:
-            with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
-                with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
-                    with patch.object(manager, '_webhook', new_callable=AsyncMock):
-                        with patch.object(manager, '_webhook_conversation_turn', new_callable=AsyncMock):
+            with patch.object(manager, "_make_shared_cwd", return_value="/tmp/ws"):
+                with patch.object(manager, "_webhook_start", new_callable=AsyncMock):
+                    with patch.object(manager, "_webhook", new_callable=AsyncMock):
+                        with patch.object(
+                            manager, "_webhook_conversation_turn", new_callable=AsyncMock
+                        ):
                             await manager._run(pl)
 
         # First turn should be Human inject
@@ -296,11 +384,16 @@ class TestPauseResumeInject:
     @pytest.mark.asyncio
     async def test_inject_auto_resumes(self, manager):
         """Injecting a message while paused auto-resumes the pipeline."""
-        pl = Pipeline(pipeline_id="inj-2", mode="conversation", steps=[], context={
-            "participants": ["kiro", "claude"],
-            "topic": "test",
-            "config": {"max_turns": 2, "stop_conditions": [], "a2a_rules": False},
-        })
+        pl = Pipeline(
+            pipeline_id="inj-2",
+            mode="conversation",
+            steps=[],
+            context={
+                "participants": ["kiro", "claude"],
+                "topic": "test",
+                "config": {"max_turns": 2, "stop_conditions": [], "a2a_rules": False},
+            },
+        )
         pl._gate.clear()  # paused
 
         # Simulate what the route handler does
@@ -311,8 +404,12 @@ class TestPauseResumeInject:
 
     def test_paused_field_in_to_dict(self):
         """to_dict includes paused status."""
-        pl = Pipeline(pipeline_id="p-1", mode="conversation", steps=[], context={
-            "participants": ["a", "b"], "topic": "t"})
+        pl = Pipeline(
+            pipeline_id="p-1",
+            mode="conversation",
+            steps=[],
+            context={"participants": ["a", "b"], "topic": "t"},
+        )
         assert pl.to_dict()["paused"] is False
         pl._gate.clear()
         assert pl.to_dict()["paused"] is True
@@ -321,6 +418,7 @@ class TestPauseResumeInject:
 # ============================================================================
 # Test: artifacts endpoint logic
 # ============================================================================
+
 
 class TestArtifacts:
     """List files in shared_cwd."""
@@ -369,6 +467,7 @@ class TestArtifacts:
 # Test: auto-chain (next)
 # ============================================================================
 
+
 class TestAutoChain:
     """Pipeline auto-chains to next when `next` is in context."""
 
@@ -378,27 +477,32 @@ class TestAutoChain:
         pool = manager._pool
         pool.get_or_create = AsyncMock(return_value=_conn("done"))
 
-        pl = Pipeline(pipeline_id="chain-1", mode="sequence", steps=[
-            PipelineStep(agent="kiro", prompt_template="step1"),
-        ], context={
-            "next": {
-                "mode": "parallel",
-                "steps": [
-                    {"agent": "kiro", "prompt": "build frontend"},
-                    {"agent": "claude", "prompt": "build backend"},
-                ],
-            }
-        })
+        pl = Pipeline(
+            pipeline_id="chain-1",
+            mode="sequence",
+            steps=[
+                PipelineStep(agent="kiro", prompt_template="step1"),
+            ],
+            context={
+                "next": {
+                    "mode": "parallel",
+                    "steps": [
+                        {"agent": "kiro", "prompt": "build frontend"},
+                        {"agent": "claude", "prompt": "build backend"},
+                    ],
+                }
+            },
+        )
 
         def fake_make_cwd(p):
             p.context["shared_cwd"] = "/tmp/ws"
             return "/tmp/ws"
 
         with _TN, _PS:
-            with patch.object(manager, '_make_shared_cwd', side_effect=fake_make_cwd):
-                with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
-                    with patch.object(manager, '_webhook', new_callable=AsyncMock):
-                        with patch.object(manager, '_webhook_step', new_callable=AsyncMock):
+            with patch.object(manager, "_make_shared_cwd", side_effect=fake_make_cwd):
+                with patch.object(manager, "_webhook_start", new_callable=AsyncMock):
+                    with patch.object(manager, "_webhook", new_callable=AsyncMock):
+                        with patch.object(manager, "_webhook_step", new_callable=AsyncMock):
                             await manager._run(pl)
 
         assert pl.status == "completed"
@@ -412,25 +516,40 @@ class TestAutoChain:
     async def test_auto_chain_from_output(self, manager):
         """Auto-chain with steps_from_output generates steps from conversation output."""
         pool = manager._pool
-        pool.get_or_create = AsyncMock(return_value=_conn('{"tasks":[{"agent":"kiro","module":"frontend","files":["app.js"]},{"agent":"claude","module":"backend","files":["server.js"]}]} STATUS: DONE'))
+        pool.get_or_create = AsyncMock(
+            return_value=_conn(
+                '{"tasks":[{"agent":"kiro","module":"frontend","files":["app.js"]},{"agent":"claude","module":"backend","files":["server.js"]}]} STATUS: DONE'
+            )
+        )
 
-        pl = Pipeline(pipeline_id="chain-2", mode="conversation", steps=[], context={
-            "participants": ["kiro", "claude"],
-            "topic": "plan",
-            "config": {"max_turns": 2, "stop_conditions": ["DONE"],
-                       "output_schema": True, "a2a_rules": False},
-            "next": {
-                "mode": "parallel",
-                "steps_from_output": True,
-                "step_prompt_template": "在 {shared_cwd} 中实现 {module}，文件: {files}",
-            }
-        })
+        pl = Pipeline(
+            pipeline_id="chain-2",
+            mode="conversation",
+            steps=[],
+            context={
+                "participants": ["kiro", "claude"],
+                "topic": "plan",
+                "config": {
+                    "max_turns": 2,
+                    "stop_conditions": ["DONE"],
+                    "output_schema": True,
+                    "a2a_rules": False,
+                },
+                "next": {
+                    "mode": "parallel",
+                    "steps_from_output": True,
+                    "step_prompt_template": "在 {shared_cwd} 中实现 {module}，文件: {files}",
+                },
+            },
+        )
 
         with _TN, _PS, _LP:
-            with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
-                with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
-                    with patch.object(manager, '_webhook', new_callable=AsyncMock):
-                        with patch.object(manager, '_webhook_conversation_turn', new_callable=AsyncMock):
+            with patch.object(manager, "_make_shared_cwd", return_value="/tmp/ws"):
+                with patch.object(manager, "_webhook_start", new_callable=AsyncMock):
+                    with patch.object(manager, "_webhook", new_callable=AsyncMock):
+                        with patch.object(
+                            manager, "_webhook_conversation_turn", new_callable=AsyncMock
+                        ):
                             await manager._run(pl)
 
         assert pl.status == "completed"
@@ -447,17 +566,20 @@ class TestAutoChain:
         pool = manager._pool
         pool.get_or_create = AsyncMock(side_effect=Exception("boom"))
 
-        pl = Pipeline(pipeline_id="chain-3", mode="sequence", steps=[
-            PipelineStep(agent="kiro", prompt_template="x"),
-        ], context={
-            "next": {"mode": "parallel", "steps": [{"agent": "kiro", "prompt": "y"}]}
-        })
+        pl = Pipeline(
+            pipeline_id="chain-3",
+            mode="sequence",
+            steps=[
+                PipelineStep(agent="kiro", prompt_template="x"),
+            ],
+            context={"next": {"mode": "parallel", "steps": [{"agent": "kiro", "prompt": "y"}]}},
+        )
 
         with _TN, _PS:
-            with patch.object(manager, '_make_shared_cwd', return_value="/tmp/ws"):
-                with patch.object(manager, '_webhook_start', new_callable=AsyncMock):
-                    with patch.object(manager, '_webhook', new_callable=AsyncMock):
-                        with patch.object(manager, '_webhook_step', new_callable=AsyncMock):
+            with patch.object(manager, "_make_shared_cwd", return_value="/tmp/ws"):
+                with patch.object(manager, "_webhook_start", new_callable=AsyncMock):
+                    with patch.object(manager, "_webhook", new_callable=AsyncMock):
+                        with patch.object(manager, "_webhook_step", new_callable=AsyncMock):
                             await manager._run(pl)
 
         assert pl.status == "failed"
@@ -468,16 +590,24 @@ class TestAutoChain:
 # Upstream injection (parallel-then-judge): inject upstream results downstream
 # ============================================================================
 
+
 class TestInjectUpstream:
     def _upstream_pl(self):
-        pl = Pipeline(pipeline_id="up-1", mode="parallel", steps=[
-            PipelineStep(agent="kiro-stock", prompt_template="p0"),
-            PipelineStep(agent="kiro-stock", prompt_template="p1"),
-            PipelineStep(agent="kiro-stock", prompt_template="p2"),
-        ])
-        pl.steps[0].status = "completed"; pl.steps[0].result = "fundamentals: long"
-        pl.steps[1].status = "completed"; pl.steps[1].result = "technicals: oversold"
-        pl.steps[2].status = "failed"; pl.steps[2].result = ""  # excluded
+        pl = Pipeline(
+            pipeline_id="up-1",
+            mode="parallel",
+            steps=[
+                PipelineStep(agent="kiro-stock", prompt_template="p0"),
+                PipelineStep(agent="kiro-stock", prompt_template="p1"),
+                PipelineStep(agent="kiro-stock", prompt_template="p2"),
+            ],
+        )
+        pl.steps[0].status = "completed"
+        pl.steps[0].result = "fundamentals: long"
+        pl.steps[1].status = "completed"
+        pl.steps[1].result = "technicals: oversold"
+        pl.steps[2].status = "failed"
+        pl.steps[2].result = ""  # excluded
         return pl
 
     def test_inject_text_prepends_completed_results(self, manager):
@@ -491,8 +621,11 @@ class TestInjectUpstream:
         assert "step 2" not in p.lower()
 
     def test_inject_text_noop_when_nothing_completed(self, manager):
-        pl = Pipeline(pipeline_id="up-2", mode="parallel",
-                      steps=[PipelineStep(agent="kiro-stock", prompt_template="p0")])
+        pl = Pipeline(
+            pipeline_id="up-2",
+            mode="parallel",
+            steps=[PipelineStep(agent="kiro-stock", prompt_template="p0")],
+        )
         steps = [{"agent": "kiro", "prompt": "SUMMARIZE"}]
         manager._inject_upstream_text(pl, steps)
         assert steps[0]["prompt"] == "SUMMARIZE"
@@ -500,8 +633,10 @@ class TestInjectUpstream:
     def test_inject_s3_uses_presigned_urls(self, manager):
         pl = self._upstream_pl()
         steps = [{"agent": "kiro", "prompt": "SUMMARIZE"}]
-        with patch("src.s3.is_available", return_value=True), \
-             patch("src.s3.upload_bytes", side_effect=lambda k, d: f"https://s3.example/{k}?sig=x"):
+        with (
+            patch("src.s3.is_available", return_value=True),
+            patch("src.s3.upload_bytes", side_effect=lambda k, d: f"https://s3.example/{k}?sig=x"),
+        ):
             manager._inject_upstream_s3(pl, steps)
         p = steps[0]["prompt"]
         assert "https://s3.example/" in p

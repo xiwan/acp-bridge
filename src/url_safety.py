@@ -181,5 +181,9 @@ def validate_outbound_url(url: str, *, allowed_targets: frozenset[str] = frozens
     host_header = f"[{host}]" if ":" in host else host
     if parsed.port:
         host_header = f"{host_header}:{parsed.port}"
-    return SafeTarget(pinned_url=_pin_host(parsed, resolved_ip), host=host,
-                      host_header=host_header, ip=resolved_ip)
+    return SafeTarget(
+        pinned_url=_pin_host(parsed, resolved_ip),
+        host=host,
+        host_header=host_header,
+        ip=resolved_ip,
+    )

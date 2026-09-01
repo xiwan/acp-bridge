@@ -73,9 +73,7 @@ async def test_a2a_announce_rejects_missing_or_wrong_token():
     app = _app(token="s3cr3t")
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        no_auth = await client.post(
-            "/a2a/announce", json={"agent_card": {"url": "http://peer"}}
-        )
+        no_auth = await client.post("/a2a/announce", json={"agent_card": {"url": "http://peer"}})
         wrong_auth = await client.post(
             "/a2a/announce",
             json={"agent_card": {"url": "http://peer"}},
@@ -106,9 +104,7 @@ async def test_a2a_rpc_rejects_missing_or_wrong_token():
     rpc = {"jsonrpc": "2.0", "id": 1, "method": "tasks/send", "params": {}}
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         no_auth = await client.post("/a2a", json=rpc)
-        wrong_auth = await client.post(
-            "/a2a", json=rpc, headers={"Authorization": "Bearer wrong"}
-        )
+        wrong_auth = await client.post("/a2a", json=rpc, headers={"Authorization": "Bearer wrong"})
     assert no_auth.status_code == 401
     assert wrong_auth.status_code == 401
 
@@ -119,9 +115,7 @@ async def test_a2a_rpc_accepts_correct_token():
     transport = httpx.ASGITransport(app=app)
     rpc = {"jsonrpc": "2.0", "id": 1, "method": "tasks/send", "params": {}}
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/a2a", json=rpc, headers={"Authorization": "Bearer s3cr3t"}
-        )
+        resp = await client.post("/a2a", json=rpc, headers={"Authorization": "Bearer s3cr3t"})
     assert resp.status_code == 200
     assert resp.json()["result"]["ok"] is True
 
@@ -132,7 +126,5 @@ async def test_a2a_rpc_404_without_adapter():
     transport = httpx.ASGITransport(app=app)
     rpc = {"jsonrpc": "2.0", "id": 1, "method": "tasks/send", "params": {}}
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/a2a", json=rpc, headers={"Authorization": "Bearer s3cr3t"}
-        )
+        resp = await client.post("/a2a", json=rpc, headers={"Authorization": "Bearer s3cr3t"})
     assert resp.status_code == 404

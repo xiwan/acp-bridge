@@ -36,9 +36,16 @@ def _agent_state(name: str, mode: str, alive: int) -> tuple[str, bool]:
     return "cold", True
 
 
-def register(app, version: str, start_time: float, agents_cfg: dict,
-             pool: AcpProcessPool | None, ttl_hours: int,
-             job_mgr=None, litellm_cfg: dict | None = None):
+def register(
+    app,
+    version: str,
+    start_time: float,
+    agents_cfg: dict,
+    pool: AcpProcessPool | None,
+    ttl_hours: int,
+    job_mgr=None,
+    litellm_cfg: dict | None = None,
+):
 
     litellm_url = (litellm_cfg or {}).get("url", "")
     litellm_required_by = (litellm_cfg or {}).get("required_by", [])
@@ -53,8 +60,7 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
     async def ready():
         """Readiness probe: at least one agent is configured for on-demand use."""
         configured = sum(
-            1 for cfg in agents_cfg.values()
-            if isinstance(cfg, dict) and cfg.get("enabled", True)
+            1 for cfg in agents_cfg.values() if isinstance(cfg, dict) and cfg.get("enabled", True)
         )
         active = pool.stats["total"] if pool else 0
         body = {
@@ -102,14 +108,16 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
                 acp_total += 1
                 if state == "down":
                     acp_down += 1
-            agents_summary.append({
-                "name": name,
-                "mode": mode,
-                "enabled": cfg.get("enabled", True),
-                "alive": alive,
-                "healthy": is_healthy,
-                "state": state,
-            })
+            agents_summary.append(
+                {
+                    "name": name,
+                    "mode": mode,
+                    "enabled": cfg.get("enabled", True),
+                    "alive": alive,
+                    "healthy": is_healthy,
+                    "state": state,
+                }
+            )
 
         # --- Jobs summary ---
         jobs_info = None
@@ -171,14 +179,16 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
         acp_agents = getattr(app.state, "acp_agents", None) or {}
         for name in acp_agents:
             if name not in local_names:
-                agents_summary.append({
-                    "name": name,
-                    "mode": "mesh",
-                    "enabled": True,
-                    "alive": 0,
-                    "healthy": True,
-                    "state": "remote",
-                })
+                agents_summary.append(
+                    {
+                        "name": name,
+                        "mode": "mesh",
+                        "enabled": True,
+                        "alive": 0,
+                        "healthy": True,
+                        "state": "remote",
+                    }
+                )
                 state_counts["remote"] += 1
 
         body = {
@@ -220,24 +230,28 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
                         is_responsive = conn.alive and not stuck
                         if is_responsive:
                             responsive += 1
-                        sessions.append({
-                            "session_id": sid,
-                            "alive": conn.alive,
-                            "state": "stuck" if stuck else conn.state,
-                            "idle": round(now - conn.last_active, 1),
-                        })
+                        sessions.append(
+                            {
+                                "session_id": sid,
+                                "alive": conn.alive,
+                                "state": "stuck" if stuck else conn.state,
+                                "idle": round(now - conn.last_active, 1),
+                            }
+                        )
             state, healthy = _agent_state(name, mode, alive)
             if alive > 0 and responsive == 0:
                 state, healthy = "down", False
-            agent_list.append({
-                "name": name,
-                "mode": mode,
-                "alive_sessions": alive,
-                "responsive_sessions": responsive,
-                "healthy": healthy,
-                "state": state,
-                "sessions": sessions,
-            })
+            agent_list.append(
+                {
+                    "name": name,
+                    "mode": mode,
+                    "alive_sessions": alive,
+                    "responsive_sessions": responsive,
+                    "healthy": healthy,
+                    "state": state,
+                    "sessions": sessions,
+                }
+            )
 
         # Mesh remote agents (L2): registered in app.state.acp_agents but not in agents_cfg
         local_names = {n for n in agents_cfg if isinstance(agents_cfg[n], dict)}
@@ -256,32 +270,40 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
                     domains = meta.domains or []
             if hasattr(agent_obj, "description"):
                 description = agent_obj.description or ""
-            agent_list.append({
-                "name": name,
-                "mode": "mesh",
-                "alive_sessions": 0,
-                "responsive_sessions": 0,
-                "healthy": True,
-                "state": "remote",
-                "sessions": [],
-                "description": description,
-                "domains": domains,
-                "mesh": {
-                    "node": next((t.split(":", 1)[1] for t in tags if t.startswith("node:")), None),
-                    "peer": next((t.split(":", 1)[1] for t in tags if t.startswith("peer:")), None),
-                },
-            })
+            agent_list.append(
+                {
+                    "name": name,
+                    "mode": "mesh",
+                    "alive_sessions": 0,
+                    "responsive_sessions": 0,
+                    "healthy": True,
+                    "state": "remote",
+                    "sessions": [],
+                    "description": description,
+                    "domains": domains,
+                    "mesh": {
+                        "node": next(
+                            (t.split(":", 1)[1] for t in tags if t.startswith("node:")), None
+                        ),
+                        "peer": next(
+                            (t.split(":", 1)[1] for t in tags if t.startswith("peer:")), None
+                        ),
+                    },
+                }
+            )
 
         return {"version": version, "agents": agent_list}
 
     @app.get("/agents/fallback-chain")
     async def get_fallback_chain():
         from ..fallback_policy import FALLBACK_CHAIN
+
         return {"fallback_chain": dict(FALLBACK_CHAIN)}
 
     @app.put("/agents/fallback-chain")
     async def put_fallback_chain(req: dict):
         from ..fallback_policy import FALLBACK_CHAIN, save_fallback_chain
+
         chain = req.get("fallback_chain")
         if not isinstance(chain, dict):
             return JSONResponse({"error": "fallback_chain must be a dict"}, status_code=400)
@@ -294,6 +316,7 @@ def register(app, version: str, start_time: float, agents_cfg: dict,
         return {"status": "ok", "fallback_chain": dict(FALLBACK_CHAIN)}
 
     if pool:
+
         @app.delete("/sessions/{agent}/{session_id}")
         async def delete_session(agent: str = PathParam(...), session_id: str = PathParam(...)):
             await pool.close(agent, session_id)

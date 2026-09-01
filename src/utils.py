@@ -44,7 +44,9 @@ async def run_pty_subprocess(
     parts: list[str] = []
 
     proc = await asyncio.create_subprocess_exec(
-        command, *args, prompt,
+        command,
+        *args,
+        prompt,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         stdin=asyncio.subprocess.DEVNULL,
@@ -58,7 +60,8 @@ async def run_pty_subprocess(
                 proc.kill()
                 await proc.wait()
                 return PtyResult(
-                    status="failed", output="".join(parts),
+                    status="failed",
+                    output="".join(parts),
                     error=f"agent exceeded max_duration ({max_duration}s)",
                     duration=time.time() - t0,
                 )
@@ -68,7 +71,8 @@ async def run_pty_subprocess(
                 proc.kill()
                 await proc.wait()
                 return PtyResult(
-                    status="failed", output="".join(parts),
+                    status="failed",
+                    output="".join(parts),
                     error=f"agent timeout (idle {idle_timeout}s)",
                     duration=time.time() - t0,
                 )
@@ -90,8 +94,10 @@ async def run_pty_subprocess(
         proc.kill()
         await proc.wait()
         return PtyResult(
-            status="failed", output="".join(parts),
-            error=str(e), duration=time.time() - t0,
+            status="failed",
+            output="".join(parts),
+            error=str(e),
+            duration=time.time() - t0,
         )
 
     return PtyResult(status=status, output="".join(parts), error=error, duration=time.time() - t0)

@@ -7,6 +7,7 @@ Agent Card is hand-built to the A2A spec shape (no a2a-sdk: that SDK is a
 protobuf reimpl pulling heavy google deps; L0 only needs the JSON shape).
 See design/a2a-mesh-spec-v2.md.
 """
+
 import asyncio
 import logging
 import re
@@ -64,8 +65,9 @@ def same_private_subnet(url_a: str, url_b: str, prefix_len: int = 16) -> bool:
         return False
 
 
-def select_peer_url(my_mode: str, my_private_url: str,
-                    peer_url: str, peer_private_url: str, peer_public_url: str) -> str:
+def select_peer_url(
+    my_mode: str, my_private_url: str, peer_url: str, peer_private_url: str, peer_public_url: str
+) -> str:
     """Select the best URL to reach a peer based on network mode."""
     if my_mode == "private":
         return peer_private_url or peer_url
@@ -82,15 +84,15 @@ def select_peer_url(my_mode: str, my_private_url: str,
 class PeerInfo:
     url: str
     agent_card: dict
-    skills: list           # agent names (ids) extracted from the card
-    pricing: dict          # reserved: peer's declared pricing (L0 stores, doesn't use)
+    skills: list  # agent names (ids) extracted from the card
+    pricing: dict  # reserved: peer's declared pricing (L0 stores, doesn't use)
     last_seen: float
     healthy: bool = True
-    node_name: str = ""    # peer node name, parsed from card "acp-bridge@<node>"
+    node_name: str = ""  # peer node name, parsed from card "acp-bridge@<node>"
     skill_info: dict = field(default_factory=dict)  # id -> full skill obj (desc/tags)
     private_url: str = ""  # from extensions.private_url
-    public_url: str = ""   # from extensions.public_url
-    mesh_mode: str = ""    # from extensions.mesh_mode
+    public_url: str = ""  # from extensions.public_url
+    mesh_mode: str = ""  # from extensions.mesh_mode
 
 
 def _node_name_from_card(card: dict) -> str:
@@ -102,11 +104,23 @@ def _node_name_from_card(card: dict) -> str:
 class MeshManager:
     """Owns the peer table and Agent Card construction for one Bridge node."""
 
-    def __init__(self, *, node_name: str, self_url: str, version: str,
-                 agents_cfg: dict, config_path: str,
-                 seeds: list, token: str, announce_interval: int = 300,
-                 max_hops: int = 1, pricing: Optional[dict] = None,
-                 mode: str = "", private_url: str = "", public_url: str = ""):
+    def __init__(
+        self,
+        *,
+        node_name: str,
+        self_url: str,
+        version: str,
+        agents_cfg: dict,
+        config_path: str,
+        seeds: list,
+        token: str,
+        announce_interval: int = 300,
+        max_hops: int = 1,
+        pricing: Optional[dict] = None,
+        mode: str = "",
+        private_url: str = "",
+        public_url: str = "",
+    ):
         self.node_name = node_name
         self.version = version
         self.agents_cfg = agents_cfg
@@ -137,18 +151,24 @@ class MeshManager:
             self.self_url = self.public_url or self_url.rstrip("/")
 
         # All addresses that identify "self" (for dedup)
-        self._self_urls: set[str] = {u for u in [
-            self.self_url, self.private_url, self.public_url, self_url.rstrip("/")
-        ] if u}
+        self._self_urls: set[str] = {
+            u for u in [self.self_url, self.private_url, self.public_url, self_url.rstrip("/")] if u
+        }
 
-        log.info("mesh: mode=%s self_url=%s private=%s public=%s",
-                 self.mode, self.self_url, self.private_url, self.public_url)
+        log.info(
+            "mesh: mode=%s self_url=%s private=%s public=%s",
+            self.mode,
+            self.self_url,
+            self.private_url,
+            self.public_url,
+        )
 
     # --- Agent Card ---------------------------------------------------------
 
     def _agent_names(self) -> list:
-        return [k for k, v in self.agents_cfg.items()
-                if isinstance(v, dict) and v.get("enabled", True)]
+        return [
+            k for k, v in self.agents_cfg.items() if isinstance(v, dict) and v.get("enabled", True)
+        ]
 
     def _skill(self, name: str) -> dict:
         cap = self._registry.get_agent(name)
@@ -156,7 +176,9 @@ class MeshManager:
         skill = {
             "id": name,
             "name": name,
-            "description": (self.agents_cfg.get(name, {}) or {}).get("description", f"{name} agent"),
+            "description": (self.agents_cfg.get(name, {}) or {}).get(
+                "description", f"{name} agent"
+            ),
             "tags": tags,
             "pricing": dict(self.pricing),  # billing reservation (free in L0)
         }
@@ -207,14 +229,20 @@ class MeshManager:
         skill_info = {s["id"]: s for s in card_skills if s.get("id")}
         pricing = card_skills[0].get("pricing", {}) if card_skills else {}
         self._peers[url] = PeerInfo(
-            url, card, skills, pricing, time.time(),
-            healthy=True, node_name=_node_name_from_card(card),
+            url,
+            card,
+            skills,
+            pricing,
+            time.time(),
+            healthy=True,
+            node_name=_node_name_from_card(card),
             skill_info=skill_info,
-            private_url=priv, public_url=pub,
+            private_url=priv,
+            public_url=pub,
             mesh_mode=ext.get("mesh_mode", ""),
         )
         # gossip: learn peers-of-peers as placeholders (unhealthy until first contact)
-        for p in (peers or []):
+        for p in peers or []:
             p = (p or "").rstrip("/")
             if p and not self._is_self(p) and p not in self._peers:
                 self._peers[p] = PeerInfo(p, {}, [], {}, time.time(), healthy=False)
@@ -223,19 +251,28 @@ class MeshManager:
         return list(self._peers.keys())
 
     def peers_view(self) -> list:
-        return [{"url": p.url, "skills": p.skills, "healthy": p.healthy,
-                 "last_seen": p.last_seen, "pricing": p.pricing,
-                 "mesh_mode": p.mesh_mode,
-                 "private_url": p.private_url, "public_url": p.public_url}
-                for p in self._peers.values()]
+        return [
+            {
+                "url": p.url,
+                "skills": p.skills,
+                "healthy": p.healthy,
+                "last_seen": p.last_seen,
+                "pricing": p.pricing,
+                "mesh_mode": p.mesh_mode,
+                "private_url": p.private_url,
+                "public_url": p.public_url,
+            }
+            for p in self._peers.values()
+        ]
 
     def resolve_peer_url(self, peer_url: str) -> str:
         """Given a peer's primary URL, return the best reachable address."""
         peer = self._peers.get(peer_url)
         if not peer:
             return peer_url
-        return select_peer_url(self.mode, self.private_url,
-                               peer.url, peer.private_url, peer.public_url)
+        return select_peer_url(
+            self.mode, self.private_url, peer.url, peer.private_url, peer.public_url
+        )
 
     def mark_stale(self) -> None:
         cutoff = time.time() - self.announce_interval * 3
@@ -247,8 +284,11 @@ class MeshManager:
 
     async def _announce_one(self, target: str) -> None:
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
-        payload = {"agent_card": self.build_agent_card(),
-                   "peers": self.known_peers(), "timestamp": time.time()}
+        payload = {
+            "agent_card": self.build_agent_card(),
+            "peers": self.known_peers(),
+            "timestamp": time.time(),
+        }
         try:
             async with httpx.AsyncClient(timeout=5) as c:
                 r = await c.post(f"{target}/a2a/announce", json=payload, headers=headers)

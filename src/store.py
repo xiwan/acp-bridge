@@ -71,18 +71,30 @@ class JobStore:
                 original_agent, fallback_history, retry_count,
                 input_tokens, output_tokens, cost_usd, model_name)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (job.job_id, job.agent, job.session_id, job.prompt, job.cwd,
-             job.status, job.result, job.error,
-             json.dumps(job.tools), job.created_at, job.completed_at,
-             job.callback_url, json.dumps(job.callback_meta), int(job.webhook_sent),
-             job.retries,
-             getattr(job, 'original_agent', ''),
-             json.dumps(getattr(job, 'fallback_history', [])),
-             getattr(job, 'retry_count', 0),
-             getattr(job, 'input_tokens', 0),
-             getattr(job, 'output_tokens', 0),
-             getattr(job, 'cost_usd', 0.0),
-             getattr(job, 'model_name', '')),
+            (
+                job.job_id,
+                job.agent,
+                job.session_id,
+                job.prompt,
+                job.cwd,
+                job.status,
+                job.result,
+                job.error,
+                json.dumps(job.tools),
+                job.created_at,
+                job.completed_at,
+                job.callback_url,
+                json.dumps(job.callback_meta),
+                int(job.webhook_sent),
+                job.retries,
+                getattr(job, "original_agent", ""),
+                json.dumps(getattr(job, "fallback_history", [])),
+                getattr(job, "retry_count", 0),
+                getattr(job, "input_tokens", 0),
+                getattr(job, "output_tokens", 0),
+                getattr(job, "cost_usd", 0.0),
+                getattr(job, "model_name", ""),
+            ),
         )
         self._db.commit()
 
@@ -159,8 +171,9 @@ class ChatStore:
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_CHAT_SCHEMA)
 
-    def save_message(self, session_id: str, agent: str, role: str,
-                     content: str, job_id: str = "") -> int:
+    def save_message(
+        self, session_id: str, agent: str, role: str, content: str, job_id: str = ""
+    ) -> int:
         cur = self._db.execute(
             "INSERT INTO chat_messages (session_id, agent, role, content, job_id, created_at) VALUES (?,?,?,?,?,?)",
             (session_id, agent, role, content, job_id, time.time()),
@@ -255,21 +268,40 @@ class PipelineStore:
             self._db.commit()
 
     def save(self, pl) -> None:
-        steps = json.dumps([{
-            "agent": s.agent, "prompt_template": s.prompt_template,
-            "output_as": s.output_as, "timeout": s.timeout, "status": s.status,
-            "result": s.result, "error": s.error,
-            "started_at": s.started_at, "completed_at": s.completed_at,
-            "original_agent": getattr(s, "original_agent", ""),
-            "fallback_history": getattr(s, "fallback_history", []),
-        } for s in pl.steps])
+        steps = json.dumps(
+            [
+                {
+                    "agent": s.agent,
+                    "prompt_template": s.prompt_template,
+                    "output_as": s.output_as,
+                    "timeout": s.timeout,
+                    "status": s.status,
+                    "result": s.result,
+                    "error": s.error,
+                    "started_at": s.started_at,
+                    "completed_at": s.completed_at,
+                    "original_agent": getattr(s, "original_agent", ""),
+                    "fallback_history": getattr(s, "fallback_history", []),
+                }
+                for s in pl.steps
+            ]
+        )
         self._db.execute(
             """INSERT OR REPLACE INTO pipelines
                (pipeline_id, mode, status, steps, context, error, webhook_meta, created_at, completed_at, retries)
                VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (pl.pipeline_id, pl.mode, pl.status, steps,
-             json.dumps(pl.context), pl.error, json.dumps(pl.webhook_meta),
-             pl.created_at, pl.completed_at, getattr(pl, "retries", 0)),
+            (
+                pl.pipeline_id,
+                pl.mode,
+                pl.status,
+                steps,
+                json.dumps(pl.context),
+                pl.error,
+                json.dumps(pl.webhook_meta),
+                pl.created_at,
+                pl.completed_at,
+                getattr(pl, "retries", 0),
+            ),
         )
         self._db.commit()
 
@@ -333,8 +365,9 @@ class PipelineStore:
         d.setdefault("retries", 0)
         return d
 
-    def save_turn(self, pipeline_id: str, turn: int, agent: str,
-                  content: str, duration: float = 0) -> None:
+    def save_turn(
+        self, pipeline_id: str, turn: int, agent: str, content: str, duration: float = 0
+    ) -> None:
         self._db.execute(
             "INSERT INTO conversation_log (pipeline_id, turn, agent, content, duration, created_at) VALUES (?,?,?,?,?,?)",
             (pipeline_id, turn, agent, content, duration, time.time()),

@@ -44,17 +44,25 @@ def make_app(agents_cfg, pool=None):
     app = FastAPI()
     app.state.acp_agents = {}
     health_routes.register(
-        app, "test-version", time.time(), agents_cfg, pool, ttl_hours=24,
+        app,
+        "test-version",
+        time.time(),
+        agents_cfg,
+        pool,
+        ttl_hours=24,
     )
     return app
 
 
 @pytest.mark.asyncio
 async def test_cold_start_is_ready_and_healthy():
-    app = make_app({
-        "kiro": {"mode": "acp", "enabled": True},
-        "trae": {"mode": "pty", "enabled": True},
-    }, FakePool())
+    app = make_app(
+        {
+            "kiro": {"mode": "acp", "enabled": True},
+            "trae": {"mode": "pty", "enabled": True},
+        },
+        FakePool(),
+    )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         live = await client.get("/live")
@@ -111,10 +119,13 @@ async def test_alive_but_unresponsive_agent_is_down():
 async def test_mixed_cold_and_down_agents_are_degraded():
     with _state_lock:
         _agent_healthy["qwen"] = False
-    app = make_app({
-        "kiro": {"mode": "acp", "enabled": True},
-        "qwen": {"mode": "acp", "enabled": True},
-    }, FakePool())
+    app = make_app(
+        {
+            "kiro": {"mode": "acp", "enabled": True},
+            "qwen": {"mode": "acp", "enabled": True},
+        },
+        FakePool(),
+    )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/health")

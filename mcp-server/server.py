@@ -64,10 +64,16 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "agent": {"type": "string", "description": "Agent name (e.g. kiro, claude, codex, harness, opengame)"},
+                    "agent": {
+                        "type": "string",
+                        "description": "Agent name (e.g. kiro, claude, codex, harness, opengame)",
+                    },
                     "prompt": {"type": "string", "description": "The prompt/task to send"},
                     "cwd": {"type": "string", "description": "Working directory for the agent"},
-                    "session_id": {"type": "string", "description": "Session ID for multi-turn conversation continuity"},
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session ID for multi-turn conversation continuity",
+                    },
                 },
                 "required": ["agent", "prompt"],
             },
@@ -81,8 +87,14 @@ async def list_tools() -> list[Tool]:
                     "agent": {"type": "string", "description": "Agent name"},
                     "prompt": {"type": "string", "description": "The prompt/task"},
                     "cwd": {"type": "string", "description": "Working directory"},
-                    "target": {"type": "string", "description": "Delivery target (e.g. channel:id)"},
-                    "channel": {"type": "string", "description": "Callback channel (discord, feishu)"},
+                    "target": {
+                        "type": "string",
+                        "description": "Delivery target (e.g. channel:id)",
+                    },
+                    "channel": {
+                        "type": "string",
+                        "description": "Callback channel (discord, feishu)",
+                    },
                 },
                 "required": ["agent", "prompt"],
             },
@@ -104,7 +116,11 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "mode": {"type": "string", "enum": ["sequence", "parallel", "race", "conversation"], "description": "Pipeline mode"},
+                    "mode": {
+                        "type": "string",
+                        "enum": ["sequence", "parallel", "race", "conversation"],
+                        "description": "Pipeline mode",
+                    },
                     "steps": {
                         "type": "array",
                         "description": "Steps for sequence/parallel/race: [{agent, prompt, timeout?, output_as?}]",
@@ -119,9 +135,19 @@ async def list_tools() -> list[Tool]:
                             "required": ["agent", "prompt"],
                         },
                     },
-                    "participants": {"type": "array", "items": {"type": "string"}, "description": "For conversation mode: agent names"},
-                    "topic": {"type": "string", "description": "For conversation mode: discussion topic"},
-                    "config": {"type": "object", "description": "Conversation config: {max_turns, stop_conditions}"},
+                    "participants": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "For conversation mode: agent names",
+                    },
+                    "topic": {
+                        "type": "string",
+                        "description": "For conversation mode: discussion topic",
+                    },
+                    "config": {
+                        "type": "object",
+                        "description": "Conversation config: {max_turns, stop_conditions}",
+                    },
                     "context": {"type": "object", "description": "Optional: {shared_cwd: '/path'}"},
                 },
                 "required": ["mode"],
@@ -144,8 +170,14 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "tool": {"type": "string", "description": "Tool name (message, web_search, web_fetch, tts, browser, nodes, cron, image)"},
-                    "action": {"type": "string", "description": "Tool action (e.g. send, react, screenshot)"},
+                    "tool": {
+                        "type": "string",
+                        "description": "Tool name (message, web_search, web_fetch, tts, browser, nodes, cron, image)",
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": "Tool action (e.g. send, react, screenshot)",
+                    },
                     "args": {"type": "object", "description": "Tool arguments"},
                     "channel": {"type": "string", "description": "IM channel context"},
                 },
@@ -224,7 +256,7 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
         resp.raise_for_status()
         data = resp.json()
         job_id = data.get("job_id", "?")
-        return f"Job submitted: {job_id}\nUse acp_job_status(job_id=\"{job_id}\") to check progress."
+        return f'Job submitted: {job_id}\nUse acp_job_status(job_id="{job_id}") to check progress.'
 
     elif name == "acp_job_status":
         resp = await http_client.get(f"/jobs/{args['job_id']}")
@@ -251,7 +283,7 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
 
         if status == "completed":
             return f"Pipeline completed ({pid}):\n\n{data.get('output', '')}"
-        return f"Pipeline submitted: {pid} (mode: {args['mode']})\nUse acp_pipeline_status(pipeline_id=\"{pid}\") to check."
+        return f'Pipeline submitted: {pid} (mode: {args["mode"]})\nUse acp_pipeline_status(pipeline_id="{pid}") to check.'
 
     elif name == "acp_pipeline_status":
         resp = await http_client.get(f"/pipelines/{args['pipeline_id']}")
@@ -266,7 +298,9 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
             if transcript:
                 lines = [f"Pipeline completed (mode: {mode}, {data.get('duration', '?')}s)\n"]
                 for turn in transcript:
-                    lines.append(f"[Turn {turn.get('turn', '?')}] {turn.get('agent', '?')}:\n{turn.get('content', '')}\n")
+                    lines.append(
+                        f"[Turn {turn.get('turn', '?')}] {turn.get('agent', '?')}:\n{turn.get('content', '')}\n"
+                    )
                 return "\n".join(lines)
             return f"Pipeline completed (mode: {mode}):\n\n{output}"
         elif status == "failed":

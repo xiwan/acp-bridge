@@ -129,18 +129,26 @@ class Pipeline:
 
 
 class PipelineManager:
-    def __init__(self, pool: AcpProcessPool, agents_cfg: dict,
-                 webhook_url: str = "", webhook_token: str = "",
-                 webhook_format: str = "openclaw", webhook_secret: str = "",
-                 db_path: str = "data/jobs.db",
-                 prompt_store: PromptStore | None = None,
-                 allowed_private_targets: frozenset[str] = frozenset()):
+    def __init__(
+        self,
+        pool: AcpProcessPool,
+        agents_cfg: dict,
+        webhook_url: str = "",
+        webhook_token: str = "",
+        webhook_format: str = "openclaw",
+        webhook_secret: str = "",
+        db_path: str = "data/jobs.db",
+        prompt_store: PromptStore | None = None,
+        allowed_private_targets: frozenset[str] = frozenset(),
+    ):
         self._pool = pool
         self._agents_cfg = agents_cfg
         self._pipelines: dict[str, Pipeline] = {}
         self._sender = WebhookSender(
-            default_url=webhook_url, default_token=webhook_token,
-            default_format=webhook_format, default_secret=webhook_secret,
+            default_url=webhook_url,
+            default_token=webhook_token,
+            default_format=webhook_format,
+            default_secret=webhook_secret,
             allowed_targets=allowed_private_targets,
         )
         self._store = PipelineStore(db_path)
@@ -168,8 +176,9 @@ class PipelineManager:
         existing = pl.context.get("shared_cwd", "")
         if existing and os.path.isdir(existing):
             return existing
-        base = self._agents_cfg.get("_public_workdir",
-                   self._agents_cfg.get("_conversation_workdir", "/tmp/acp-pipelines"))
+        base = self._agents_cfg.get(
+            "_public_workdir", self._agents_cfg.get("_conversation_workdir", "/tmp/acp-pipelines")
+        )
         if pl.mode == "conversation":
             shared_cwd = os.path.join(base, "conversation", f"conv-{pl.pipeline_id[:8]}")
         else:
@@ -178,17 +187,25 @@ class PipelineManager:
         pl.context["shared_cwd"] = shared_cwd
         return shared_cwd
 
-    def submit(self, mode: str, steps: list[dict], context: dict | None = None,
-               webhook_meta: dict | None = None) -> Pipeline:
+    def submit(
+        self,
+        mode: str,
+        steps: list[dict],
+        context: dict | None = None,
+        webhook_meta: dict | None = None,
+    ) -> Pipeline:
         pl = Pipeline(
             pipeline_id=str(uuid.uuid4()),
             mode=mode,
-            steps=[PipelineStep(
-                agent=s["agent"],
-                prompt_template=s["prompt"],
-                output_as=s.get("output_as", ""),
-                timeout=s.get("timeout", 600),
-            ) for s in steps],
+            steps=[
+                PipelineStep(
+                    agent=s["agent"],
+                    prompt_template=s["prompt"],
+                    output_as=s.get("output_as", ""),
+                    timeout=s.get("timeout", 600),
+                )
+                for s in steps
+            ],
             context=context or {},
             webhook_meta=webhook_meta or {},
         )
@@ -212,8 +229,7 @@ class PipelineManager:
     def get_transcript(self, pipeline_id: str) -> list[dict]:
         return self._store.load_transcript(pipeline_id)
 
-    def rerun(self, pipeline_id: str, prompt_override: str = "",
-             from_step: int = 0) -> Pipeline:
+    def rerun(self, pipeline_id: str, prompt_override: str = "", from_step: int = 0) -> Pipeline:
         """Clone a completed/failed pipeline and re-execute, reusing shared_cwd."""
         original = self.get(pipeline_id)
         if not original:
@@ -223,7 +239,7 @@ class PipelineManager:
         if original.mode == "conversation":
             raise ValueError("rerun not supported for conversation mode; use inject instead")
         if from_step < 0 or from_step >= len(original.steps):
-            raise ValueError(f"from_step {from_step} out of range (0-{len(original.steps)-1})")
+            raise ValueError(f"from_step {from_step} out of range (0-{len(original.steps) - 1})")
 
         steps = []
         for i, s in enumerate(original.steps):
@@ -232,8 +248,9 @@ class PipelineManager:
             prompt = s.prompt_template
             if prompt_override and i == from_step:
                 prompt = f"[修正指令] {prompt_override}\n\n[原始任务] {prompt}"
-            steps.append({"agent": s.agent, "prompt": prompt,
-                          "output_as": s.output_as, "timeout": s.timeout})
+            steps.append(
+                {"agent": s.agent, "prompt": prompt, "output_as": s.output_as, "timeout": s.timeout}
+            )
 
         context = original.context.copy()
         context.pop("next_pipeline_id", None)
@@ -267,13 +284,17 @@ class PipelineManager:
                 pl.error = "interrupted: conversation pipelines are not resumable after restart"
                 pl.completed_at = time.time()
                 await asyncio.to_thread(self._store.save, pl)
-                self._emit_event(pl, "pipeline_done", {
-                    "pipeline_id": pl.pipeline_id,
-                    "status": pl.status,
-                    "duration": round(pl.completed_at - pl.created_at, 1),
-                    "error": pl.error,
-                    "report_url": "",
-                })
+                self._emit_event(
+                    pl,
+                    "pipeline_done",
+                    {
+                        "pipeline_id": pl.pipeline_id,
+                        "status": pl.status,
+                        "duration": round(pl.completed_at - pl.created_at, 1),
+                        "error": pl.error,
+                        "report_url": "",
+                    },
+                )
                 log.warning("recovery_conversation_failed: pipeline=%s", pl.pipeline_id)
                 await self._webhook(pl)
                 continue
@@ -283,13 +304,17 @@ class PipelineManager:
                 pl.error = f"interrupted: failed after {self.MAX_RECOVERY_RETRIES} recovery retries across restarts"
                 pl.completed_at = time.time()
                 await asyncio.to_thread(self._store.save, pl)
-                self._emit_event(pl, "pipeline_done", {
-                    "pipeline_id": pl.pipeline_id,
-                    "status": pl.status,
-                    "duration": round(pl.completed_at - pl.created_at, 1),
-                    "error": pl.error,
-                    "report_url": "",
-                })
+                self._emit_event(
+                    pl,
+                    "pipeline_done",
+                    {
+                        "pipeline_id": pl.pipeline_id,
+                        "status": pl.status,
+                        "duration": round(pl.completed_at - pl.created_at, 1),
+                        "error": pl.error,
+                        "report_url": "",
+                    },
+                )
                 log.warning("recovery_failed: pipeline=%s retries=%d", pl.pipeline_id, pl.retries)
                 await self._webhook(pl)
                 continue
@@ -312,21 +337,33 @@ class PipelineManager:
             pl.completed_at = 0
             self._pipelines[pl.pipeline_id] = pl
             await asyncio.to_thread(self._store.save, pl)
-            log.info("recovery_resume: pipeline=%s mode=%s attempt=%d/%d done_steps=%d/%d",
-                     pl.pipeline_id, pl.mode, pl.retries, self.MAX_RECOVERY_RETRIES,
-                     done, len(pl.steps))
+            log.info(
+                "recovery_resume: pipeline=%s mode=%s attempt=%d/%d done_steps=%d/%d",
+                pl.pipeline_id,
+                pl.mode,
+                pl.retries,
+                self.MAX_RECOVERY_RETRIES,
+                done,
+                len(pl.steps),
+            )
             self._spawn(self._run(pl))
 
     def active_cwds(self) -> set[str]:
         """shared_cwd of every not-yet-finished pipeline — workspace sweeper must skip these."""
-        return {pl.context.get("shared_cwd", "") for pl in self._pipelines.values()
-                if pl.completed_at == 0 and pl.context.get("shared_cwd")}
+        return {
+            pl.context.get("shared_cwd", "")
+            for pl in self._pipelines.values()
+            if pl.completed_at == 0 and pl.context.get("shared_cwd")
+        }
 
     def cleanup(self, max_age: float = 3600) -> int:
         """Remove completed pipelines older than max_age from in-memory cache."""
         now = time.time()
-        stale = [pid for pid, pl in self._pipelines.items()
-                 if pl.completed_at > 0 and now - pl.completed_at > max_age]
+        stale = [
+            pid
+            for pid, pl in self._pipelines.items()
+            if pl.completed_at > 0 and now - pl.completed_at > max_age
+        ]
         for pid in stale:
             del self._pipelines[pid]
         return len(stale)
@@ -347,7 +384,9 @@ class PipelineManager:
             if d["created_at"] < cutoff:
                 continue
             m = d["mode"]
-            s = by_mode.setdefault(m, {"total": 0, "completed": 0, "failed": 0, "running": 0, "durations": []})
+            s = by_mode.setdefault(
+                m, {"total": 0, "completed": 0, "failed": 0, "running": 0, "durations": []}
+            )
             s["total"] += 1
             st = d["status"]
             if st == "completed":
@@ -368,19 +407,30 @@ class PipelineManager:
 
     def _dict_to_pipeline(self, d: dict, with_events: bool = False) -> Pipeline:
         pl = Pipeline(
-            pipeline_id=d["pipeline_id"], mode=d["mode"],
-            steps=[PipelineStep(
-                agent=s["agent"], prompt_template=s.get("prompt_template", ""),
-                output_as=s.get("output_as", ""), timeout=s.get("timeout", 600),
-                status=s.get("status", "pending"),
-                result=s.get("result", ""), error=s.get("error", ""),
-                started_at=s.get("started_at", 0), completed_at=s.get("completed_at", 0),
-                original_agent=s.get("original_agent", ""),
-                fallback_history=s.get("fallback_history", []) or [],
-            ) for s in d.get("steps", [])],
-            status=d["status"], context=d.get("context", {}),
-            created_at=d["created_at"], completed_at=d.get("completed_at", 0),
-            error=d.get("error", ""), webhook_meta=d.get("webhook_meta", {}),
+            pipeline_id=d["pipeline_id"],
+            mode=d["mode"],
+            steps=[
+                PipelineStep(
+                    agent=s["agent"],
+                    prompt_template=s.get("prompt_template", ""),
+                    output_as=s.get("output_as", ""),
+                    timeout=s.get("timeout", 600),
+                    status=s.get("status", "pending"),
+                    result=s.get("result", ""),
+                    error=s.get("error", ""),
+                    started_at=s.get("started_at", 0),
+                    completed_at=s.get("completed_at", 0),
+                    original_agent=s.get("original_agent", ""),
+                    fallback_history=s.get("fallback_history", []) or [],
+                )
+                for s in d.get("steps", [])
+            ],
+            status=d["status"],
+            context=d.get("context", {}),
+            created_at=d["created_at"],
+            completed_at=d.get("completed_at", 0),
+            error=d.get("error", ""),
+            webhook_meta=d.get("webhook_meta", {}),
             retries=d.get("retries", 0),
         )
         if with_events:
@@ -395,13 +445,17 @@ class PipelineManager:
         try:
             shared_cwd = self._make_shared_cwd(pl)
             log.info("pipeline_cwd: id=%s mode=%s cwd=%s", pl.pipeline_id, pl.mode, shared_cwd)
-            self._emit_event(pl, "pipeline_started", {
-                "pipeline_id": pl.pipeline_id,
-                "mode": pl.mode,
-                "steps": len(pl.steps),
-                "shared_cwd": shared_cwd,
-                "agents": [s.agent for s in pl.steps],
-            })
+            self._emit_event(
+                pl,
+                "pipeline_started",
+                {
+                    "pipeline_id": pl.pipeline_id,
+                    "mode": pl.mode,
+                    "steps": len(pl.steps),
+                    "shared_cwd": shared_cwd,
+                    "agents": [s.agent for s in pl.steps],
+                },
+            )
             await self._webhook_start(pl)
             if pl.mode == "sequence":
                 await self._run_sequence(pl)
@@ -427,15 +481,23 @@ class PipelineManager:
         if pl.status == "completed" and pl.context.get("upload_report"):
             await asyncio.to_thread(self._upload_report, pl)
         await asyncio.to_thread(self._store.save, pl)
-        log.info("pipeline_done: id=%s status=%s duration=%.1fs",
-                 pl.pipeline_id, pl.status, pl.completed_at - pl.created_at)
-        self._emit_event(pl, "pipeline_done", {
-            "pipeline_id": pl.pipeline_id,
-            "status": pl.status,
-            "duration": round(pl.completed_at - pl.created_at, 1),
-            "error": pl.error,
-            "report_url": pl.context.get("report_url", ""),
-        })
+        log.info(
+            "pipeline_done: id=%s status=%s duration=%.1fs",
+            pl.pipeline_id,
+            pl.status,
+            pl.completed_at - pl.created_at,
+        )
+        self._emit_event(
+            pl,
+            "pipeline_done",
+            {
+                "pipeline_id": pl.pipeline_id,
+                "status": pl.status,
+                "duration": round(pl.completed_at - pl.created_at, 1),
+                "error": pl.error,
+                "report_url": pl.context.get("report_url", ""),
+            },
+        )
         # Signal end-of-stream to live subscribers
         for q in list(pl._event_subs):
             try:
@@ -466,9 +528,23 @@ class PipelineManager:
     # Only these AST node types may appear in a `when` expression. No Call, no
     # Subscript, no comprehension, no import — so `when` can never execute code.
     _COND_NODES = (
-        ast.Expression, ast.BoolOp, ast.And, ast.Or, ast.UnaryOp, ast.Not,
-        ast.Compare, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq,
-        ast.Attribute, ast.Name, ast.Load, ast.Constant,
+        ast.Expression,
+        ast.BoolOp,
+        ast.And,
+        ast.Or,
+        ast.UnaryOp,
+        ast.Not,
+        ast.Compare,
+        ast.Lt,
+        ast.LtE,
+        ast.Gt,
+        ast.GtE,
+        ast.Eq,
+        ast.NotEq,
+        ast.Attribute,
+        ast.Name,
+        ast.Load,
+        ast.Constant,
     )
 
     @classmethod
@@ -505,9 +581,12 @@ class PipelineManager:
                 if left is None or right is None:
                     return False  # missing metric -> comparison False (fail-safe)
                 ok = {
-                    ast.Lt: left < right, ast.LtE: left <= right,
-                    ast.Gt: left > right, ast.GtE: left >= right,
-                    ast.Eq: left == right, ast.NotEq: left != right,
+                    ast.Lt: left < right,
+                    ast.LtE: left <= right,
+                    ast.Gt: left > right,
+                    ast.GtE: left >= right,
+                    ast.Eq: left == right,
+                    ast.NotEq: left != right,
                 }[type(op)]
                 if not ok:
                     return False
@@ -541,8 +620,9 @@ class PipelineManager:
         try:
             data = json.loads(path.read_text())
         except (OSError, ValueError) as e:
-            log.warning("verdict_parse_failed: pipeline=%s source=%s err=%s",
-                        pl.pipeline_id, source, e)
+            log.warning(
+                "verdict_parse_failed: pipeline=%s source=%s err=%s", pl.pipeline_id, source, e
+            )
             return None
         stem = path.stem  # "verdict.json" -> "verdict"
         return {stem: data, "round": pl.context.get("_loop_round", 0)}
@@ -558,8 +638,9 @@ class PipelineManager:
         ns = self._read_verdict(pl, source)
         if ns is None:
             # fail-safe: no verdict to judge -> stop, don't burn rounds
-            log.warning("loop_stop_no_verdict: pipeline=%s round=%d source=%s",
-                        pl.pipeline_id, rnd, source)
+            log.warning(
+                "loop_stop_no_verdict: pipeline=%s round=%d source=%s", pl.pipeline_id, rnd, source
+            )
             await self._loop_webhook(pl, rnd, "stopped: verdict 缺失，无法判定收敛")
             return
 
@@ -577,21 +658,30 @@ class PipelineManager:
 
         if rnd + 1 >= max_rounds:
             log.info("loop_max_rounds: pipeline=%s rounds=%d", pl.pipeline_id, max_rounds)
-            await self._loop_webhook(
-                pl, rnd, f"stopped: 达到 max_rounds={max_rounds}，仍未通过")
+            await self._loop_webhook(pl, rnd, f"stopped: 达到 max_rounds={max_rounds}，仍未通过")
             return
 
         # Re-submit the tail from loop_back_to, reusing shared_cwd; round += 1.
         back_to = int(loop_def.get("loop_back_to", 0))
         if back_to < 0 or back_to >= len(pl.steps):
-            log.warning("loop_bad_back_to: pipeline=%s loop_back_to=%d steps=%d",
-                        pl.pipeline_id, back_to, len(pl.steps))
+            log.warning(
+                "loop_bad_back_to: pipeline=%s loop_back_to=%d steps=%d",
+                pl.pipeline_id,
+                back_to,
+                len(pl.steps),
+            )
             await self._loop_webhook(pl, rnd, f"stopped: loop_back_to={back_to} 越界")
             return
 
-        steps = [{"agent": s.agent, "prompt": s.prompt_template,
-                  "output_as": s.output_as, "timeout": s.timeout}
-                 for s in pl.steps[back_to:]]
+        steps = [
+            {
+                "agent": s.agent,
+                "prompt": s.prompt_template,
+                "output_as": s.output_as,
+                "timeout": s.timeout,
+            }
+            for s in pl.steps[back_to:]
+        ]
         next_context = dict(pl.context)
         next_context["_loop_round"] = rnd + 1
         next_context.pop("next_pipeline_id", None)
@@ -606,10 +696,18 @@ class PipelineManager:
         if isinstance(arts, list):
             next_context["_artifacts"] = arts[back_to:]
 
-        log.info("loop_back: pipeline=%s round=%d->%d back_to=%d tail_steps=%d",
-                 pl.pipeline_id, rnd, rnd + 1, back_to, len(steps))
+        log.info(
+            "loop_back: pipeline=%s round=%d->%d back_to=%d tail_steps=%d",
+            pl.pipeline_id,
+            rnd,
+            rnd + 1,
+            back_to,
+            len(steps),
+        )
         next_pl = self.submit(
-            mode="sequence", steps=steps, context=next_context,
+            mode="sequence",
+            steps=steps,
+            context=next_context,
             webhook_meta=pl.webhook_meta.copy(),
         )
         pl.context["next_pipeline_id"] = next_pl.pipeline_id
@@ -648,12 +746,15 @@ class PipelineManager:
                 module = task.get("module", "")
                 files = task.get("files", [])
                 if agent:
-                    prompt_tpl = next_def.get("step_prompt_template",
-                                              "在 {shared_cwd} 中实现 {module}，负责文件: {files}")
+                    prompt_tpl = next_def.get(
+                        "step_prompt_template", "在 {shared_cwd} 中实现 {module}，负责文件: {files}"
+                    )
                     prompt = prompt_tpl.format(
                         shared_cwd=next_context.get("shared_cwd", ""),
-                        module=module, files=", ".join(files) if files else module,
-                        agent=agent)
+                        module=module,
+                        files=", ".join(files) if files else module,
+                        agent=agent,
+                    )
                     steps.append({"agent": agent, "prompt": prompt})
 
         if not steps:
@@ -684,8 +785,13 @@ class PipelineManager:
         )
         pl.context["next_pipeline_id"] = next_pl.pipeline_id
         await asyncio.to_thread(self._store.save, pl)
-        log.info("auto_chain: %s -> %s mode=%s steps=%d",
-                 pl.pipeline_id, next_pl.pipeline_id, next_def["mode"], len(steps))
+        log.info(
+            "auto_chain: %s -> %s mode=%s steps=%d",
+            pl.pipeline_id,
+            next_pl.pipeline_id,
+            next_def["mode"],
+            len(steps),
+        )
 
     def _inject_upstream_text(self, pl: Pipeline, steps: list[dict]) -> None:
         """Prepend each completed upstream step's result text to the first
@@ -711,8 +817,7 @@ class PipelineManager:
             return
         header = "以下是上游各步骤的产出，请基于这些内容汇总：\n\n" + "\n\n".join(blocks) + "\n\n"
         steps[0]["prompt"] = header + steps[0].get("prompt", "")
-        log.info("inject_upstream_text: pipeline=%s injected=%d steps",
-                 pl.pipeline_id, len(blocks))
+        log.info("inject_upstream_text: pipeline=%s injected=%d steps", pl.pipeline_id, len(blocks))
 
     def _inject_upstream_s3(self, pl: Pipeline, steps: list[dict]) -> None:
         """Upload each completed upstream step result to S3 and prepend presigned
@@ -724,6 +829,7 @@ class PipelineManager:
         artifacts. Falls back to inlining text when S3 is unavailable.
         """
         from src import s3
+
         lines = []
         for i, st in enumerate(pl.steps):
             if st.status != "completed" or not st.result:
@@ -739,25 +845,29 @@ class PipelineManager:
         if not lines:
             return
         if any(l.startswith("- ") for l in lines):
-            header = ("以下是上游各步骤的产出（presigned URL，请逐个 fetch 后再汇总）：\n"
-                      + "\n".join(lines) + "\n\n")
+            header = (
+                "以下是上游各步骤的产出（presigned URL，请逐个 fetch 后再汇总）：\n"
+                + "\n".join(lines)
+                + "\n\n"
+            )
         else:
             header = "以下是上游各步骤的产出：\n" + "\n".join(lines) + "\n\n"
         steps[0]["prompt"] = header + steps[0].get("prompt", "")
-        log.info("inject_upstream_s3: pipeline=%s injected=%d steps",
-                 pl.pipeline_id, len(lines))
+        log.info("inject_upstream_s3: pipeline=%s injected=%d steps", pl.pipeline_id, len(lines))
 
     def _upload_report(self, pl: Pipeline) -> None:
         """Upload the last completed step's result to S3 as a downloadable report."""
         from src import s3
+
         if not s3.is_available():
             return
         # Find last completed step with content
         for step in reversed(pl.steps):
             if step.status == "completed" and step.result:
                 import re
-                clean = re.sub(r'^\[tool\.(start|done)\].*$', '', step.result, flags=re.MULTILINE)
-                clean = re.sub(r'\n{3,}', '\n\n', clean).strip()
+
+                clean = re.sub(r"^\[tool\.(start|done)\].*$", "", step.result, flags=re.MULTILINE)
+                clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
                 if not clean:
                     continue
                 key = f"reports/{pl.pipeline_id}/report.md"
@@ -771,8 +881,14 @@ class PipelineManager:
 
     # Persisted to SQLite so /events history survives restarts. step_progress
     # is intentionally excluded — too high-frequency, live-only.
-    _PERSISTED_EVENTS = {"pipeline_started", "step_started", "step_completed",
-                         "step_failed", "step_fallback", "pipeline_done"}
+    _PERSISTED_EVENTS = {
+        "pipeline_started",
+        "step_started",
+        "step_completed",
+        "step_failed",
+        "step_fallback",
+        "pipeline_done",
+    }
 
     def _emit_event(self, pl: Pipeline, event_type: str, data: dict) -> None:
         """Push a lifecycle event to all SSE subscribers and store in history.
@@ -809,12 +925,21 @@ class PipelineManager:
         secret = pl.webhook_meta.get("secret", self._sender._secret)
 
         payloads = get_payload_builder(fmt).build_pipeline(
-            pl.pipeline_id, pl.mode, pl.status, message,
-            channel=channel, target=target, chunk_size=self._CHUNK_SIZE)
+            pl.pipeline_id,
+            pl.mode,
+            pl.status,
+            message,
+            channel=channel,
+            target=target,
+            chunk_size=self._CHUNK_SIZE,
+        )
 
         await self._sender.send(
-            url, payloads, secret=secret,
-            account_id=account_id, channel=channel,
+            url,
+            payloads,
+            secret=secret,
+            account_id=account_id,
+            channel=channel,
             log_prefix=f"pipeline_webhook id={pl.pipeline_id}",
         )
 
@@ -835,8 +960,15 @@ class PipelineManager:
         idx = pl.steps.index(step) + 1
         dur = round(step.completed_at - step.started_at, 1)
         msg = PipelineFormatter.format_step(
-            pl.pipeline_id, idx, len(pl.steps), step.agent, dur,
-            step.status, result=step.result, error=step.error)
+            pl.pipeline_id,
+            idx,
+            len(pl.steps),
+            step.agent,
+            dur,
+            step.status,
+            result=step.result,
+            error=step.error,
+        )
         await self._send_webhook(pl, msg)
 
     async def _webhook(self, pl: Pipeline):
@@ -844,13 +976,25 @@ class PipelineManager:
         if not self._sender.default_url or not pl.webhook_meta.get("target"):
             return
         dur = round(pl.completed_at - pl.created_at, 1)
-        steps_data = [{"agent": s.agent, "status": s.status,
-                       "started_at": s.started_at, "completed_at": s.completed_at}
-                      for s in pl.steps]
+        steps_data = [
+            {
+                "agent": s.agent,
+                "status": s.status,
+                "started_at": s.started_at,
+                "completed_at": s.completed_at,
+            }
+            for s in pl.steps
+        ]
         from .render import publish_artifacts
+
         msg = PipelineFormatter.format_done(
-            pl.pipeline_id, pl.status, dur, error=pl.error, steps=steps_data,
-            artifacts=await publish_artifacts(pl.context, steps_data))
+            pl.pipeline_id,
+            pl.status,
+            dur,
+            error=pl.error,
+            steps=steps_data,
+            artifacts=await publish_artifacts(pl.context, steps_data),
+        )
         await self._send_webhook(pl, msg)
 
     def _check_step_artifact(self, pl: Pipeline, idx: int) -> str:
@@ -873,8 +1017,10 @@ class PipelineManager:
         if any(p.is_file() and p.stat().st_size > 0 for p in Path(cwd).glob(pattern)):
             return ""
         label = art.get("label") or pattern
-        return (f"deliverable missing: declared artifact '{label}' ({pattern}) "
-                f"not found (or empty) in {cwd} after step completed")
+        return (
+            f"deliverable missing: declared artifact '{label}' ({pattern}) "
+            f"not found (or empty) in {cwd} after step completed"
+        )
 
     async def _run_sequence(self, pl: Pipeline):
         for i, step in enumerate(pl.steps):
@@ -893,8 +1039,13 @@ class PipelineManager:
                 if missing:
                     step.status = "failed"
                     step.error = missing
-                    log.warning("artifact_check_failed: pipeline=%s step=%d agent=%s %s",
-                                pl.pipeline_id, i, step.agent, missing)
+                    log.warning(
+                        "artifact_check_failed: pipeline=%s step=%d agent=%s %s",
+                        pl.pipeline_id,
+                        i,
+                        step.agent,
+                        missing,
+                    )
             await self._webhook_step(pl, step)
             if step.status == "failed":
                 pl.status = "failed"
@@ -986,8 +1137,12 @@ class PipelineManager:
         solo = pl.context.get("solo", {})
 
         shared_cwd = pl.context.get("shared_cwd", "")  # already created by _run
-        log.info("conv_start: pipeline=%s shared_cwd=%s participants=%s",
-                 pl.pipeline_id, shared_cwd, participants)
+        log.info(
+            "conv_start: pipeline=%s shared_cwd=%s participants=%s",
+            pl.pipeline_id,
+            shared_cwd,
+            participants,
+        )
 
         # Build agent descriptions from metadata
         agent_descs = []
@@ -997,7 +1152,7 @@ class PipelineManager:
         participants_block = "\n".join(agent_descs)
 
         # Detect language from topic — Chinese if contains CJK chars
-        has_cjk = any('\u4e00' <= c <= '\u9fff' for c in topic)
+        has_cjk = any("\u4e00" <= c <= "\u9fff" for c in topic)
 
         if has_cjk:
             a2a_block = _load_prompt("a2a_rules_zh.txt") if a2a_rules else ""
@@ -1035,13 +1190,28 @@ class PipelineManager:
                 output = injected
                 duration = 0.0
                 current_agent_label = "Human"
-                transcript.append({"turn": turn, "agent": current_agent_label,
-                                   "content": output, "duration": duration})
+                transcript.append(
+                    {
+                        "turn": turn,
+                        "agent": current_agent_label,
+                        "content": output,
+                        "duration": duration,
+                    }
+                )
                 await asyncio.to_thread(
-                    self._store.save_turn, pl.pipeline_id, turn, current_agent_label, output, duration)
-                log.info("conv_inject: pipeline=%s turn=%d content=%s",
-                         pl.pipeline_id, turn, output[:80])
-                await self._webhook_conversation_turn(pl, turn, current_agent_label, output, duration)
+                    self._store.save_turn,
+                    pl.pipeline_id,
+                    turn,
+                    current_agent_label,
+                    output,
+                    duration,
+                )
+                log.info(
+                    "conv_inject: pipeline=%s turn=%d content=%s", pl.pipeline_id, turn, output[:80]
+                )
+                await self._webhook_conversation_turn(
+                    pl, turn, current_agent_label, output, duration
+                )
                 last_output = output
                 last_agent = current_agent_label
                 # Don't advance agent_index — next turn same agent responds to human
@@ -1051,9 +1221,17 @@ class PipelineManager:
             # PTY agents get it every turn (no session memory)
             is_pty = self._agents_cfg.get(current_agent, {}).get("mode") == "pty"
             if first_turn_for_agent or is_pty:
-                tpl = _load_prompt("conversation_first_turn_zh.txt") if has_cjk else _load_prompt("conversation_first_turn.txt")
-                prompt = tpl.format(topic=topic, participants=participants_block,
-                                    agent=current_agent, shared_cwd=shared_cwd)
+                tpl = (
+                    _load_prompt("conversation_first_turn_zh.txt")
+                    if has_cjk
+                    else _load_prompt("conversation_first_turn.txt")
+                )
+                prompt = tpl.format(
+                    topic=topic,
+                    participants=participants_block,
+                    agent=current_agent,
+                    shared_cwd=shared_cwd,
+                )
                 if solo.get(current_agent):
                     prompt += f"\n[SOLO] {solo[current_agent]}\n"
                 if initial_context and first_turn_for_agent:
@@ -1067,17 +1245,30 @@ class PipelineManager:
             # Execute
             started = time.time()
             output = await self._exec_conversation_turn(
-                current_agent, session_id, prompt, turn_timeout, cwd=shared_cwd,
-                pl=pl, turn_idx=turn)
+                current_agent,
+                session_id,
+                prompt,
+                turn_timeout,
+                cwd=shared_cwd,
+                pl=pl,
+                turn_idx=turn,
+            )
             duration = round(time.time() - started, 1)
 
             # Record
-            transcript.append({"turn": turn, "agent": current_agent,
-                               "content": output, "duration": duration})
+            transcript.append(
+                {"turn": turn, "agent": current_agent, "content": output, "duration": duration}
+            )
             await asyncio.to_thread(
-                self._store.save_turn, pl.pipeline_id, turn, current_agent, output, duration)
-            log.info("conv_turn: pipeline=%s turn=%d agent=%s duration=%.1fs",
-                     pl.pipeline_id, turn, current_agent, duration)
+                self._store.save_turn, pl.pipeline_id, turn, current_agent, output, duration
+            )
+            log.info(
+                "conv_turn: pipeline=%s turn=%d agent=%s duration=%.1fs",
+                pl.pipeline_id,
+                turn,
+                current_agent,
+                duration,
+            )
 
             # Webhook per turn
             await self._webhook_conversation_turn(pl, turn, current_agent, output, duration)
@@ -1121,22 +1312,33 @@ class PipelineManager:
 
         pl.status = "completed"
 
-    async def _exec_conversation_turn(self, agent: str, session_id: str,
-                                       prompt: str, timeout: float,
-                                       cwd: str = "",
-                                       pl: Pipeline | None = None,
-                                       turn_idx: int = -1) -> str:
+    async def _exec_conversation_turn(
+        self,
+        agent: str,
+        session_id: str,
+        prompt: str,
+        timeout: float,
+        cwd: str = "",
+        pl: Pipeline | None = None,
+        turn_idx: int = -1,
+    ) -> str:
         cfg = self._agents_cfg.get(agent, {})
         final_prompt = prompt + get_prompt_suffix()
 
-        ps = getattr(self, '_prompt_store', None)
+        ps = getattr(self, "_prompt_store", None)
         if ps and pl is not None:
             await asyncio.to_thread(
                 ps.record,
-                parent_type="pipeline_step", parent_id=pl.pipeline_id,
-                parent_index=turn_idx, agent=agent,
-                mode=cfg.get("mode", "acp"), session_id=session_id, cwd=cwd,
-                template=prompt, rendered=prompt, final=final_prompt,
+                parent_type="pipeline_step",
+                parent_id=pl.pipeline_id,
+                parent_index=turn_idx,
+                agent=agent,
+                mode=cfg.get("mode", "acp"),
+                session_id=session_id,
+                cwd=cwd,
+                template=prompt,
+                rendered=prompt,
+                final=final_prompt,
                 decorations=["conversation_turn", "prompt_suffix"],
             )
 
@@ -1154,6 +1356,7 @@ class PipelineManager:
                 if "_prompt_result" in notification:
                     prompt_result = notification["_prompt_result"]
                     from .agents import _record_acp_usage
+
                     _record_acp_usage(agent, prompt_result, 0)
                     break
                 event = transform_notification(notification)
@@ -1164,12 +1367,16 @@ class PipelineManager:
                 # Emit step_progress so SSE clients see thinking/tool events per turn.
                 # `index` here is the turn index (negative if not provided).
                 if pl is not None:
-                    self._emit_event(pl, "step_progress", {
-                        "index": turn_idx,
-                        "agent": agent,
-                        "kind": event["type"],
-                        **{k: v for k, v in event.items() if k != "type"},
-                    })
+                    self._emit_event(
+                        pl,
+                        "step_progress",
+                        {
+                            "index": turn_idx,
+                            "agent": agent,
+                            "kind": event["type"],
+                            **{k: v for k, v in event.items() if k != "type"},
+                        },
+                    )
         except (PoolExhaustedError, AcpError) as e:
             return f"[ERROR] {e}"
         except Exception as e:
@@ -1191,15 +1398,16 @@ class PipelineManager:
 
         return output
 
-    async def _webhook_conversation_turn(self, pl: Pipeline, turn: int,
-                                          agent: str, content: str, duration: float):
+    async def _webhook_conversation_turn(
+        self, pl: Pipeline, turn: int, agent: str, content: str, duration: float
+    ):
         if not self._sender.default_url or not pl.webhook_meta.get("target"):
             return
         msg = PipelineFormatter.format_turn(pl.pipeline_id, turn, agent, content, duration)
         await self._send_webhook(pl, msg)
 
-    _JSON_BLOCK_RE = re.compile(r'```json\s*\n(.*?)\n```', re.DOTALL)
-    _JSON_OBJ_RE = re.compile(r'(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})', re.DOTALL)
+    _JSON_BLOCK_RE = re.compile(r"```json\s*\n(.*?)\n```", re.DOTALL)
+    _JSON_OBJ_RE = re.compile(r"(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})", re.DOTALL)
 
     def _extract_output(self, pl: Pipeline, transcript: list[dict]):
         """Extract structured JSON output from the final agent turn (not Human)."""
@@ -1226,7 +1434,9 @@ class PipelineManager:
                     pass
             break  # only check the last agent turn
 
-    async def _exec_step(self, pl: Pipeline, step: PipelineStep, prompt: str, cwd_override: str | None = None):
+    async def _exec_step(
+        self, pl: Pipeline, step: PipelineStep, prompt: str, cwd_override: str | None = None
+    ):
         step.status = "running"
         step.started_at = time.time()
         step_idx = pl.steps.index(step)
@@ -1238,15 +1448,19 @@ class PipelineManager:
         rendered_prompt = prompt
         decorations: list[str] = []
 
-        self._emit_event(pl, "step_started", {
-            "index": step_idx,
-            "agent": step.agent,
-            "prompt_preview": prompt,
-        })
+        self._emit_event(
+            pl,
+            "step_started",
+            {
+                "index": step_idx,
+                "agent": step.agent,
+                "prompt_preview": prompt,
+            },
+        )
 
         # Inject shared workspace hint for non-conversation modes
         if shared_cwd and pl.mode != "conversation":
-            has_cjk = any('\u4e00' <= c <= '\u9fff' for c in prompt)
+            has_cjk = any("\u4e00" <= c <= "\u9fff" for c in prompt)
             ws_template = "shared_workspace_zh.txt" if has_cjk else "shared_workspace.txt"
             ws_prompt = _load_prompt(ws_template)
             prompt = ws_prompt.format(shared_cwd=shared_cwd) + "\n\n" + prompt
@@ -1257,13 +1471,17 @@ class PipelineManager:
         final_prompt = prompt + get_prompt_suffix()
         decorations.append("prompt_suffix")
 
-        ps = getattr(self, '_prompt_store', None)
+        ps = getattr(self, "_prompt_store", None)
         if ps:
             await asyncio.to_thread(
                 ps.record,
-                parent_type="pipeline_step", parent_id=pl.pipeline_id,
-                parent_index=step_idx, agent=step.agent, mode=cfg.get("mode", "acp"),
-                session_id=session_id, cwd=shared_cwd,
+                parent_type="pipeline_step",
+                parent_id=pl.pipeline_id,
+                parent_index=step_idx,
+                agent=step.agent,
+                mode=cfg.get("mode", "acp"),
+                session_id=session_id,
+                cwd=shared_cwd,
                 template=step.prompt_template,
                 rendered=rendered_prompt,
                 final=final_prompt,
@@ -1276,26 +1494,34 @@ class PipelineManager:
             if mesh_target and shared_cwd:
                 await asyncio.wait_for(
                     self._exec_step_remote(pl, step, final_prompt, shared_cwd, mesh_target),
-                    timeout=timeout)
+                    timeout=timeout,
+                )
             elif cfg.get("pool") == "lambda" and self._lambda_pool:
                 await asyncio.wait_for(
-                    self._exec_step_lambda(pl, step, step_idx, final_prompt, cfg),
-                    timeout=timeout)
+                    self._exec_step_lambda(pl, step, step_idx, final_prompt, cfg), timeout=timeout
+                )
             elif cfg.get("mode") == "pty":
                 pty_cfg = {**cfg, "working_dir": shared_cwd} if shared_cwd else cfg
                 await asyncio.wait_for(
-                    self._exec_step_pty(step, final_prompt, pty_cfg),
-                    timeout=timeout)
+                    self._exec_step_pty(step, final_prompt, pty_cfg), timeout=timeout
+                )
             else:
                 await asyncio.wait_for(
-                    self._exec_step_acp(pl, step, step_idx, final_prompt, session_id, cwd=shared_cwd),
-                    timeout=timeout)
+                    self._exec_step_acp(
+                        pl, step, step_idx, final_prompt, session_id, cwd=shared_cwd
+                    ),
+                    timeout=timeout,
+                )
         except asyncio.TimeoutError:
             timed_out = True
             step.error = f"step timeout ({timeout}s)"
             step.status = "failed"
-            log.warning("step_timeout: pipeline=%s agent=%s timeout=%ds",
-                        pl.pipeline_id, step.agent, timeout)
+            log.warning(
+                "step_timeout: pipeline=%s agent=%s timeout=%ds",
+                pl.pipeline_id,
+                step.agent,
+                timeout,
+            )
 
         # --- Per-step fallback (local ACP steps only) ---
         # Timeouts deliberately excluded: another agent would burn the same
@@ -1303,22 +1529,38 @@ class PipelineManager:
         # Lambda needs an explicit check — its config carries no "mode" key, so
         # cfg.get("mode", "acp") would read as a local ACP agent.
         # Opt-out via context.step_fallback=false.
-        if (step.status == "failed" and not timed_out
-                and not mesh_target and cfg.get("mode", "acp") == "acp"
-                and cfg.get("pool") != "lambda"
-                and pl.context.get("step_fallback", True)):
+        if (
+            step.status == "failed"
+            and not timed_out
+            and not mesh_target
+            and cfg.get("mode", "acp") == "acp"
+            and cfg.get("pool") != "lambda"
+            and pl.context.get("step_fallback", True)
+        ):
             await self._step_fallback(pl, step, step_idx, final_prompt, shared_cwd, timeout)
 
         step.completed_at = time.time()
         # Truncate oversized output to prevent OOM
         if len(step.result) > MAX_OUTPUT_SIZE:
             original_len = len(step.result)
-            step.result = step.result[:MAX_OUTPUT_SIZE] + f'\n... (truncated {original_len - MAX_OUTPUT_SIZE} bytes)'
-            log.warning("step_output_truncated: pipeline=%s agent=%s original=%d limit=%d",
-                        pl.pipeline_id, step.agent, original_len, MAX_OUTPUT_SIZE)
-        log.info("step_done: pipeline=%s agent=%s status=%s duration=%.1fs",
-                 pl.pipeline_id, step.agent, step.status,
-                 step.completed_at - step.started_at)
+            step.result = (
+                step.result[:MAX_OUTPUT_SIZE]
+                + f"\n... (truncated {original_len - MAX_OUTPUT_SIZE} bytes)"
+            )
+            log.warning(
+                "step_output_truncated: pipeline=%s agent=%s original=%d limit=%d",
+                pl.pipeline_id,
+                step.agent,
+                original_len,
+                MAX_OUTPUT_SIZE,
+            )
+        log.info(
+            "step_done: pipeline=%s agent=%s status=%s duration=%.1fs",
+            pl.pipeline_id,
+            step.agent,
+            step.status,
+            step.completed_at - step.started_at,
+        )
 
         evt_type = "step_completed" if step.status == "completed" else "step_failed"
         evt_data = {
@@ -1330,8 +1572,9 @@ class PipelineManager:
         if step.status == "completed":
             # Strip tool noise, then take tail (conclusions)
             import re
-            clean = re.sub(r'^\[tool\.(start|done)\].*$', '', step.result, flags=re.MULTILINE)
-            clean = re.sub(r'\n{3,}', '\n\n', clean).strip()
+
+            clean = re.sub(r"^\[tool\.(start|done)\].*$", "", step.result, flags=re.MULTILINE)
+            clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
             evt_data["result_preview"] = ("..." + clean[-500:]) if len(clean) > 500 else clean
         else:
             evt_data["error"] = step.error
@@ -1339,8 +1582,15 @@ class PipelineManager:
 
     MAX_STEP_FALLBACK = 2
 
-    async def _step_fallback(self, pl: Pipeline, step: PipelineStep, step_idx: int,
-                             prompt: str, shared_cwd: str, timeout: float):
+    async def _step_fallback(
+        self,
+        pl: Pipeline,
+        step: PipelineStep,
+        step_idx: int,
+        prompt: str,
+        shared_cwd: str,
+        timeout: float,
+    ):
         """Re-execute a failed ACP step on fallback agents (mirrors JobManager fallback)."""
         if not step.original_agent:
             step.original_agent = step.agent
@@ -1349,29 +1599,42 @@ class PipelineManager:
 
         for attempt in range(self.MAX_STEP_FALLBACK):
             next_agent = await asyncio.to_thread(
-                get_best_fallback, step.agent, tried, self._pool, None)
+                get_best_fallback, step.agent, tried, self._pool, None
+            )
             if next_agent is None:
                 break
             # Fallback agents must exist locally and be ACP mode. A pool="lambda"
             # agent carries no "mode" key, so it would pass the mode check while
             # being absent from the local pool entirely — exclude it explicitly.
             next_cfg = self._agents_cfg.get(next_agent, {})
-            if (not isinstance(next_cfg, dict)
-                    or next_cfg.get("mode", "acp") != "acp"
-                    or next_cfg.get("pool") == "lambda"):
+            if (
+                not isinstance(next_cfg, dict)
+                or next_cfg.get("mode", "acp") != "acp"
+                or next_cfg.get("pool") == "lambda"
+            ):
                 tried.append(next_agent)
                 continue
             step.fallback_history.append(step.agent)
             tried.append(next_agent)
-            log.info("step_fallback: pipeline=%s step=%d %s -> %s (attempt %d/%d)",
-                     pl.pipeline_id, step_idx, step.agent, next_agent,
-                     attempt + 1, self.MAX_STEP_FALLBACK)
-            self._emit_event(pl, "step_fallback", {
-                "index": step_idx,
-                "from_agent": step.agent,
-                "to_agent": next_agent,
-                "error": step.error,
-            })
+            log.info(
+                "step_fallback: pipeline=%s step=%d %s -> %s (attempt %d/%d)",
+                pl.pipeline_id,
+                step_idx,
+                step.agent,
+                next_agent,
+                attempt + 1,
+                self.MAX_STEP_FALLBACK,
+            )
+            self._emit_event(
+                pl,
+                "step_fallback",
+                {
+                    "index": step_idx,
+                    "from_agent": step.agent,
+                    "to_agent": next_agent,
+                    "error": step.error,
+                },
+            )
             step.agent = next_agent
             step.status = "running"
             step.error = ""
@@ -1379,7 +1642,8 @@ class PipelineManager:
             try:
                 await asyncio.wait_for(
                     self._exec_step_acp(pl, step, step_idx, prompt, session_id, cwd=shared_cwd),
-                    timeout=timeout)
+                    timeout=timeout,
+                )
             except asyncio.TimeoutError:
                 step.error = f"step timeout ({timeout}s)"
                 step.status = "failed"
@@ -1390,11 +1654,23 @@ class PipelineManager:
         if step.status != "completed":
             step.status = "failed"
             step.error = step.error or first_error
-            log.warning("step_fallback_exhausted: pipeline=%s step=%d original=%s tried=%s",
-                        pl.pipeline_id, step_idx, step.original_agent, tried)
+            log.warning(
+                "step_fallback_exhausted: pipeline=%s step=%d original=%s tried=%s",
+                pl.pipeline_id,
+                step_idx,
+                step.original_agent,
+                tried,
+            )
 
-    async def _exec_step_acp(self, pl: Pipeline, step: PipelineStep, step_idx: int,
-                             prompt: str, session_id: str, cwd: str = ""):
+    async def _exec_step_acp(
+        self,
+        pl: Pipeline,
+        step: PipelineStep,
+        step_idx: int,
+        prompt: str,
+        session_id: str,
+        cwd: str = "",
+    ):
         parts = []
         step._live_parts = parts
         try:
@@ -1407,9 +1683,14 @@ class PipelineManager:
                 except PoolExhaustedError:
                     if _attempt == _pool_retries - 1:
                         raise
-                    wait = 5 * (2 ** _attempt)
-                    log.info("pool_wait: pipeline=%s agent=%s attempt=%d wait=%ds",
-                             pl.pipeline_id, step.agent, _attempt + 1, wait)
+                    wait = 5 * (2**_attempt)
+                    log.info(
+                        "pool_wait: pipeline=%s agent=%s attempt=%d wait=%ds",
+                        pl.pipeline_id,
+                        step.agent,
+                        _attempt + 1,
+                        wait,
+                    )
                     await asyncio.sleep(wait)
             async for notification in conn.session_prompt(prompt):
                 if "_prompt_result" in notification:
@@ -1419,6 +1700,7 @@ class PipelineManager:
                     else:
                         step.status = "completed"
                     from .agents import _record_acp_usage
+
                     _record_acp_usage(step.agent, notification["_prompt_result"], 0)
                     break
                 event = transform_notification(notification)
@@ -1434,11 +1716,13 @@ class PipelineManager:
                     step._thinking_parts.append(event.get("content", ""))
                 # NEW: tools tracking by toolCallId
                 elif kind == "tool.start":
-                    step.tools.append({
-                        "id": event.get("toolCallId", ""),
-                        "name": event.get("title", ""),
-                        "status": event.get("status", "pending"),
-                    })
+                    step.tools.append(
+                        {
+                            "id": event.get("toolCallId", ""),
+                            "name": event.get("title", ""),
+                            "status": event.get("status", "pending"),
+                        }
+                    )
                 elif kind == "tool.done":
                     tid = event.get("toolCallId", "")
                     found = next((t for t in step.tools if t["id"] == tid), None)
@@ -1446,19 +1730,25 @@ class PipelineManager:
                         found["status"] = event.get("status", "completed")
                     else:
                         # Orphan done (start lost): record for visibility
-                        step.tools.append({
-                            "id": tid,
-                            "name": event.get("title", ""),
-                            "status": event.get("status", "completed"),
-                        })
+                        step.tools.append(
+                            {
+                                "id": tid,
+                                "name": event.get("title", ""),
+                                "status": event.get("status", "completed"),
+                            }
+                        )
 
                 # NEW: emit live SSE event for ALL transformed kinds
-                self._emit_event(pl, "step_progress", {
-                    "index": step_idx,
-                    "agent": step.agent,
-                    "kind": kind,
-                    **{k: v for k, v in event.items() if k != "type"},
-                })
+                self._emit_event(
+                    pl,
+                    "step_progress",
+                    {
+                        "index": step_idx,
+                        "agent": step.agent,
+                        "kind": kind,
+                        **{k: v for k, v in event.items() if k != "type"},
+                    },
+                )
         except (PoolExhaustedError, AcpError) as e:
             step.error = str(e)
             step.status = "failed"
@@ -1467,8 +1757,9 @@ class PipelineManager:
             step.status = "failed"
         step.result = "".join(parts)
 
-    async def _exec_step_remote(self, pl: Pipeline, step: PipelineStep,
-                                prompt: str, shared_cwd: str, mesh_target: tuple):
+    async def _exec_step_remote(
+        self, pl: Pipeline, step: PipelineStep, prompt: str, shared_cwd: str, mesh_target: tuple
+    ):
         """L3 (A side): relay shared_cwd to a peer via S3, run the step there, merge back.
 
         S3 is a hard prerequisite — without it a cross-node step fails (never silent).
@@ -1476,11 +1767,13 @@ class PipelineManager:
         import httpx
 
         from src import s3
+
         peer_url, mesh_token = mesh_target
         if not s3.is_available():
             step.status = "failed"
-            step.error = ("cross-bridge pipeline step requires S3 "
-                          "(mesh workspace relay); s3 unavailable")
+            step.error = (
+                "cross-bridge pipeline step requires S3 (mesh workspace relay); s3 unavailable"
+            )
             log.warning("l3_no_s3: pipeline=%s agent=%s", pl.pipeline_id, step.agent)
             return
         idx = pl.steps.index(step)
@@ -1489,15 +1782,25 @@ class PipelineManager:
             # pack_dir tars the whole workspace (CPU) and put_bytes is sync
             # boto3 — both run in a thread so they can't stall the loop.
             uploaded = await asyncio.to_thread(
-                lambda: s3.put_bytes(f"{base}/in.tgz", s3.pack_dir(shared_cwd)))
+                lambda: s3.put_bytes(f"{base}/in.tgz", s3.pack_dir(shared_cwd))
+            )
             if not uploaded:
-                step.status = "failed"; step.error = "workspace upload (A->S3) failed"; return
+                step.status = "failed"
+                step.error = "workspace upload (A->S3) failed"
+                return
             in_url = s3.presigned_get(f"{base}/in.tgz")
             out_url = s3.presigned_put(f"{base}/out.tgz")
-            body = {"jsonrpc": "2.0", "id": 1, "method": "tasks/send",
-                    "params": {"skill": step.agent,
-                               "message": {"parts": [{"type": "text", "text": prompt}]},
-                               "workspace_in_url": in_url, "workspace_out_url": out_url}}
+            body = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tasks/send",
+                "params": {
+                    "skill": step.agent,
+                    "message": {"parts": [{"type": "text", "text": prompt}]},
+                    "workspace_in_url": in_url,
+                    "workspace_out_url": out_url,
+                },
+            }
             headers = {"X-A2A-Hop": "1"}
             if mesh_token:
                 headers["Authorization"] = f"Bearer {mesh_token}"
@@ -1506,7 +1809,9 @@ class PipelineManager:
                 r.raise_for_status()
                 resp = r.json()
             if "error" in resp:
-                step.status = "failed"; step.error = resp["error"].get("message", "remote error"); return
+                step.status = "failed"
+                step.error = resp["error"].get("message", "remote error")
+                return
             # merge result workspace back into the authoritative shared_cwd
             get_out = s3.presigned_get(f"{base}/out.tgz")
 
@@ -1514,21 +1819,25 @@ class PipelineManager:
                 ro = httpx.get(get_out, timeout=120)
                 if ro.status_code == 200 and ro.content:
                     s3.unpack_dir(ro.content, shared_cwd)
+
             await asyncio.to_thread(_merge_back)
             arts = resp.get("result", {}).get("artifacts", [])
             step.result = "".join(p.get("text", "") for a in arts for p in a.get("parts", []))
             step.status = "completed"
         except Exception as e:
-            step.status = "failed"; step.error = f"remote step failed: {e}"
-            log.warning("l3_remote_failed: pipeline=%s agent=%s err=%s",
-                        pl.pipeline_id, step.agent, e)
+            step.status = "failed"
+            step.error = f"remote step failed: {e}"
+            log.warning(
+                "l3_remote_failed: pipeline=%s agent=%s err=%s", pl.pipeline_id, step.agent, e
+            )
         finally:
             # Clean up ONLY this step's own prefix. Deleting the whole pipeline prefix
             # here would race parallel steps (first finisher wipes others' in/out.tgz).
             await asyncio.to_thread(s3.delete_prefix, f"{base}/")
 
-    async def _exec_step_lambda(self, pl: Pipeline, step: PipelineStep, step_idx: int,
-                                prompt: str, cfg: dict):
+    async def _exec_step_lambda(
+        self, pl: Pipeline, step: PipelineStep, step_idx: int, prompt: str, cfg: dict
+    ):
         """Execute a pipeline step via Lambda pool (serverless burst)."""
         profile = cfg.get("profile")
         model = cfg.get("model", "")
@@ -1550,8 +1859,9 @@ class PipelineManager:
         except Exception as e:
             step.error = f"lambda invoke failed: {e}"
             step.status = "failed"
-            log.warning("step_lambda_failed: pipeline=%s agent=%s err=%s",
-                        pl.pipeline_id, step.agent, e)
+            log.warning(
+                "step_lambda_failed: pipeline=%s agent=%s err=%s", pl.pipeline_id, step.agent, e
+            )
 
     async def _exec_step_pty(self, step: PipelineStep, prompt: str, cfg: dict):
         result = await run_pty_subprocess(

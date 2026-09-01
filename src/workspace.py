@@ -47,8 +47,9 @@ def _newest_mtime(root: Path, cutoff: float) -> float:
     return newest
 
 
-def sweep(base: str, ttl_seconds: float, active: set[str] | None = None,
-          throttle: bool = True) -> int:
+def sweep(
+    base: str, ttl_seconds: float, active: set[str] | None = None, throttle: bool = True
+) -> int:
     """Remove expired pipeline workspaces. Returns count removed.
 
     Synchronous (walks disk) — call via asyncio.to_thread from async code.

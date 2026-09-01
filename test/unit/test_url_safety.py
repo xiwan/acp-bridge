@@ -74,9 +74,7 @@ def test_allowed_targets_opt_specific_hosts_out_of_range_checks():
 
 def test_allowed_targets_do_not_cover_unlisted_private_hosts():
     with pytest.raises(UnsafeUrlError):
-        validate_outbound_url(
-            "http://192.168.1.5/hook", allowed_targets=frozenset({"10.0.0.0/8"})
-        )
+        validate_outbound_url("http://192.168.1.5/hook", allowed_targets=frozenset({"10.0.0.0/8"}))
 
 
 def test_allowed_targets_still_enforce_scheme():

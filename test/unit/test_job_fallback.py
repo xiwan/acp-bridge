@@ -20,8 +20,10 @@ from src.url_safety import UnsafeUrlError
 
 # ── Helpers ──────────────────────────────────────────────
 
+
 class FakeConn:
     """Fake ACP connection that yields a simple response."""
+
     def __init__(self, text="ok"):
         self._text = text
 
@@ -32,6 +34,7 @@ class FakeConn:
 
 class FailThenSucceedPool:
     """Pool that fails for certain agents, succeeds for others."""
+
     def __init__(self, fail_agents: set, success_text="fallback-ok"):
         self.fail_agents = fail_agents
         self.success_text = success_text
@@ -50,6 +53,7 @@ class FailThenSucceedPool:
 
 class AlwaysFailPool:
     """Pool where every agent fails."""
+
     calls = []
     _connections = {}
 
@@ -82,12 +86,16 @@ def make_manager(pool, db_path=None):
 
 def make_job(agent="kiro", prompt="test"):
     return Job(
-        job_id=str(uuid.uuid4()), agent=agent, session_id="s1",
-        prompt=prompt, cwd="",
+        job_id=str(uuid.uuid4()),
+        agent=agent,
+        session_id="s1",
+        prompt=prompt,
+        cwd="",
     )
 
 
 # ── Tests ────────────────────────────────────────────────
+
 
 def test_no_fallback_on_success():
     """Normal success: no fallback triggered."""
@@ -237,6 +245,7 @@ def test_store_migration():
     with tempfile.TemporaryDirectory() as td:
         db_path = os.path.join(td, "old.db")
         import sqlite3
+
         conn = sqlite3.connect(db_path)
         conn.executescript("""CREATE TABLE IF NOT EXISTS jobs (
             job_id TEXT PRIMARY KEY, agent TEXT NOT NULL, session_id TEXT NOT NULL,
@@ -258,14 +267,17 @@ def test_store_migration():
 
 def test_acp_error_triggers_fallback():
     """AcpError (not just PoolExhaustedError) also triggers fallback."""
+
     class AcpErrorPool:
         calls = []
         _connections = {}
+
         async def get_or_create(self, agent, session_id, cwd="", profile=None):
             self.calls.append(agent)
             if agent == "kiro":
                 raise AcpError("idle_timeout")
             return FakeConn("recovered")
+
         async def remove(self, agent, session_id):
             pass
 
@@ -284,6 +296,7 @@ def test_acp_error_triggers_fallback():
 
 def test_prompt_result_error_triggers_fallback():
     """An ACP prompt-result error is classified and routed to fallback."""
+
     class PromptErrorConn:
         async def session_prompt(self, prompt):
             yield {"_prompt_result": {"error": {"code": -1, "message": "model failed"}}}
@@ -319,12 +332,15 @@ def test_prompt_result_error_triggers_fallback():
 
 def test_generic_exception_no_fallback():
     """Non-ACP exceptions (e.g. RuntimeError) do NOT trigger fallback."""
+
     class CrashPool:
         calls = []
         _connections = {}
+
         async def get_or_create(self, agent, session_id, cwd="", profile=None):
             self.calls.append(agent)
             raise RuntimeError("unexpected crash")
+
         async def remove(self, agent, session_id):
             pass
 
@@ -350,55 +366,62 @@ def test_tried_agents_prevents_duplicate():
     # If opencode fails, fallback to claude
     # If claude fails, fallback to qwen
     # The tried_agents list must prevent re-trying kiro even if something tries to reuse it
-    
+
     call_count = {"kiro": 0, "claude": 0, "opencode": 0, "qwen": 0}
-    
+
     class TrackedPool:
         _connections = {}
+
         async def get_or_create(self, agent, session_id, cwd="", profile=None):
             call_count[agent] += 1
             # Always fail to exhaust all fallbacks
             raise PoolExhaustedError(f"{agent} exhausted")
+
         async def remove(self, agent, session_id):
             pass
-    
+
     pool = TrackedPool()
     mgr = make_manager(pool)
     job = make_job("kiro")
-    
+
     asyncio.run(mgr._run_acp(job))
-    
+
     # With 4 agents in the chain and MAX_FALLBACK_RETRIES=3,
     # we should try exactly 3 unique agents
     assert job.status == "failed"
     total_tries = sum(call_count.values())
     assert total_tries == 3, f"Expected 3 total attempts, got {total_tries}"
-    
+
     # Each agent should only be called once
     for agent, count in call_count.items():
         if count > 0:
             assert count == 1, f"Agent {agent} was called {count} times, expected 1"
-    
+
     # Verify tried_agents logic worked correctly
-    assert len(set(job.fallback_history) if job.fallback_history else set()) == len(job.fallback_history)
+    assert len(set(job.fallback_history) if job.fallback_history else set()) == len(
+        job.fallback_history
+    )
     print("✅ test_tried_agents_prevents_duplicate")
 
 
 def test_fallback_exhaustion_error_message():
     """When fallback is exhausted, error message mentions the tried agents."""
+
     class AlwaysFailPool:
         _connections = {}
+
         async def get_or_create(self, agent, session_id, cwd="", profile=None):
             raise PoolExhaustedError(f"{agent} pool exhausted")
+
         async def remove(self, agent, session_id):
             pass
-    
+
     pool = AlwaysFailPool()
     mgr = make_manager(pool)
     job = make_job("kiro")
-    
+
     asyncio.run(mgr._run_acp(job))
-    
+
     assert job.status == "failed"
     assert "kiro" in job.error or "fallback" in job.error.lower()
     # The error should indicate exhaustion
@@ -407,6 +430,7 @@ def test_fallback_exhaustion_error_message():
 
 
 # ── SSRF guard on submit(callback_url) ──────────────────────
+
 
 def test_submit_rejects_unsafe_callback_url():
     """A client-supplied callback_url pointing at a private/loopback target
@@ -436,11 +460,13 @@ def test_timeout_retries_same_agent():
 
     class TimeoutThenOkPool:
         _connections = {}
+
         async def get_or_create(self, agent, session_id, cwd="", profile=None):
             call_log.append(agent)
             if agent == "kiro" and len([c for c in call_log if c == "kiro"]) == 1:
                 raise AgentTimeoutError("timeout")
             return FakeConn("recovered")
+
         async def remove(self, agent, session_id):
             pass
 
@@ -458,12 +484,15 @@ def test_timeout_retries_same_agent():
 
 def test_timeout_falls_back_if_retry_fails():
     """AgentTimeoutError → retry fails → falls back to next agent."""
+
     class AlwaysTimeoutPool:
         _connections = {}
+
         async def get_or_create(self, agent, session_id, cwd="", profile=None):
             if agent == "kiro":
                 raise AgentTimeoutError("timeout")
             return FakeConn("fallback-ok")
+
         async def remove(self, agent, session_id):
             pass
 
@@ -485,11 +514,13 @@ def test_rate_limit_waits_and_retries():
 
     class RateLimitThenOkPool:
         _connections = {}
+
         async def get_or_create(self, agent, session_id, cwd="", profile=None):
             call_log.append(agent)
             if agent == "kiro" and len([c for c in call_log if c == "kiro"]) == 1:
                 raise AgentRateLimitError("429", retry_after=1)
             return FakeConn("ok-after-wait")
+
         async def remove(self, agent, session_id):
             pass
 
@@ -511,11 +542,13 @@ def test_model_error_skips_to_fallback():
 
     class ModelErrorPool:
         _connections = {}
+
         async def get_or_create(self, agent, session_id, cwd="", profile=None):
             call_log.append(agent)
             if agent == "kiro":
                 raise AgentModelError("model crashed")
             return FakeConn("fallback-ok")
+
         async def remove(self, agent, session_id):
             pass
 
@@ -530,24 +563,28 @@ def test_model_error_skips_to_fallback():
     assert call_log.count("kiro") == 1  # no retry, went straight to fallback
     assert "kiro" in job.fallback_history
     print("✅ test_model_error_skips_to_fallback")
+
+
 def test_max_fallback_retries_limit():
     """Respects MAX_FALLBACK_RETRIES=3 limit for_total attempts."""
     attempts = []
-    
+
     class CountingPool:
         _connections = {}
+
         async def get_or_create(self, agent, session_id, cwd="", profile=None):
             attempts.append(agent)
             raise PoolExhaustedError(f"{agent} exhausted")
+
         async def remove(self, agent, session_id):
             pass
-    
+
     pool = CountingPool()
     mgr = make_manager(pool)
     job = make_job("kiro")
-    
+
     asyncio.run(mgr._run_acp(job))
-    
+
     # Total attempts = 1 (initial) + up to MAX_FALLBACK_RETRIES-1 fallbacks = MAX_FALLBACK_RETRIES
     # Actually looking at the code: for loop runs MAX_FALLBACK_RETRIES times,
     # and tried_agents starts empty, so we get MAX_FALLBACK_RETRIES total attempts
@@ -558,27 +595,29 @@ def test_max_fallback_retries_limit():
 
 def test_successful_fallback_on_second_attempt():
     """Fallback succeeds on second attempt (not first, not last)."""
+
     class SequentialFailPool:
         _connections = {}
+
         def __init__(self):
             self.call_count = 0
-        
+
         async def get_or_create(self, agent, session_id, cwd="", profile=None):
             self.call_count += 1
             # Fail on first two calls, succeed on third
             if self.call_count <= 2:
                 raise PoolExhaustedError(f"{agent} exhausted")
             return FakeConn("succeeded-on-third")
-        
+
         async def remove(self, agent, session_id):
             pass
-    
+
     pool = SequentialFailPool()
     mgr = make_manager(pool)
     job = make_job("kiro")
-    
+
     asyncio.run(mgr._run_acp(job))
-    
+
     assert job.status == "completed"
     # Should have switched agents at least once
     assert job.agent != "kiro" or pool.call_count > 1
@@ -592,9 +631,9 @@ def test_original_agent_stored_on_first_try():
     pool = FailThenSucceedPool(fail_agents=set())  # Succeeds immediately
     mgr = make_manager(pool)
     job = make_job("claude")
-    
+
     asyncio.run(mgr._run_acp(job))
-    
+
     assert job.original_agent == "claude"
     # No fallback happened, but original_agent should still be set
     assert job.fallback_history == []
@@ -603,8 +642,10 @@ def test_original_agent_stored_on_first_try():
 
 # ── get_best_fallback tests ──────────────────────────────
 
+
 class FakePoolWithState:
     """Pool with controllable per-agent connection states."""
+
     def __init__(self, connections: dict[str, str]):
         """connections: {agent: state} e.g. {"claude": "idle", "opencode": "busy"}"""
         self._connections = {}
@@ -616,6 +657,7 @@ class FakePoolWithState:
 
 class FakeStats:
     """Stats that return pre-configured per-agent data."""
+
     def __init__(self, agents_data: dict):
         self._data = agents_data
 
@@ -651,11 +693,13 @@ def test_best_fallback_prefers_idle():
 
 def test_best_fallback_prefers_high_success_rate():
     """Agent with higher success rate is preferred (no pool data)."""
-    stats = FakeStats({
-        "claude": {"total": 10, "success": 3, "avg_duration": 10.0},    # 30%
-        "opencode": {"total": 10, "success": 9, "avg_duration": 10.0},  # 90%
-        "qwen": {"total": 10, "success": 5, "avg_duration": 10.0},      # 50%
-    })
+    stats = FakeStats(
+        {
+            "claude": {"total": 10, "success": 3, "avg_duration": 10.0},  # 30%
+            "opencode": {"total": 10, "success": 9, "avg_duration": 10.0},  # 90%
+            "qwen": {"total": 10, "success": 5, "avg_duration": 10.0},  # 50%
+        }
+    )
     result = get_best_fallback("kiro", [], stats=stats)
     assert result == "opencode"
     print("✅ test_best_fallback_prefers_high_success_rate")
@@ -664,10 +708,12 @@ def test_best_fallback_prefers_high_success_rate():
 def test_best_fallback_combined_scoring():
     """Idle + decent success rate beats busy + high success rate."""
     pool = FakePoolWithState({"claude": "busy", "opencode": "idle"})
-    stats = FakeStats({
-        "claude": {"total": 10, "success": 10, "avg_duration": 5.0},    # 100% but busy
-        "opencode": {"total": 10, "success": 7, "avg_duration": 10.0},  # 70% but idle
-    })
+    stats = FakeStats(
+        {
+            "claude": {"total": 10, "success": 10, "avg_duration": 5.0},  # 100% but busy
+            "opencode": {"total": 10, "success": 7, "avg_duration": 10.0},  # 70% but idle
+        }
+    )
     result = get_best_fallback("kiro", [], pool=pool, stats=stats)
     assert result == "opencode"  # idle boost tips the balance
     print("✅ test_best_fallback_combined_scoring")
@@ -676,10 +722,12 @@ def test_best_fallback_combined_scoring():
 def test_best_fallback_success_rate_can_overcome_idle():
     """Busy agent with vastly higher success rate beats idle agent with poor stats."""
     pool = FakePoolWithState({"claude": "idle", "opencode": "busy"})
-    stats = FakeStats({
-        "claude": {"total": 20, "success": 4, "avg_duration": 50.0},    # 20%, slow
-        "opencode": {"total": 20, "success": 19, "avg_duration": 8.0},  # 95%, fast
-    })
+    stats = FakeStats(
+        {
+            "claude": {"total": 20, "success": 4, "avg_duration": 50.0},  # 20%, slow
+            "opencode": {"total": 20, "success": 19, "avg_duration": 8.0},  # 95%, fast
+        }
+    )
     result = get_best_fallback("kiro", [], pool=pool, stats=stats)
     assert result == "opencode"  # success rate overcomes idle bonus
     print("✅ test_best_fallback_success_rate_can_overcome_idle")
@@ -698,8 +746,7 @@ def _setup_breakers(states: dict[str, CircuitState]):
     saved = dict(_agents_mod._circuit_breakers)
     _agents_mod._circuit_breakers.clear()
     for agent, state in states.items():
-        cb = CircuitBreaker(agent, CircuitBreakerConfig(
-            failure_threshold=2, open_timeout=999))
+        cb = CircuitBreaker(agent, CircuitBreakerConfig(failure_threshold=2, open_timeout=999))
         cb.state = state
         cb._state_changed_at = time.monotonic()
         _agents_mod._circuit_breakers[agent] = cb
@@ -724,11 +771,13 @@ def test_open_breaker_filtered_from_candidates():
 
 def test_all_breakers_open_returns_none():
     """When all fallback agents have OPEN breakers, return None."""
-    saved = _setup_breakers({
-        "claude": CircuitState.OPEN,
-        "opencode": CircuitState.OPEN,
-        "qwen": CircuitState.OPEN,
-    })
+    saved = _setup_breakers(
+        {
+            "claude": CircuitState.OPEN,
+            "opencode": CircuitState.OPEN,
+            "qwen": CircuitState.OPEN,
+        }
+    )
     try:
         pool = FakePoolWithState({"claude": "idle", "opencode": "idle", "qwen": "idle"})
         result = get_best_fallback("kiro", [], pool=pool)
@@ -739,17 +788,21 @@ def test_all_breakers_open_returns_none():
 
 def test_half_open_gets_lower_score_than_closed():
     """HALF_OPEN agent scores lower than identical CLOSED agent (×0.5 weight)."""
-    saved = _setup_breakers({
-        "claude": CircuitState.HALF_OPEN,
-        "opencode": CircuitState.CLOSED,
-    })
+    saved = _setup_breakers(
+        {
+            "claude": CircuitState.HALF_OPEN,
+            "opencode": CircuitState.CLOSED,
+        }
+    )
     try:
         # Both idle, same stats → CLOSED should win due to cb_weight
         pool = FakePoolWithState({"claude": "idle", "opencode": "idle"})
-        stats = FakeStats({
-            "claude": {"total": 10, "success": 10, "avg_duration": 10.0},
-            "opencode": {"total": 10, "success": 10, "avg_duration": 10.0},
-        })
+        stats = FakeStats(
+            {
+                "claude": {"total": 10, "success": 10, "avg_duration": 10.0},
+                "opencode": {"total": 10, "success": 10, "avg_duration": 10.0},
+            }
+        )
         result = get_best_fallback("kiro", [], pool=pool, stats=stats)
         assert result == "opencode", f"expected opencode (CLOSED), got {result}"
     finally:
@@ -758,11 +811,13 @@ def test_half_open_gets_lower_score_than_closed():
 
 def test_half_open_still_selectable_if_only_option():
     """HALF_OPEN agent is still returned when it's the only non-OPEN candidate."""
-    saved = _setup_breakers({
-        "claude": CircuitState.HALF_OPEN,
-        "opencode": CircuitState.OPEN,
-        "qwen": CircuitState.OPEN,
-    })
+    saved = _setup_breakers(
+        {
+            "claude": CircuitState.HALF_OPEN,
+            "opencode": CircuitState.OPEN,
+            "qwen": CircuitState.OPEN,
+        }
+    )
     try:
         pool = FakePoolWithState({"claude": "idle"})
         result = get_best_fallback("kiro", [], pool=pool)
@@ -777,10 +832,12 @@ def test_no_breaker_entry_treated_as_closed():
     try:
         # opencode has no breaker entry → should be treated as CLOSED (weight=1.0)
         pool = FakePoolWithState({"claude": "idle", "opencode": "idle"})
-        stats = FakeStats({
-            "claude": {"total": 10, "success": 10, "avg_duration": 10.0},
-            "opencode": {"total": 10, "success": 10, "avg_duration": 10.0},
-        })
+        stats = FakeStats(
+            {
+                "claude": {"total": 10, "success": 10, "avg_duration": 10.0},
+                "opencode": {"total": 10, "success": 10, "avg_duration": 10.0},
+            }
+        )
         result = get_best_fallback("kiro", [], pool=pool, stats=stats)
         assert result == "opencode"
     finally:
@@ -792,11 +849,14 @@ async def test_rate_limit_does_not_trip_breaker():
     """AgentRateLimitError must NOT count as a circuit breaker failure."""
     from src.exceptions import AgentRateLimitError
 
-    cb = CircuitBreaker("rate-test", CircuitBreakerConfig(
-        failure_threshold=2,
-        expected_exceptions=(AcpError,),
-        excluded_exceptions=(AgentRateLimitError,),  # excluded takes priority
-    ))
+    cb = CircuitBreaker(
+        "rate-test",
+        CircuitBreakerConfig(
+            failure_threshold=2,
+            expected_exceptions=(AcpError,),
+            excluded_exceptions=(AgentRateLimitError,),  # excluded takes priority
+        ),
+    )
 
     async def rate_limited():
         raise AgentRateLimitError("429 too many requests", retry_after=5)

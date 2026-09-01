@@ -92,8 +92,11 @@ class TestSecretsManagerE2E:
         secret_arn = sm.describe_secret(SecretId="/acp-bridge/wrapper-test")["ARN"]
 
         # Import and configure wrapper
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../infra/lambda-burst/wrapper"))
+        sys.path.insert(
+            0, os.path.join(os.path.dirname(__file__), "../../infra/lambda-burst/wrapper")
+        )
         import handler
+
         handler._cached_api_key = None
         monkeypatch.setattr(handler, "SECRET_ARN", secret_arn)
 
@@ -121,18 +124,24 @@ class TestLambdaResourceCreation:
         # Create role
         iam.create_role(
             RoleName="lambda-burst-role",
-            AssumeRolePolicyDocument=json.dumps({
-                "Version": "2012-10-17",
-                "Statement": [{"Effect": "Allow",
-                               "Principal": {"Service": "lambda.amazonaws.com"},
-                               "Action": "sts:AssumeRole"}]
-            }),
+            AssumeRolePolicyDocument=json.dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {"Service": "lambda.amazonaws.com"},
+                            "Action": "sts:AssumeRole",
+                        }
+                    ],
+                }
+            ),
             Path="/",
         )
 
         # Create layer (simulates harness-factory binary)
         buf = BytesIO()
-        with zipfile.ZipFile(buf, 'w') as zf:
+        with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr("bin/harness-factory", b"#!/bin/sh\necho fake")
         layer_resp = client.publish_layer_version(
             LayerName="harness-factory",
@@ -143,7 +152,7 @@ class TestLambdaResourceCreation:
 
         # Create function
         fn_buf = BytesIO()
-        with zipfile.ZipFile(fn_buf, 'w') as zf:
+        with zipfile.ZipFile(fn_buf, "w") as zf:
             zf.writestr("handler.py", "def handler(e,c): return {}")
         client.create_function(
             FunctionName="acp-bridge-harness-burst",
@@ -154,11 +163,13 @@ class TestLambdaResourceCreation:
             MemorySize=512,
             Timeout=300,
             Layers=[layer_arn],
-            Environment={"Variables": {
-                "HARNESS_BIN": "/opt/bin/harness-factory",
-                "LITELLM_URL": "http://10.0.1.79:4000",
-                "LITELLM_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test",
-            }},
+            Environment={
+                "Variables": {
+                    "HARNESS_BIN": "/opt/bin/harness-factory",
+                    "LITELLM_URL": "http://10.0.1.79:4000",
+                    "LITELLM_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test",
+                }
+            },
         )
 
         # Verify
@@ -184,7 +195,7 @@ class TestLambdaResourceCreation:
             Path="/",
         )
         buf = BytesIO()
-        with zipfile.ZipFile(buf, 'w') as zf:
+        with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr("h.py", "def handler(e,c): pass")
         client.create_function(
             FunctionName="burst-fn",
@@ -218,12 +229,14 @@ class TestPoolLifecycleE2E:
             body = json.dumps({"status": "error", "error": "prompt is required"})
         else:
             model = payload.get("model", "default")
-            body = json.dumps({
-                "status": "completed",
-                "output": f"[{model}] processed: {prompt[:50]}",
-                "duration": 1.5,
-                "session_id": payload.get("session_id", ""),
-            })
+            body = json.dumps(
+                {
+                    "status": "completed",
+                    "output": f"[{model}] processed: {prompt[:50]}",
+                    "duration": 1.5,
+                    "session_id": payload.get("session_id", ""),
+                }
+            )
 
         mock_payload = MagicMock()
         mock_payload.read.return_value = body.encode()
@@ -231,6 +244,7 @@ class TestPoolLifecycleE2E:
 
     def _make_pool(self, max_concurrent=50):
         from src.lambda_pool import LambdaPool
+
         with patch("src.lambda_pool.boto3") as mock_boto:
             mock_client = MagicMock()
             mock_boto.client.return_value = mock_client
@@ -273,8 +287,9 @@ class TestPoolLifecycleE2E:
     async def test_burst_100(self):
         """Simulate 100 concurrent burst — the original requirement."""
         pool = self._make_pool(max_concurrent=100)
-        prompts = [{"prompt": f"Task-{i}: analyze code block", "session_id": f"s-{i}"}
-                   for i in range(100)]
+        prompts = [
+            {"prompt": f"Task-{i}: analyze code block", "session_id": f"s-{i}"} for i in range(100)
+        ]
 
         t0 = time.time()
         results = await pool.invoke_batch(prompts)
@@ -329,12 +344,12 @@ class TestPoolLifecycleE2E:
     async def test_capacity_overflow_and_recovery(self):
         """Pool at capacity → error → drain → recover."""
         from src.lambda_pool import LambdaSlot
+
         pool = self._make_pool(max_concurrent=5)
 
         # Fill to capacity
         for i in range(5):
-            pool._active[f"x-{i}"] = LambdaSlot(
-                session_id=f"x-{i}", agent_name="h", profile={})
+            pool._active[f"x-{i}"] = LambdaSlot(session_id=f"x-{i}", agent_name="h", profile={})
 
         # Overflow
         with pytest.raises(RuntimeError, match="at capacity"):
@@ -368,7 +383,7 @@ class TestPoolLifecycleE2E:
 
         completed = sum(1 for r in results if r["status"] == "completed")
         errors = sum(1 for r in results if r["status"] == "error")
-        assert completed == 9   # 12 - 3 failures (4th, 8th, 12th)
+        assert completed == 9  # 12 - 3 failures (4th, 8th, 12th)
         assert errors == 3
         assert pool.stats["total_invocations"] == 12
         assert pool.stats["total_errors"] == 3
@@ -384,12 +399,14 @@ class TestPoolLifecycleE2E:
             payload = json.loads(kw["Payload"])
             # First call simulates 800ms cold start
             duration = 0.8 if call_n["n"] == 1 else 0.05
-            body = json.dumps({
-                "status": "completed",
-                "output": f"call #{call_n['n']}",
-                "duration": duration,
-                "session_id": payload.get("session_id", ""),
-            })
+            body = json.dumps(
+                {
+                    "status": "completed",
+                    "output": f"call #{call_n['n']}",
+                    "duration": duration,
+                    "session_id": payload.get("session_id", ""),
+                }
+            )
             mock_payload = MagicMock()
             mock_payload.read.return_value = body.encode()
             return {"StatusCode": 200, "Payload": mock_payload}

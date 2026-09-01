@@ -17,20 +17,26 @@ _registry: dict[str, dict] = {}
 
 # Preset names matching harness-factory bundled profiles
 PRESETS = {
-    "reader":     "File reader (fs read-only)",
-    "executor":   "Command executor (shell only)",
-    "scout":      "Web scout (network only)",
-    "reviewer":   "Code reviewer (fs + git)",
-    "analyst":    "Data analyst (fs + shell)",
+    "reader": "File reader (fs read-only)",
+    "executor": "Command executor (shell only)",
+    "scout": "Web scout (network only)",
+    "reviewer": "Code reviewer (fs + git)",
+    "analyst": "Data analyst (fs + shell)",
     "researcher": "Researcher (fs + web)",
-    "developer":  "Software developer (fs + git + shell)",
-    "writer":     "Technical writer (fs + git + web)",
-    "operator":   "Operations engineer (fs + shell + web)",
-    "admin":      "Full admin (all tools)",
+    "developer": "Software developer (fs + git + shell)",
+    "writer": "Technical writer (fs + git + web)",
+    "operator": "Operations engineer (fs + shell + web)",
+    "admin": "Full admin (all tools)",
 }
 
 
-def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg: dict, harness_binary: str = ""):
+def register(
+    app,
+    pool: AcpProcessPool | None,
+    static_agents: dict,
+    litellm_cfg: dict,
+    harness_binary: str = "",
+):
 
     # Resolve harness-factory binary: explicit config > static agent > bare name
     _binary = harness_binary
@@ -59,7 +65,9 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
         body = await request.json()
         raw_profile = body.get("profile")
         if not raw_profile:
-            return JSONResponse({"error": "profile is required (preset name or JSON object)"}, status_code=400)
+            return JSONResponse(
+                {"error": "profile is required (preset name or JSON object)"}, status_code=400
+            )
 
         name = body.get("name") or f"harness-{uuid.uuid4().hex[:8]}"
         if name in static_agents or name in _registry:
@@ -69,16 +77,20 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
         if isinstance(raw_profile, str):
             if raw_profile not in PRESETS:
                 return JSONResponse(
-                    {"error": f"unknown preset '{raw_profile}'. Available: {', '.join(sorted(PRESETS))}"},
-                    status_code=400)
+                    {
+                        "error": f"unknown preset '{raw_profile}'. Available: {', '.join(sorted(PRESETS))}"
+                    },
+                    status_code=400,
+                )
             # Preset mode: pass --profile flag to harness-factory
             # Inherit agent config (model, temperature) from static harness so LLM calls work
             preset_name = raw_profile
             base_profile = harness_base_cfg.get("profile", {}) if harness_base_cfg else {}
             profile = {}
             if base_profile.get("agent"):
-                profile["agent"] = {k: v for k, v in base_profile["agent"].items()
-                                    if k in ("model", "temperature")}
+                profile["agent"] = {
+                    k: v for k, v in base_profile["agent"].items() if k in ("model", "temperature")
+                }
             extra_acp_args = ["--profile", preset_name]
             description = body.get("description", PRESETS[preset_name])
         elif isinstance(raw_profile, dict):
@@ -88,7 +100,9 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
             extra_acp_args = []
             description = body.get("description", f"Dynamic harness: {name}")
         else:
-            return JSONResponse({"error": "profile must be a preset name (string) or JSON object"}, status_code=400)
+            return JSONResponse(
+                {"error": "profile must be a preset name (string) or JSON object"}, status_code=400
+            )
 
         # Inject litellm config
         profile.setdefault("litellm_url", litellm_cfg.get("url", ""))
@@ -107,7 +121,11 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
 
         # Build agent config
         base_args = harness_base_cfg.get("acp_args", []) if harness_base_cfg else []
-        skills_dir = harness_base_cfg.get("profile", {}).get("resources", {}).get("skills_dir", "") if harness_base_cfg else ""
+        skills_dir = (
+            harness_base_cfg.get("profile", {}).get("resources", {}).get("skills_dir", "")
+            if harness_base_cfg
+            else ""
+        )
         working_dir = f"/tmp/{name}"
         agent_cfg = {
             "command": _binary,
@@ -122,6 +140,7 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
             profile["resources"].setdefault("skills_dir", skills_dir)
             # Also symlink skills into working_dir for preset mode (reads from cwd/skills/)
             import os
+
             target_link = os.path.join(working_dir, "skills")
             os.makedirs(working_dir, exist_ok=True)
             if not os.path.exists(target_link):
@@ -134,6 +153,7 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
         # Register into SDK agents dict
         handler = make_acp_agent_handler(name, pool, profile=profile)
         from acp_sdk.server import Server
+
         srv = Server()
         srv.agent(name=name, description=description)(handler)
         manifest = srv.agents[0]
@@ -152,12 +172,15 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
         }
 
         log.info("harness_created: name=%s preset=%s", name, preset_name or "(custom)")
-        return JSONResponse({
-            "agent_name": name,
-            "description": description,
-            "preset": preset_name,
-            "created_at": created_at,
-        }, status_code=201)
+        return JSONResponse(
+            {
+                "agent_name": name,
+                "description": description,
+                "preset": preset_name,
+                "created_at": created_at,
+            },
+            status_code=201,
+        )
 
     @app.get("/harness")
     async def list_harnesses():
@@ -171,18 +194,21 @@ def register(app, pool: AcpProcessPool | None, static_agents: dict, litellm_cfg:
                     if a == name and getattr(conn, "resolved_model", None):
                         model = conn.resolved_model
                         break
-            harnesses.append({
-                "agent_name": name,
-                "description": info["description"],
-                "preset": info.get("preset"),
-                "resolved_model": model,
-                "created_at": info["created_at"],
-                "active_sessions": sessions,
-            })
-        harness_used = sum(
-            1 for (a, _) in pool._connections
-            if pool._agent_group(a) == "harness"
-        ) if pool else 0
+            harnesses.append(
+                {
+                    "agent_name": name,
+                    "description": info["description"],
+                    "preset": info.get("preset"),
+                    "resolved_model": model,
+                    "created_at": info["created_at"],
+                    "active_sessions": sessions,
+                }
+            )
+        harness_used = (
+            sum(1 for (a, _) in pool._connections if pool._agent_group(a) == "harness")
+            if pool
+            else 0
+        )
         return {
             "harnesses": harnesses,
             "total": len(harnesses),

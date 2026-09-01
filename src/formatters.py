@@ -87,45 +87,98 @@ class PipelineFormatter:
     @staticmethod
     def format_start(pipeline_id: str, mode: str, agents: list[str]) -> str:
         flow = " → ".join(agents) if mode in ("sequence", "conversation") else " | ".join(agents)
-        return fmt("pipeline", "start",
-                    "🔗 **Pipeline** `{id}` started: {flow}",
-                    id=pipeline_id[:8], flow=flow)
+        return fmt(
+            "pipeline",
+            "start",
+            "🔗 **Pipeline** `{id}` started: {flow}",
+            id=pipeline_id[:8],
+            flow=flow,
+        )
 
     @staticmethod
-    def format_step(pipeline_id: str, step_idx: int, total: int,
-                    agent: str, dur: float, status: str,
-                    result: str = "", error: str = "") -> str:
+    def format_step(
+        pipeline_id: str,
+        step_idx: int,
+        total: int,
+        agent: str,
+        dur: float,
+        status: str,
+        result: str = "",
+        error: str = "",
+    ) -> str:
         if status == "failed":
-            return fmt("pipeline", "step_fail",
-                       "🔗 `{id}` ❌ Step {idx}/{total}: **{agent}** ({dur}s)\n{error}",
-                       id=pipeline_id[:8], idx=step_idx, total=total,
-                       agent=agent, dur=dur, error=_quote(error))
-        return fmt("pipeline", "step_ok",
-                   "🔗 `{id}` ✅ Step {idx}/{total}: **{agent}** ({dur}s)\n{preview}",
-                   id=pipeline_id[:8], idx=step_idx, total=total,
-                   agent=agent, dur=dur, preview=_preview(result))
+            return fmt(
+                "pipeline",
+                "step_fail",
+                "🔗 `{id}` ❌ Step {idx}/{total}: **{agent}** ({dur}s)\n{error}",
+                id=pipeline_id[:8],
+                idx=step_idx,
+                total=total,
+                agent=agent,
+                dur=dur,
+                error=_quote(error),
+            )
+        return fmt(
+            "pipeline",
+            "step_ok",
+            "🔗 `{id}` ✅ Step {idx}/{total}: **{agent}** ({dur}s)\n{preview}",
+            id=pipeline_id[:8],
+            idx=step_idx,
+            total=total,
+            agent=agent,
+            dur=dur,
+            preview=_preview(result),
+        )
 
     @staticmethod
-    def format_done(pipeline_id: str, status: str, dur: float,
-                    error: str = "", steps: list | None = None,
-                    artifacts: list | None = None) -> str:
+    def format_done(
+        pipeline_id: str,
+        status: str,
+        dur: float,
+        error: str = "",
+        steps: list | None = None,
+        artifacts: list | None = None,
+    ) -> str:
         if status == "failed":
-            header = fmt("pipeline", "done_fail",
-                         "🔗 **Pipeline** `{id}` ❌ 失败，耗时 {dur}s\n{error}",
-                         id=pipeline_id[:8], error=_quote(error), dur=dur)
+            header = fmt(
+                "pipeline",
+                "done_fail",
+                "🔗 **Pipeline** `{id}` ❌ 失败，耗时 {dur}s\n{error}",
+                id=pipeline_id[:8],
+                error=_quote(error),
+                dur=dur,
+            )
         else:
-            header = fmt("pipeline", "done_ok",
-                         "🔗 **Pipeline** `{id}` ✅ 全部完成，耗时 {dur}s",
-                         id=pipeline_id[:8], dur=dur)
+            header = fmt(
+                "pipeline",
+                "done_ok",
+                "🔗 **Pipeline** `{id}` ✅ 全部完成，耗时 {dur}s",
+                id=pipeline_id[:8],
+                dur=dur,
+            )
         if steps:
             details = []
             for i, s in enumerate(steps, 1):
                 if s.get("completed_at") and s.get("started_at"):
                     sd = round(s["completed_at"] - s["started_at"], 1)
-                    icon = "✅" if s["status"] == "completed" else "❌" if s["status"] == "failed" else "⏭️"
-                    details.append(fmt("pipeline", "detail_line",
-                                       "> {icon} {idx}. {agent}: {dur}s",
-                                       icon=icon, idx=i, agent=s["agent"], dur=sd))
+                    icon = (
+                        "✅"
+                        if s["status"] == "completed"
+                        else "❌"
+                        if s["status"] == "failed"
+                        else "⏭️"
+                    )
+                    details.append(
+                        fmt(
+                            "pipeline",
+                            "detail_line",
+                            "> {icon} {idx}. {agent}: {dur}s",
+                            icon=icon,
+                            idx=i,
+                            agent=s["agent"],
+                            dur=sd,
+                        )
+                    )
             if details:
                 header += "\n" + "\n".join(details)
         if artifacts:
@@ -143,25 +196,51 @@ class PipelineFormatter:
         for a in artifacts:
             label = a.get("label") or a.get("pattern", "")
             if a.get("url"):
-                lines.append(fmt("pipeline", "artifact_link",
-                                 "> 📎 [{label}]({url})", label=label, url=a["url"]))
+                lines.append(
+                    fmt(
+                        "pipeline",
+                        "artifact_link",
+                        "> 📎 [{label}]({url})",
+                        label=label,
+                        url=a["url"],
+                    )
+                )
             elif a.get("path"):
-                lines.append(fmt("pipeline", "artifact_local",
-                                 "> 📎 {label}: `{path}`", label=label, path=a["path"]))
+                lines.append(
+                    fmt(
+                        "pipeline",
+                        "artifact_local",
+                        "> 📎 {label}: `{path}`",
+                        label=label,
+                        path=a["path"],
+                    )
+                )
             else:
-                lines.append(fmt("pipeline", "artifact_missing",
-                                 "> ⚠️ {label}: 未生成 (`{pattern}`)",
-                                 label=label, pattern=a.get("pattern", "")))
+                lines.append(
+                    fmt(
+                        "pipeline",
+                        "artifact_missing",
+                        "> ⚠️ {label}: 未生成 (`{pattern}`)",
+                        label=label,
+                        pattern=a.get("pattern", ""),
+                    )
+                )
         return "\n".join(lines)
 
     @staticmethod
-    def format_turn(pipeline_id: str, turn: int, agent: str,
-                    content: str, dur: float) -> str:
+    def format_turn(pipeline_id: str, turn: int, agent: str, content: str, dur: float) -> str:
         icon = AGENT_ICONS.get(agent, "🤖")
-        return fmt("pipeline", "turn",
-                   "🔗 `{id}` 💬 Turn {turn}: {icon} **{agent}** ({dur}s)\n{preview}",
-                   id=pipeline_id[:8], turn=turn, icon=icon,
-                   agent=agent, dur=dur, preview=_preview(content))
+        return fmt(
+            "pipeline",
+            "turn",
+            "🔗 `{id}` 💬 Turn {turn}: {icon} **{agent}** ({dur}s)\n{preview}",
+            id=pipeline_id[:8],
+            turn=turn,
+            icon=icon,
+            agent=agent,
+            dur=dur,
+            preview=_preview(content),
+        )
 
 
 # ── Pipeline Payload Builders ────────────────────────────
@@ -175,31 +254,55 @@ class PipelineFormatter:
 class PayloadBuilder:
     """Build webhook payload list from a formatted pipeline message."""
 
-    def build_pipeline(self, pipeline_id: str, mode: str, status: str,
-                       message: str, *, channel: str = "discord",
-                       target: str = "", chunk_size: int = 1800) -> list[dict]:
+    def build_pipeline(
+        self,
+        pipeline_id: str,
+        mode: str,
+        status: str,
+        message: str,
+        *,
+        channel: str = "discord",
+        target: str = "",
+        chunk_size: int = 1800,
+    ) -> list[dict]:
         raise NotImplementedError
 
 
 class OpenclawPayloadBuilder(PayloadBuilder):
     """OpenClaw RPC envelope — single message, no chunking (OpenClaw splits)."""
 
-    def build_pipeline(self, pipeline_id, mode, status, message, *,
-                       channel="discord", target="", chunk_size=1800):
-        return [{"tool": "message", "action": "send",
-                 "args": {"channel": channel, "target": target, "message": message}}]
+    def build_pipeline(
+        self, pipeline_id, mode, status, message, *, channel="discord", target="", chunk_size=1800
+    ):
+        return [
+            {
+                "tool": "message",
+                "action": "send",
+                "args": {"channel": channel, "target": target, "message": message},
+            }
+        ]
 
 
 class GenericPayloadBuilder(PayloadBuilder):
     """Plain JSON for Hermes / arbitrary HTTP endpoints, chunked."""
 
-    def build_pipeline(self, pipeline_id, mode, status, message, *,
-                       channel="discord", target="", chunk_size=1800):
+    def build_pipeline(
+        self, pipeline_id, mode, status, message, *, channel="discord", target="", chunk_size=1800
+    ):
         from .webhook import chunk_text
+
         parts = chunk_text(message, chunk_size)
-        return [{"pipeline_id": pipeline_id, "mode": mode, "status": status,
-                 "message": p, "part": i + 1, "total_parts": len(parts)}
-                for i, p in enumerate(parts)]
+        return [
+            {
+                "pipeline_id": pipeline_id,
+                "mode": mode,
+                "status": status,
+                "message": p,
+                "part": i + 1,
+                "total_parts": len(parts),
+            }
+            for i, p in enumerate(parts)
+        ]
 
 
 _PAYLOAD_BUILDERS: dict[str, PayloadBuilder] = {
@@ -263,6 +366,7 @@ def _tools_md(job: Job, limit: int = 10) -> str:
 def _upload_result_s3(job: Job) -> str | None:
     """Write job result to upload_dir, upload to S3, return presigned URL or None."""
     from src import s3
+
     if not s3.is_available():
         return None
     try:
@@ -298,15 +402,28 @@ class DiscordFormatter(JobFormatter):
 
         # 1) Summary
         if job.status == "failed":
-            summary = fmt("job", "summary_fail", "📨 **{agent}** `{job_id}`\n> ❌ {error}",
-                          agent=job.agent, job_id=job.job_id, error=job.error)
+            summary = fmt(
+                "job",
+                "summary_fail",
+                "📨 **{agent}** `{job_id}`\n> ❌ {error}",
+                agent=job.agent,
+                job_id=job.job_id,
+                error=job.error,
+            )
         else:
-            summary = fmt("job", "summary_ok", "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s",
-                          agent=job.agent, job_id=job.job_id, dur=dur)
+            summary = fmt(
+                "job",
+                "summary_ok",
+                "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s",
+                agent=job.agent,
+                job_id=job.job_id,
+                dur=dur,
+            )
         if job.tools:
             tools_hdr = fmt("job", "tools_header", "🔧 **Tools**")
             tool_lines = "\n".join(
-                fmt("job", "tools_line", "> ✅ `{tool}`", tool=t) for t in job.tools[:10])
+                fmt("job", "tools_line", "> ✅ `{tool}`", tool=t) for t in job.tools[:10]
+            )
             summary += f"\n> \n> {tools_hdr}\n{tool_lines}"
         summary += f"\n> \n> {fmt('job', 'footer', '⏱️ {dur}s', dur=dur)}"
 
@@ -316,8 +433,13 @@ class DiscordFormatter(JobFormatter):
             if full is None:
                 # Short output: inline
                 payloads.append(self._msg(target, summary))
-                header = fmt("job", "result_header", "📄 **Result** — {agent} `{job_id}`",
-                             agent=job.agent, job_id=job.job_id[:8])
+                header = fmt(
+                    "job",
+                    "result_header",
+                    "📄 **Result** — {agent} `{job_id}`",
+                    agent=job.agent,
+                    job_id=job.job_id[:8],
+                )
                 payloads.append(self._msg(target, f"{header}\n{_quote(short)}"))
             else:
                 # Long output: try S3 presigned URL, fallback to thread chunks
@@ -331,12 +453,23 @@ class DiscordFormatter(JobFormatter):
                     chunks = _split(full, self.text_limit - 100)
                     for i, chunk in enumerate(chunks):
                         if len(chunks) > 1:
-                            header = fmt("job", "result_header_part",
-                                         "📄 **Result** — {agent} `{job_id}` [{part}/{total}]",
-                                         agent=job.agent, job_id=job.job_id[:8], part=i+1, total=len(chunks))
+                            header = fmt(
+                                "job",
+                                "result_header_part",
+                                "📄 **Result** — {agent} `{job_id}` [{part}/{total}]",
+                                agent=job.agent,
+                                job_id=job.job_id[:8],
+                                part=i + 1,
+                                total=len(chunks),
+                            )
                         else:
-                            header = fmt("job", "result_header", "📄 **Result** — {agent} `{job_id}`",
-                                         agent=job.agent, job_id=job.job_id[:8])
+                            header = fmt(
+                                "job",
+                                "result_header",
+                                "📄 **Result** — {agent} `{job_id}`",
+                                agent=job.agent,
+                                job_id=job.job_id[:8],
+                            )
                         msg = self._msg(target, f"{header}\n{_quote(chunk)}")
                         msg["thread_content"] = True
                         if i == 0:
@@ -349,8 +482,11 @@ class DiscordFormatter(JobFormatter):
 
     @staticmethod
     def _msg(target: str, message: str) -> dict:
-        return {"tool": "message", "action": "send",
-                "args": {"channel": "discord", "target": target, "message": message}}
+        return {
+            "tool": "message",
+            "action": "send",
+            "args": {"channel": "discord", "target": target, "message": message},
+        }
 
 
 class FeishuFormatter(JobFormatter):
@@ -364,11 +500,23 @@ class FeishuFormatter(JobFormatter):
 
         # 1) Summary
         if job.status == "failed":
-            summary = fmt("job", "summary_fail", "📨 **{agent}** `{job_id}`\n> ❌ {error}",
-                          agent=job.agent, job_id=job.job_id, error=job.error)
+            summary = fmt(
+                "job",
+                "summary_fail",
+                "📨 **{agent}** `{job_id}`\n> ❌ {error}",
+                agent=job.agent,
+                job_id=job.job_id,
+                error=job.error,
+            )
         else:
-            summary = fmt("job", "summary_ok", "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s",
-                          agent=job.agent, job_id=job.job_id, dur=dur)
+            summary = fmt(
+                "job",
+                "summary_ok",
+                "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s",
+                agent=job.agent,
+                job_id=job.job_id,
+                dur=dur,
+            )
         if job.tools:
             summary += f"\n\n{fmt('job', 'tools_header', '🔧 **Tools**')}"
             summary += "\n```\n" + "\n".join(t for t in job.tools[:10]) + "\n```"
@@ -379,15 +527,18 @@ class FeishuFormatter(JobFormatter):
         if job.status == "completed" and job.result.strip():
             chunks = _split(job.result, self.text_limit)
             for i, chunk in enumerate(chunks):
-                prefix = f"**[{i+1}/{len(chunks)}]**\n" if len(chunks) > 1 else ""
+                prefix = f"**[{i + 1}/{len(chunks)}]**\n" if len(chunks) > 1 else ""
                 payloads.append(self._msg(target, prefix + chunk))
 
         return payloads
 
     @staticmethod
     def _msg(target: str, message: str) -> dict:
-        return {"tool": "message", "action": "send",
-                "args": {"channel": "feishu", "target": target, "message": message}}
+        return {
+            "tool": "message",
+            "action": "send",
+            "args": {"channel": "feishu", "target": target, "message": message},
+        }
 
 
 class FallbackFormatter(JobFormatter):
@@ -396,15 +547,29 @@ class FallbackFormatter(JobFormatter):
     def format(self, job: Job, target: str, base_url: str = "") -> list[dict]:
         dur = _duration(job)
         if job.status == "failed":
-            header = fmt("job", "summary_fail", "📨 **{agent}** `{job_id}`\n> ❌ {error}",
-                         agent=job.agent, job_id=job.job_id, error=job.error)
+            header = fmt(
+                "job",
+                "summary_fail",
+                "📨 **{agent}** `{job_id}`\n> ❌ {error}",
+                agent=job.agent,
+                job_id=job.job_id,
+                error=job.error,
+            )
         else:
-            header = fmt("job", "summary_ok", "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s",
-                         agent=job.agent, job_id=job.job_id, dur=dur)
+            header = fmt(
+                "job",
+                "summary_ok",
+                "📨 **{agent}** `{job_id}` ✅ Completed in {dur}s",
+                agent=job.agent,
+                job_id=job.job_id,
+                dur=dur,
+            )
 
         body = ""
         if job.tools:
-            body += "\n".join(fmt("job", "tools_line", "> ✅ `{tool}`", tool=t) for t in job.tools[:10])
+            body += "\n".join(
+                fmt("job", "tools_line", "> ✅ `{tool}`", tool=t) for t in job.tools[:10]
+            )
             body += "\n>\n"
         if job.result:
             body += _quote(job.result)
@@ -417,9 +582,14 @@ class FallbackFormatter(JobFormatter):
         full += f"\n\n{footer}"
 
         chunks = _split(full, self.text_limit)
-        return [{"tool": "message", "action": "send",
-                 "args": {"channel": "discord", "target": target, "message": c}}
-                for c in chunks]
+        return [
+            {
+                "tool": "message",
+                "action": "send",
+                "args": {"channel": "discord", "target": target, "message": c},
+            }
+            for c in chunks
+        ]
 
 
 _FORMATTERS: dict[str, JobFormatter] = {

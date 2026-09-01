@@ -87,7 +87,8 @@ class CircuitBreaker:
             if self.state == CircuitState.HALF_OPEN:
                 if self._half_open_calls >= self.config.half_open_max_calls:
                     raise CircuitBreakerOpenError(
-                        f"circuit breaker '{self.name}' half-open call limit reached")
+                        f"circuit breaker '{self.name}' half-open call limit reached"
+                    )
                 self._half_open_calls += 1
 
     async def on_success(self) -> None:

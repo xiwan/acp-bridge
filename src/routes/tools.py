@@ -58,19 +58,56 @@ def register(app, openclaw_url: str, openclaw_token: str, default_account_id: st
     @app.get("/tools")
     async def list_tools():
         tools = [
-            {"name": "message", "description": "Send messages across Discord/Telegram/Slack/WhatsApp/Signal/iMessage/MS Teams",
-             "actions": ["send", "react", "edit", "delete", "pin", "search", "poll", "thread-create", "thread-reply"]},
+            {
+                "name": "message",
+                "description": "Send messages across Discord/Telegram/Slack/WhatsApp/Signal/iMessage/MS Teams",
+                "actions": [
+                    "send",
+                    "react",
+                    "edit",
+                    "delete",
+                    "pin",
+                    "search",
+                    "poll",
+                    "thread-create",
+                    "thread-reply",
+                ],
+            },
             {"name": "tts", "description": "Convert text to speech audio", "actions": []},
             {"name": "web_search", "description": "Search the web", "actions": []},
-            {"name": "web_fetch", "description": "Fetch and extract content from a URL", "actions": []},
-            {"name": "nodes", "description": "Control paired devices (notify, run commands, camera, screen)",
-             "actions": ["status", "notify", "run", "camera_snap", "camera_clip", "screen_record", "location_get"]},
-            {"name": "cron", "description": "Manage scheduled jobs",
-             "actions": ["status", "list", "add", "update", "remove", "run"]},
-            {"name": "gateway", "description": "Gateway config and restart",
-             "actions": ["restart", "config.get", "config.apply", "config.patch"]},
+            {
+                "name": "web_fetch",
+                "description": "Fetch and extract content from a URL",
+                "actions": [],
+            },
+            {
+                "name": "nodes",
+                "description": "Control paired devices (notify, run commands, camera, screen)",
+                "actions": [
+                    "status",
+                    "notify",
+                    "run",
+                    "camera_snap",
+                    "camera_clip",
+                    "screen_record",
+                    "location_get",
+                ],
+            },
+            {
+                "name": "cron",
+                "description": "Manage scheduled jobs",
+                "actions": ["status", "list", "add", "update", "remove", "run"],
+            },
+            {
+                "name": "gateway",
+                "description": "Gateway config and restart",
+                "actions": ["restart", "config.get", "config.apply", "config.patch"],
+            },
             {"name": "image", "description": "Analyze an image with AI", "actions": []},
-            {"name": "browser", "description": "Control browser (open, screenshot, navigate)",
-             "actions": ["status", "open", "screenshot", "snapshot", "navigate"]},
+            {
+                "name": "browser",
+                "description": "Control browser (open, screenshot, navigate)",
+                "actions": ["status", "open", "screenshot", "snapshot", "navigate"],
+            },
         ]
         return {"tools": tools, "openclaw_url": openclaw_base or "(not configured)"}

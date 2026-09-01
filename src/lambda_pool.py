@@ -30,11 +30,13 @@ log = logging.getLogger("acp-bridge.lambda_pool")
 @dataclass
 class LambdaSlot:
     """Tracks an in-flight Lambda invocation."""
+
     session_id: str
     agent_name: str
     profile: dict
     started_at: float = field(default_factory=time.time)
     status: str = "running"  # running | completed | error
+
 
 class LambdaPool:
     """Manages burst Lambda invocations for harness-factory agents.
@@ -74,7 +76,10 @@ class LambdaPool:
         )
         log.info(
             "lambda_pool: initialized fn=%s region=%s max=%d timeout=%ds",
-            function_name, region, max_concurrent, timeout,
+            function_name,
+            region,
+            max_concurrent,
+            timeout,
         )
 
     async def invoke(
@@ -108,9 +113,7 @@ class LambdaPool:
         invocation_id = uuid.uuid4().hex
         async with self._lock:
             if len(self._active) >= self._max_concurrent:
-                raise RuntimeError(
-                    f"lambda_pool at capacity ({self._max_concurrent})"
-                )
+                raise RuntimeError(f"lambda_pool at capacity ({self._max_concurrent})")
             self._active[invocation_id] = slot
             self._stats_total += 1
 
@@ -166,13 +169,15 @@ class LambdaPool:
         for item, r in zip(prompts, raw, strict=True):
             if isinstance(r, BaseException):
                 sid = item.get("session_id", "") if isinstance(item, dict) else ""
-                results.append({
-                    "status": "error",
-                    "error": str(r),
-                    "output": "",
-                    "duration": 0,
-                    "session_id": sid,
-                })
+                results.append(
+                    {
+                        "status": "error",
+                        "error": str(r),
+                        "output": "",
+                        "duration": 0,
+                        "session_id": sid,
+                    }
+                )
             else:
                 results.append(r)
         return results
@@ -190,9 +195,7 @@ class LambdaPool:
 
         async def _ping_one():
             try:
-                resp = await asyncio.to_thread(
-                    self._lambda_invoke_async, ping_payload
-                )
+                resp = await asyncio.to_thread(self._lambda_invoke_async, ping_payload)
                 # Event (async) invoke returns 202 Accepted on success.
                 return resp.get("status_code") == 202
             except Exception:
@@ -257,9 +260,7 @@ class LambdaPool:
 
         # Check for Lambda-level function error
         if resp.get("FunctionError"):
-            raise RuntimeError(
-                f"Lambda function error: {result.get('errorMessage', body[:200])}"
-            )
+            raise RuntimeError(f"Lambda function error: {result.get('errorMessage', body[:200])}")
 
         return result
 

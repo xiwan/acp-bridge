@@ -14,24 +14,34 @@ from src.mesh_client import make_a2a_remote_handler, reconcile
 
 class _Peer:
     def __init__(self, url, skills, healthy=True, node_name="", skill_info=None):
-        self.url = url; self.skills = skills; self.healthy = healthy
+        self.url = url
+        self.skills = skills
+        self.healthy = healthy
         self.node_name = node_name
         self.skill_info = skill_info or {}
 
 
 class _Mesh:
     def __init__(self, local, peers, token="m"):
-        self._local = local; self._peers = {p.url: p for p in peers}; self.token = token
-    def _agent_names(self): return self._local
-    def resolve_peer_url(self, peer_url): return peer_url
+        self._local = local
+        self._peers = {p.url: p for p in peers}
+        self.token = token
+
+    def _agent_names(self):
+        return self._local
+
+    def resolve_peer_url(self, peer_url):
+        return peer_url
 
 
 class _AppState:
-    def __init__(self, agents): self.acp_agents = agents
+    def __init__(self, agents):
+        self.acp_agents = agents
 
 
 class _App:
-    def __init__(self, agents): self.state = _AppState(agents)
+    def __init__(self, agents):
+        self.state = _AppState(agents)
 
 
 def test_reconcile_registers_peer_only_skill():
@@ -39,7 +49,7 @@ def test_reconcile_registers_peer_only_skill():
     app = _App({"kiro": object()})  # kiro is local
     rs = set()
     added = reconcile(app, mesh, rs)
-    assert added == ["claude"]            # only the peer-only skill
+    assert added == ["claude"]  # only the peer-only skill
     assert "claude" in app.state.acp_agents
     assert "claude" in rs
     assert "kiro" in app.state.acp_agents and "kiro" not in rs  # local untouched
@@ -63,7 +73,8 @@ def test_reconcile_skips_unhealthy_peer():
 
 def test_reconcile_idempotent():
     mesh = _Mesh(local=[], peers=[_Peer("http://b", ["claude"])])
-    app = _App({}); rs = set()
+    app = _App({})
+    rs = set()
     assert reconcile(app, mesh, rs) == ["claude"]
     assert reconcile(app, mesh, rs) == []  # already registered, no dup
 
@@ -71,10 +82,18 @@ def test_reconcile_idempotent():
 def test_reconcile_remote_carries_real_desc_and_location():
     # peer advertises a real description + tags; reconcile must surface them and
     # add a clear location marker (mesh + node:<name>).
-    peer = _Peer("http://b:18010", ["harness"], node_name="node-b",
-                 skill_info={"harness": {"id": "harness",
-                                         "description": "Harness Factory lite agent",
-                                         "tags": ["lite", "rust"]}})
+    peer = _Peer(
+        "http://b:18010",
+        ["harness"],
+        node_name="node-b",
+        skill_info={
+            "harness": {
+                "id": "harness",
+                "description": "Harness Factory lite agent",
+                "tags": ["lite", "rust"],
+            }
+        },
+    )
     mesh = _Mesh(local=[], peers=[peer])
     app = _App({})
     added = reconcile(app, mesh, set())
@@ -113,9 +132,14 @@ async def test_hop_limit_refuses_second_hop():
     rs = {"claude"}
     a = A2AAdapter(agents_provider=lambda: {"claude": object()}, remote_skills=rs)
     resp = await a.dispatch(
-        {"jsonrpc": "2.0", "id": 1, "method": "tasks/send",
-         "params": {"skill": "claude", "message": {"parts": []}}},
-        inbound_hop=True)
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tasks/send",
+            "params": {"skill": "claude", "message": {"parts": []}},
+        },
+        inbound_hop=True,
+    )
     assert resp["error"]["code"] == -32011
 
 
@@ -125,9 +149,15 @@ async def test_hop_limit_allows_local_for_hopped_request():
     class _FakeLocal:
         async def run(self, input, context):
             yield MessagePart(content="ok", content_type="text/plain")
+
     a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeLocal()}, remote_skills={"claude"})
     resp = await a.dispatch(
-        {"jsonrpc": "2.0", "id": 2, "method": "tasks/send",
-         "params": {"skill": "kiro", "message": {"parts": [{"type": "text", "text": "x"}]}}},
-        inbound_hop=True)
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tasks/send",
+            "params": {"skill": "kiro", "message": {"parts": [{"type": "text", "text": "x"}]}},
+        },
+        inbound_hop=True,
+    )
     assert resp["result"]["status"]["state"] == "completed"

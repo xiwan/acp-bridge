@@ -70,7 +70,9 @@ class CapabilityRegistry:
     def search(self, requirements: dict) -> List[Tuple[str, float]]:
         """Match capabilities and return (agent_name, score) sorted desc."""
         candidates = []
-        for name, cap in list(self._capabilities.items()):  # snapshot to avoid RuntimeError on concurrent reload
+        for name, cap in list(
+            self._capabilities.items()
+        ):  # snapshot to avoid RuntimeError on concurrent reload
             score = _score_agent(cap, requirements)
             if score > 0:
                 candidates.append((name, score))
@@ -86,6 +88,7 @@ class CapabilityRegistry:
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
 
 def _normalize_languages(raw: Any) -> Dict[str, Any]:
     """Normalize languages list/dict from YAML into {lang: value}."""
@@ -182,7 +185,7 @@ def _single_version_match(cap_ver: Any, req_ver: Any) -> bool:
 
 
 def _parse_ver(v: str) -> Optional[tuple]:
-    m = re.match(r'^([\d.]+)', str(v).rstrip("+"))
+    m = re.match(r"^([\d.]+)", str(v).rstrip("+"))
     if not m:
         return None
     return tuple(int(x) for x in m.group(1).split("."))

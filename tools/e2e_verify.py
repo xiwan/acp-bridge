@@ -37,9 +37,16 @@ def headers():
 
 def submit_job(agent, prompt, timeout=60):
     """Submit async job, poll until done. Returns (status, result, duration, agent_used)."""
-    r = requests.post(_url("/jobs"), headers=headers(), json={
-        "agent_name": agent, "prompt": prompt, "session_id": f"e2e-{int(time.time())}",
-    }, timeout=10)
+    r = requests.post(
+        _url("/jobs"),
+        headers=headers(),
+        json={
+            "agent_name": agent,
+            "prompt": prompt,
+            "session_id": f"e2e-{int(time.time())}",
+        },
+        timeout=10,
+    )
     r.raise_for_status()
     job = r.json()
     job_id = job["job_id"]
@@ -60,8 +67,15 @@ def submit_job(agent, prompt, timeout=60):
                 "original_agent": data.get("original_agent", ""),
                 "fallback_history": data.get("fallback_history", []),
             }
-    return {"status": "timeout", "result": "", "error": "poll timeout", "duration": timeout,
-            "agent": agent, "original_agent": "", "fallback_history": []}
+    return {
+        "status": "timeout",
+        "result": "",
+        "error": "poll timeout",
+        "duration": timeout,
+        "agent": agent,
+        "original_agent": "",
+        "fallback_history": [],
+    }
 
 
 def get_health():
@@ -80,18 +94,23 @@ def get_stats(agent=None, hours=1):
 
 
 def get_fallback_stats(hours=1):
-    r = requests.get(_url("/stats/fallback"), headers=headers(), params={"hours": hours}, timeout=10)
+    r = requests.get(
+        _url("/stats/fallback"), headers=headers(), params={"hours": hours}, timeout=10
+    )
     r.raise_for_status()
     return r.json()
 
 
 # ── Scenarios ──────────────────────────────────────────
 
+
 def scenario_1_baseline(agent, n=3):
     """Normal traffic baseline — small requests to a healthy agent."""
     results = []
     for i in range(n):
-        r = submit_job(agent, f"echo 'e2e baseline test {i+1}' and reply with just 'OK {i+1}'", timeout=90)
+        r = submit_job(
+            agent, f"echo 'e2e baseline test {i + 1}' and reply with just 'OK {i + 1}'", timeout=90
+        )
         results.append(r)
     success = sum(1 for r in results if r["status"] == "completed")
     avg_dur = sum(r["duration"] for r in results) / len(results) if results else 0
@@ -162,13 +181,16 @@ def scenario_4_self_healing(agent):
 
 # ── Main ──────────────────────────────────────────────
 
+
 def print_table(results):
     print("\n" + "=" * 80)
     print(f"{'Scenario':<28} {'Reqs':>5} {'OK':>4} {'Dur':>10} {'Pass':>6}  Detail")
     print("-" * 80)
     for r in results:
         mark = "✅" if r["pass"] else "❌"
-        print(f"{r['scenario']:<28} {r['requests']:>5} {r['success']:>4} {r['avg_duration']:>10} {mark:>6}  {r['detail']}")
+        print(
+            f"{r['scenario']:<28} {r['requests']:>5} {r['success']:>4} {r['avg_duration']:>10} {mark:>6}  {r['detail']}"
+        )
     print("=" * 80)
     passed = sum(1 for r in results if r["pass"])
     print(f"\nResult: {passed}/{len(results)} scenarios passed")

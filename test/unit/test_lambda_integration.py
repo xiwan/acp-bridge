@@ -18,12 +18,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 def _make_lambda_response(status="completed", output="Hello from Lambda!", duration=2.5):
     """Build a mock Lambda Invoke response."""
-    payload = json.dumps({
-        "status": status,
-        "output": output,
-        "duration": duration,
-        "session_id": "test-sid",
-    }).encode()
+    payload = json.dumps(
+        {
+            "status": status,
+            "output": output,
+            "duration": duration,
+            "session_id": "test-sid",
+        }
+    ).encode()
     mock_payload = MagicMock()
     mock_payload.read.return_value = payload
     return {
@@ -74,11 +76,14 @@ async def test_invoke_endpoint(app_with_lambda):
     app, pool, mock_client = app_with_lambda
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.post("/lambda-pool/invoke", json={
-            "prompt": "Write a hello world script",
-            "profile": {"tools": {"fs": {"permissions": ["read", "write"]}}},
-            "model": "bedrock/deepseek.v3.2",
-        })
+        resp = await client.post(
+            "/lambda-pool/invoke",
+            json={
+                "prompt": "Write a hello world script",
+                "profile": {"tools": {"fs": {"permissions": ["read", "write"]}}},
+                "model": "bedrock/deepseek.v3.2",
+            },
+        )
 
     assert resp.status_code == 200
     body = resp.json()
@@ -98,14 +103,15 @@ async def test_invoke_endpoint(app_with_lambda):
 async def test_invoke_error(app_with_lambda):
     """Lambda returning error → 502."""
     app, pool, mock_client = app_with_lambda
-    mock_client.invoke.return_value = _make_lambda_response(
-        status="error", output="", duration=1.0
-    )
+    mock_client.invoke.return_value = _make_lambda_response(status="error", output="", duration=1.0)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.post("/lambda-pool/invoke", json={
-            "prompt": "bad task",
-        })
+        resp = await client.post(
+            "/lambda-pool/invoke",
+            json={
+                "prompt": "bad task",
+            },
+        )
 
     assert resp.status_code == 502
     body = resp.json()
@@ -118,9 +124,12 @@ async def test_invoke_empty_prompt(app_with_lambda):
     app, pool, mock_client = app_with_lambda
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.post("/lambda-pool/invoke", json={
-            "prompt": "",
-        })
+        resp = await client.post(
+            "/lambda-pool/invoke",
+            json={
+                "prompt": "",
+            },
+        )
 
     assert resp.status_code == 400
 
@@ -148,10 +157,13 @@ async def test_batch_endpoint(app_with_lambda):
     prompts = [{"prompt": f"task-{i}"} for i in range(5)]
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.post("/lambda-pool/invoke-batch", json={
-            "prompts": prompts,
-            "model": "bedrock/anthropic.claude-sonnet-4-6",
-        })
+        resp = await client.post(
+            "/lambda-pool/invoke-batch",
+            json={
+                "prompts": prompts,
+                "model": "bedrock/anthropic.claude-sonnet-4-6",
+            },
+        )
 
     assert resp.status_code == 200
     body = resp.json()
@@ -224,9 +236,12 @@ async def test_no_secrets_leak_in_response(app_with_lambda):
     app, pool, mock_client = app_with_lambda
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.post("/lambda-pool/invoke", json={
-            "prompt": "test secret check",
-        })
+        resp = await client.post(
+            "/lambda-pool/invoke",
+            json={
+                "prompt": "test secret check",
+            },
+        )
 
     body_str = resp.text
     assert "sk-" not in body_str
@@ -315,8 +330,7 @@ async def test_lambda_handler_unique_session_per_call(mock_boto3):
 
     async def capture(prompt, profile, model, session_id):
         seen_sids.append(session_id)
-        return {"status": "completed", "output": "ok", "duration": 1.0,
-                "session_id": session_id}
+        return {"status": "completed", "output": "ok", "duration": 1.0, "session_id": session_id}
 
     pool.invoke = capture
     handler = make_lambda_agent_handler("harness-burst", pool)

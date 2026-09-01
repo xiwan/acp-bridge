@@ -49,10 +49,17 @@ class Job:
     _live_parts: list = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict:
-        d = {"job_id": self.job_id, "agent": self.agent, "session_id": self.session_id,
-             "status": self.status, "created_at": self.created_at,
-             "target": self.callback_meta.get("target", self.callback_meta.get("discord_target", "")),
-             "account_id": self.callback_meta.get("account_id", "")}
+        d = {
+            "job_id": self.job_id,
+            "agent": self.agent,
+            "session_id": self.session_id,
+            "status": self.status,
+            "created_at": self.created_at,
+            "target": self.callback_meta.get(
+                "target", self.callback_meta.get("discord_target", "")
+            ),
+            "account_id": self.callback_meta.get("account_id", ""),
+        }
         if self.original_agent and self.original_agent != self.agent:
             d["original_agent"] = self.original_agent
             d["fallback_history"] = self.fallback_history
@@ -67,12 +74,19 @@ class Job:
 
 
 class JobManager:
-    def __init__(self, pool: AcpProcessPool | None = None, pty_configs: dict | None = None,
-                 webhook_url: str = "", webhook_token: str = "", base_url: str = "",
-                 webhook_format: str = "openclaw", webhook_secret: str = "",
-                 db_path: str = "data/jobs.db",
-                 prompt_store: PromptStore | None = None,
-                 allowed_private_targets: frozenset[str] = frozenset()):
+    def __init__(
+        self,
+        pool: AcpProcessPool | None = None,
+        pty_configs: dict | None = None,
+        webhook_url: str = "",
+        webhook_token: str = "",
+        base_url: str = "",
+        webhook_format: str = "openclaw",
+        webhook_secret: str = "",
+        db_path: str = "data/jobs.db",
+        prompt_store: PromptStore | None = None,
+        allowed_private_targets: frozenset[str] = frozenset(),
+    ):
         self._pool = pool
         self._pty_configs = pty_configs or {}
         self._allowed_private_targets = allowed_private_targets
@@ -83,8 +97,10 @@ class JobManager:
         self._webhook_format = webhook_format
         self._base_url = base_url
         self._sender = WebhookSender(
-            default_url=webhook_url, default_token=webhook_token,
-            default_format=webhook_format, default_secret=webhook_secret,
+            default_url=webhook_url,
+            default_token=webhook_token,
+            default_format=webhook_format,
+            default_secret=webhook_secret,
             allowed_targets=allowed_private_targets,
         )
         self._store = JobStore(db_path)
@@ -113,7 +129,10 @@ class JobManager:
         # Queue incomplete jobs — will be retried in background task
         self._pending_recovery = [self._dict_to_job(d) for d in self._store.load_incomplete()]
         if self._pending_recovery:
-            log.info("recovery_queued: %d incomplete jobs for background retry", len(self._pending_recovery))
+            log.info(
+                "recovery_queued: %d incomplete jobs for background retry",
+                len(self._pending_recovery),
+            )
 
     async def run_recovery(self, max_retries: int = 3):
         """Background task: retry incomplete jobs up to max_retries, then fail."""
@@ -127,13 +146,23 @@ class JobManager:
                 job.completed_at = time.time()
                 self._jobs[job.job_id] = job
                 await asyncio.to_thread(self._store.save, job)
-                log.warning("recovery_failed: job=%s agent=%s retries=%d", job.job_id, job.agent, job.retries)
+                log.warning(
+                    "recovery_failed: job=%s agent=%s retries=%d",
+                    job.job_id,
+                    job.agent,
+                    job.retries,
+                )
                 if job.callback_url:
                     await self._webhook(job)
                 continue
             # Reset for re-execution
-            log.info("recovery_retry: job=%s agent=%s attempt=%d/%d",
-                     job.job_id, job.agent, job.retries, max_retries)
+            log.info(
+                "recovery_retry: job=%s agent=%s attempt=%d/%d",
+                job.job_id,
+                job.agent,
+                job.retries,
+                max_retries,
+            )
             job.status = "pending"
             job.result = ""
             job.error = ""
@@ -146,10 +175,16 @@ class JobManager:
     @staticmethod
     def _dict_to_job(d: dict) -> Job:
         return Job(
-            job_id=d["job_id"], agent=d["agent"], session_id=d["session_id"],
-            prompt=d["prompt"], cwd=d.get("cwd", ""), status=d["status"],
-            result=d.get("result", ""), error=d.get("error", ""),
-            tools=d.get("tools", []), created_at=d["created_at"],
+            job_id=d["job_id"],
+            agent=d["agent"],
+            session_id=d["session_id"],
+            prompt=d["prompt"],
+            cwd=d.get("cwd", ""),
+            status=d["status"],
+            result=d.get("result", ""),
+            error=d.get("error", ""),
+            tools=d.get("tools", []),
+            created_at=d["created_at"],
             completed_at=d.get("completed_at", 0),
             callback_url=d.get("callback_url", ""),
             callback_meta=d.get("callback_meta", {}),
@@ -164,9 +199,15 @@ class JobManager:
             model_name=d.get("model_name", ""),
         )
 
-    def submit(self, agent: str, session_id: str, prompt: str,
-               callback_url: str = "", callback_meta: dict | None = None,
-               cwd: str = "") -> Job:
+    def submit(
+        self,
+        agent: str,
+        session_id: str,
+        prompt: str,
+        callback_url: str = "",
+        callback_meta: dict | None = None,
+        cwd: str = "",
+    ) -> Job:
         # callback_url is client-supplied (POST /jobs); the server-configured
         # fallback (self._webhook_url) is trusted config and skips this check.
         # This is a fail-fast UX check only (reject obviously bad URLs at
@@ -182,7 +223,10 @@ class JobManager:
         meta.setdefault("complexity", complexity.value)
         meta.setdefault("timeout", TIMEOUT_MAP[complexity])
         job = Job(
-            job_id=str(uuid.uuid4()), agent=agent, session_id=session_id, prompt=prompt,
+            job_id=str(uuid.uuid4()),
+            agent=agent,
+            session_id=session_id,
+            prompt=prompt,
             cwd=cwd,
             callback_url=callback_url or self._webhook_url,
             callback_meta=meta,
@@ -190,8 +234,13 @@ class JobManager:
         self._jobs[job.job_id] = job
         self._store.save(job)
         self._spawn(self._run(job))
-        log.info("job_submitted: job=%s agent=%s complexity=%s timeout=%s",
-                 job.job_id, agent, complexity.value, meta["timeout"])
+        log.info(
+            "job_submitted: job=%s agent=%s complexity=%s timeout=%s",
+            job.job_id,
+            agent,
+            complexity.value,
+            meta["timeout"],
+        )
         return job
 
     def get(self, job_id: str) -> Job | None:
@@ -199,9 +248,7 @@ class JobManager:
         if job:
             return job
         # Fallback to DB for historical jobs
-        rows = self._store._db.execute(
-            "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
-        ).fetchall()
+        rows = self._store._db.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchall()
         if rows:
             return self._dict_to_job(self._store._row_to_dict(rows[0]))
         return None
@@ -222,7 +269,11 @@ class JobManager:
             await self._run_pty(job)
         elif self._pool and job.agent in self._pool._config:
             await self._run_acp(job)
-        elif self._app and hasattr(self._app.state, "acp_agents") and job.agent in self._app.state.acp_agents:
+        elif (
+            self._app
+            and hasattr(self._app.state, "acp_agents")
+            and job.agent in self._app.state.acp_agents
+        ):
             await self._run_via_sdk(job)
         else:
             await self._run_acp(job)
@@ -233,33 +284,53 @@ class JobManager:
         job.output_tokens = estimate_tokens(job.result, job.model_name)
         job.cost_usd = calc_cost(job.input_tokens, job.output_tokens, job.model_name)
         await asyncio.to_thread(self._store.save, job)
-        log.info("job_done: job=%s status=%s len=%d duration=%.1fs",
-                 job.job_id, job.status, len(job.result), job.completed_at - job.created_at)
+        log.info(
+            "job_done: job=%s status=%s len=%d duration=%.1fs",
+            job.job_id,
+            job.status,
+            len(job.result),
+            job.completed_at - job.created_at,
+        )
         if job.callback_url:
             await self._webhook(job)
 
     MAX_FALLBACK_RETRIES = 3
 
-    async def _select_fallback(self, job: Job, tried_agents: list, attempt: int, error: Exception, parts: list) -> bool:
+    async def _select_fallback(
+        self, job: Job, tried_agents: list, attempt: int, error: Exception, parts: list
+    ) -> bool:
         """Try to switch to next fallback agent. Returns True if switched, False if exhausted."""
         # get_best_fallback scores candidates via sync SQLite queries — run in a
         # thread so failure storms don't stack blocking DB scans on the loop.
         next_agent = await asyncio.to_thread(
-            get_best_fallback, job.agent, tried_agents, self._pool, self._stats)
+            get_best_fallback, job.agent, tried_agents, self._pool, self._stats
+        )
         if next_agent:
             job.fallback_history.append(job.agent)
             job.retry_count += 1
-            log.info("job_fallback: job=%s %s -> %s (attempt %d/%d)",
-                     job.job_id, job.agent, next_agent, attempt + 1, self.MAX_FALLBACK_RETRIES)
+            log.info(
+                "job_fallback: job=%s %s -> %s (attempt %d/%d)",
+                job.job_id,
+                job.agent,
+                next_agent,
+                attempt + 1,
+                self.MAX_FALLBACK_RETRIES,
+            )
             job.agent = next_agent
-            job.session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{next_agent}:{job.session_id[:8]}"))
+            job.session_id = str(
+                uuid.uuid5(uuid.NAMESPACE_DNS, f"{next_agent}:{job.session_id[:8]}")
+            )
             await asyncio.to_thread(self._store.save, job)
             return True
         job.error = str(error)
         job.status = "failed"
         job.result = "".join(parts)
-        log.error("job_fallback_exhausted: job=%s original=%s tried=%s",
-                  job.job_id, job.original_agent, tried_agents)
+        log.error(
+            "job_fallback_exhausted: job=%s original=%s tried=%s",
+            job.job_id,
+            job.original_agent,
+            tried_agents,
+        )
         if self._stats:
             self._stats.record_fallback(job.original_agent, job.agent, tried_agents, False)
         return False
@@ -270,22 +341,34 @@ class JobManager:
         conn = await self._pool.get_or_create(job.agent, job.session_id, cwd=job.cwd)
         try:
             final_prompt = job.prompt + get_prompt_suffix()
-            ps = getattr(self, '_prompt_store', None)
+            ps = getattr(self, "_prompt_store", None)
             if ps:
                 ps.record(
-                    parent_type="job", parent_id=job.job_id, agent=job.agent,
-                    mode="acp", session_id=job.session_id, cwd=job.cwd,
-                    template=job.prompt, rendered=job.prompt, final=final_prompt,
+                    parent_type="job",
+                    parent_id=job.job_id,
+                    agent=job.agent,
+                    mode="acp",
+                    session_id=job.session_id,
+                    cwd=job.cwd,
+                    template=job.prompt,
+                    rendered=job.prompt,
+                    final=final_prompt,
                     decorations=["prompt_suffix"],
                 )
             async for notification in conn.session_prompt(final_prompt):
                 if "_prompt_result" in notification:
                     from .agents import _record_acp_usage
+
                     await asyncio.to_thread(
-                        _record_acp_usage, job.agent, notification["_prompt_result"], 0)
+                        _record_acp_usage, job.agent, notification["_prompt_result"], 0
+                    )
                     if "error" in notification["_prompt_result"]:
                         error = notification["_prompt_result"]["error"]
-                        message = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+                        message = (
+                            error.get("message", str(error))
+                            if isinstance(error, dict)
+                            else str(error)
+                        )
                         job.error = message
                         job.status = "failed"
                         lowered = message.lower()
@@ -324,47 +407,71 @@ class JobManager:
                 success = await self._stream_agent(job, parts)
                 if success:
                     if job.agent != job.original_agent:
-                        log.info("job_fallback_success: job=%s original=%s fallback=%s history=%s",
-                                 job.job_id, job.original_agent, job.agent, tried_agents)
+                        log.info(
+                            "job_fallback_success: job=%s original=%s fallback=%s history=%s",
+                            job.job_id,
+                            job.original_agent,
+                            job.agent,
+                            tried_agents,
+                        )
                         if self._stats:
-                            self._stats.record_fallback(job.original_agent, job.agent, tried_agents, True)
+                            self._stats.record_fallback(
+                                job.original_agent, job.agent, tried_agents, True
+                            )
                     return
                 # P1: prompt returned error — try fallback instead of giving up
-                if not await self._select_fallback(job, tried_agents, attempt,
-                                                   AcpError(job.error or "prompt error"), parts):
+                if not await self._select_fallback(
+                    job, tried_agents, attempt, AcpError(job.error or "prompt error"), parts
+                ):
                     return
                 continue
 
             except AgentTimeoutError as e:
-                log.warning("job_agent_timeout: job=%s agent=%s, retrying same agent",
-                            job.job_id, job.agent)
+                log.warning(
+                    "job_agent_timeout: job=%s agent=%s, retrying same agent", job.job_id, job.agent
+                )
                 try:
                     parts.clear()  # P2: don't mix old output into retry
                     await self._stream_agent(job, parts)
                     return
                 except Exception:
-                    log.warning("job_timeout_retry_failed: job=%s agent=%s, falling back",
-                                job.job_id, job.agent)
+                    log.warning(
+                        "job_timeout_retry_failed: job=%s agent=%s, falling back",
+                        job.job_id,
+                        job.agent,
+                    )
                     if not await self._select_fallback(job, tried_agents, attempt, e, parts):
                         return
 
             except AgentRateLimitError as e:
-                log.warning("job_agent_rate_limited: job=%s agent=%s retry_after=%d",
-                            job.job_id, job.agent, e.retry_after)
+                log.warning(
+                    "job_agent_rate_limited: job=%s agent=%s retry_after=%d",
+                    job.job_id,
+                    job.agent,
+                    e.retry_after,
+                )
                 await asyncio.sleep(min(e.retry_after, 30))
                 try:
                     parts.clear()  # P2: don't mix old output into retry
                     await self._stream_agent(job, parts)
                     return
                 except Exception:
-                    log.warning("job_rate_limit_retry_failed: job=%s agent=%s, falling back",
-                                job.job_id, job.agent)
+                    log.warning(
+                        "job_rate_limit_retry_failed: job=%s agent=%s, falling back",
+                        job.job_id,
+                        job.agent,
+                    )
                     if not await self._select_fallback(job, tried_agents, attempt, e, parts):
                         return
 
             except (PoolExhaustedError, AcpError) as e:
-                log.warning("job_agent_failed: job=%s agent=%s attempt=%d error=%s",
-                            job.job_id, job.agent, attempt + 1, e)
+                log.warning(
+                    "job_agent_failed: job=%s agent=%s attempt=%d error=%s",
+                    job.job_id,
+                    job.agent,
+                    attempt + 1,
+                    e,
+                )
                 if not await self._select_fallback(job, tried_agents, attempt, e, parts):
                     return
 
@@ -378,15 +485,23 @@ class JobManager:
         # Exhausted all retry attempts
         if job.status not in ("completed", "failed"):
             job.status = "failed"
-            job.error = job.error or f"fallback exhausted after {self.MAX_FALLBACK_RETRIES} attempts (tried: {tried_agents})"
-            log.error("job_fallback_exhausted: job=%s original=%s tried=%s",
-                      job.job_id, job.original_agent, tried_agents)
+            job.error = (
+                job.error
+                or f"fallback exhausted after {self.MAX_FALLBACK_RETRIES} attempts (tried: {tried_agents})"
+            )
+            log.error(
+                "job_fallback_exhausted: job=%s original=%s tried=%s",
+                job.job_id,
+                job.original_agent,
+                tried_agents,
+            )
             if self._stats:
                 self._stats.record_fallback(job.original_agent, job.agent, tried_agents, False)
 
     async def _run_via_sdk(self, job: Job):
         """Run a mesh remote agent via the ACP SDK agent registry (app.state.acp_agents)."""
         from acp_sdk.models import Message, MessagePart
+
         agent = self._app.state.acp_agents.get(job.agent)
         if agent is None:
             job.status = "failed"
@@ -414,13 +529,18 @@ class JobManager:
 
     async def _run_pty(self, job: Job):
         cfg = self._pty_configs[job.agent]
-        ps = getattr(self, '_prompt_store', None)
+        ps = getattr(self, "_prompt_store", None)
         if ps:
             ps.record(
-                parent_type="job", parent_id=job.job_id, agent=job.agent,
-                mode="pty", session_id=job.session_id,
+                parent_type="job",
+                parent_id=job.job_id,
+                agent=job.agent,
+                mode="pty",
+                session_id=job.session_id,
                 cwd=job.cwd or cfg.get("working_dir", ""),
-                template=job.prompt, rendered=job.prompt, final=job.prompt,
+                template=job.prompt,
+                rendered=job.prompt,
+                final=job.prompt,
                 decorations=[],
             )
         result = await run_pty_subprocess(
@@ -449,14 +569,20 @@ class JobManager:
 
         if fmt == "generic":
             text = job.result or ""
-            meta = {"agent": job.agent, "job_id": job.job_id,
-                    "status": job.status, "error": job.error or None}
+            meta = {
+                "agent": job.agent,
+                "job_id": job.job_id,
+                "status": job.status,
+                "error": job.error or None,
+            }
             if not text:
                 payloads = [{**meta, "message": ""}]
             else:
                 parts = chunk_text(text, self._CHUNK_SIZE)
-                payloads = [{**meta, "message": p, "part": i+1, "total_parts": len(parts)}
-                            for i, p in enumerate(parts)]
+                payloads = [
+                    {**meta, "message": p, "part": i + 1, "total_parts": len(parts)}
+                    for i, p in enumerate(parts)
+                ]
         elif is_discord_webhook:
             payloads = [self._format_discord_embed(job)]
         elif target:
@@ -464,7 +590,8 @@ class JobManager:
             # format() may synchronously upload the result to S3 (DiscordFormatter
             # long-output path) — keep that off the event loop.
             payloads = await asyncio.to_thread(
-                formatter.format, job, target, base_url=self._base_url)
+                formatter.format, job, target, base_url=self._base_url
+            )
         else:
             payloads = [{**job.to_dict(), **job.callback_meta}]
 
@@ -475,8 +602,11 @@ class JobManager:
         await asyncio.to_thread(self._store.save, job)
 
         ok = await self._sender.send(
-            url, payloads, secret=secret,
-            account_id=account_id, channel=channel,
+            url,
+            payloads,
+            secret=secret,
+            account_id=account_id,
+            channel=channel,
             log_prefix=f"webhook job={job.job_id}",
         )
         if ok:
@@ -498,10 +628,14 @@ class JobManager:
             "title": f"🤖 {job.agent}",
             "description": desc,
             "color": 0x2ECC71 if job.status == "completed" else 0xE74C3C,
-            "footer": {"text": f"job: {job.job_id[:8]}… | {round(job.completed_at - job.created_at, 1)}s"},
+            "footer": {
+                "text": f"job: {job.job_id[:8]}… | {round(job.completed_at - job.created_at, 1)}s"
+            },
         }
         if job.tools:
-            embed["fields"] = [{"name": "🔧 Tools", "value": "\n".join(f"✅ `{t}`" for t in job.tools[:10])}]
+            embed["fields"] = [
+                {"name": "🔧 Tools", "value": "\n".join(f"✅ `{t}`" for t in job.tools[:10])}
+            ]
 
         return {"embeds": [embed]}
 
@@ -509,14 +643,20 @@ class JobManager:
         now = time.time()
         # Clean completed jobs older than max_age
         cutoff = now - max_age
-        stale = [jid for jid, j in self._jobs.items() if j.completed_at > 0 and j.completed_at < cutoff]
+        stale = [
+            jid for jid, j in self._jobs.items() if j.completed_at > 0 and j.completed_at < cutoff
+        ]
         for jid in stale:
             del self._jobs[jid]
         # Mark stuck running jobs as failed
         for j in self._jobs.values():
             if j.status == "running" and now - j.created_at > stuck_timeout:
-                log.warning("job_stuck: job=%s agent=%s duration=%.0fs, marking failed",
-                            j.job_id, j.agent, now - j.created_at)
+                log.warning(
+                    "job_stuck: job=%s agent=%s duration=%.0fs, marking failed",
+                    j.job_id,
+                    j.agent,
+                    now - j.created_at,
+                )
                 j.status = "failed"
                 j.error = f"timeout: job stuck for {int(now - j.created_at)}s"
                 j.completed_at = now
@@ -527,13 +667,22 @@ class JobManager:
         for j in self._jobs.values():
             if j.status in ("completed", "failed") and j.callback_url and not j.webhook_sent:
                 if j.retries >= self.MAX_WEBHOOK_RETRIES:
-                    if not getattr(j, '_retry_exhausted_logged', False):
-                        log.warning("webhook_exhausted: job=%s agent=%s retries=%d, giving up",
-                                    j.job_id, j.agent, j.retries)
+                    if not getattr(j, "_retry_exhausted_logged", False):
+                        log.warning(
+                            "webhook_exhausted: job=%s agent=%s retries=%d, giving up",
+                            j.job_id,
+                            j.agent,
+                            j.retries,
+                        )
                         j._retry_exhausted_logged = True
                     continue
-                log.info("webhook_retry: job=%s agent=%s retries=%d/%d",
-                         j.job_id, j.agent, j.retries, self.MAX_WEBHOOK_RETRIES)
+                log.info(
+                    "webhook_retry: job=%s agent=%s retries=%d/%d",
+                    j.job_id,
+                    j.agent,
+                    j.retries,
+                    self.MAX_WEBHOOK_RETRIES,
+                )
                 self._spawn(self._webhook(j))
         # Purge old rows from sqlite
         deleted = self._store.delete_old(max_age)

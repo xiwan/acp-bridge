@@ -55,6 +55,7 @@ def test_chat_delete_old(tmp_path):
 
 def test_llm_usage_delete_old(tmp_path, monkeypatch):
     from src.routes import litellm_proxy as lp
+
     monkeypatch.setattr(lp, "_DB_PATH", str(tmp_path / "usage.db"))
     monkeypatch.setattr(lp, "_db", None)
     db = lp._ensure_db()
@@ -74,6 +75,7 @@ def test_busy_timeout_set(tmp_path):
 
 def test_templates_cache_invalidates_on_mtime(tmp_path, monkeypatch):
     import src.templates as tpl
+
     monkeypatch.setattr(tpl, "_TEMPLATES_DIR", tmp_path)
     monkeypatch.setattr(tpl, "_cache", {})
     monkeypatch.setattr(tpl, "_cache_key", ())

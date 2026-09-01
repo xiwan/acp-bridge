@@ -48,9 +48,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> str:
     mode = values.get("ACP_BRIDGE_AWS_INVESTIGATION_MODE", "explicit").strip().lower()
     if mode not in INVESTIGATION_MODES:
         allowed = ", ".join(sorted(INVESTIGATION_MODES))
-        raise ConfigurationError(
-            f"ACP_BRIDGE_AWS_INVESTIGATION_MODE must be one of: {allowed}"
-        )
+        raise ConfigurationError(f"ACP_BRIDGE_AWS_INVESTIGATION_MODE must be one of: {allowed}")
 
     if not values.get("DEVOPS_AGENT_USER_ID", "").strip():
         raise ConfigurationError("DEVOPS_AGENT_USER_ID is required")
@@ -90,7 +88,7 @@ def is_explicit_investigation(text: str) -> bool:
     prefix = "/investigate"
     if not stripped.lower().startswith(prefix):
         return False
-    remainder = stripped[len(prefix):]
+    remainder = stripped[len(prefix) :]
     return bool(remainder and remainder[0].isspace() and remainder.strip())
 
 

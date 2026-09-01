@@ -10,12 +10,12 @@ with patch.dict("sys.modules", {"prometheus_client": None}):
     import importlib
 
     import src.metrics as _mod
+
     importlib.reload(_mod)
     from src.metrics import MetricsCollector
 
 
 class TestMetricsCollector:
-
     def setup_method(self):
         self.m = MetricsCollector()
 

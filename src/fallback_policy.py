@@ -37,6 +37,7 @@ def load_fallback_chain(path: str) -> None:
     _fallback_chain_path = path
     try:
         import yaml
+
         with open(path) as f:
             data = yaml.safe_load(f)
         if isinstance(data, dict):
@@ -58,6 +59,7 @@ def save_fallback_chain() -> None:
     from pathlib import Path
 
     import yaml
+
     Path(_fallback_chain_path).parent.mkdir(parents=True, exist_ok=True)
     with open(_fallback_chain_path, "w") as f:
         yaml.dump(dict(FALLBACK_CHAIN), f, default_flow_style=False, allow_unicode=True)
@@ -83,6 +85,7 @@ def is_agent_healthy(agent: str) -> bool:
 # =============================================================================
 # Fallback selection
 # =============================================================================
+
 
 def get_next_fallback(failed_agent: str, tried_agents: list[str] | None = None) -> Optional[str]:
     """Get the next agent in the fallback chain (static order, no pool/stats needed)."""
@@ -120,8 +123,11 @@ def get_best_fallback(
     _t0 = time.time()
 
     with _state_lock:
-        candidates = [a for a in FALLBACK_CHAIN.get(failed_agent, [])
-                      if a not in tried_agents and is_agent_healthy(a)]
+        candidates = [
+            a
+            for a in FALLBACK_CHAIN.get(failed_agent, [])
+            if a not in tried_agents and is_agent_healthy(a)
+        ]
         if not candidates:
             candidates = [a for a in FALLBACK_CHAIN.get(failed_agent, []) if a not in tried_agents]
         if not candidates:
@@ -183,14 +189,27 @@ def get_best_fallback(
         base = 100 * rate_1h + 20 / (1 + avg_dur / 30)
         trend_penalty = max(0, (1 - rate_15m) - (1 - rate_1h)) * 50
         val = (base - trend_penalty) * (1.5 if has_idle else 1.0) * cb_weight
-        log.debug("fallback_score: agent=%s score=%.1f (idle=%s rate_1h=%.2f rate_15m=%.2f dur=%.1f penalty=%.1f cb_weight=%.1f)",
-                  agent, val, has_idle, rate_1h, rate_15m, avg_dur, trend_penalty, cb_weight)
+        log.debug(
+            "fallback_score: agent=%s score=%.1f (idle=%s rate_1h=%.2f rate_15m=%.2f dur=%.1f penalty=%.1f cb_weight=%.1f)",
+            agent,
+            val,
+            has_idle,
+            rate_1h,
+            rate_15m,
+            avg_dur,
+            trend_penalty,
+            cb_weight,
+        )
         return val
 
     candidates.sort(key=score, reverse=True)
     best = candidates[0]
-    log.info("fallback_decision: failed=%s tried=%s best=%s scores=%s",
-              failed_agent, tried_agents, best,
-              {a: score(a) for a in candidates[:3]})
+    log.info(
+        "fallback_decision: failed=%s tried=%s best=%s scores=%s",
+        failed_agent,
+        tried_agents,
+        best,
+        {a: score(a) for a in candidates[:3]},
+    )
     metrics.record_fallback(failed_agent, best, duration=time.time() - _t0)
     return best

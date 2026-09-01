@@ -13,7 +13,10 @@ from src.mesh_a2a import A2AAdapter, _a2a_parts_to_acp
 
 class _FakeAgent:
     """Mimics app.state.acp_agents[name]: run(input, context) async-gen, ignores context."""
-    def __init__(self, name): self.name = name
+
+    def __init__(self, name):
+        self.name = name
+
     async def run(self, input, context):
         prompt = "".join(p.content for m in input for p in m.parts if p.content)
         yield MessagePart(content=f"echo:{prompt}", content_type="text/plain")
@@ -28,27 +31,35 @@ class _BoomAgent:
 
 class _FakeJob:
     def __init__(self, status, result=None):
-        self.status = status; self.result = result
+        self.status = status
+        self.result = result
 
 
 class _FakeJobMgr:
-    def __init__(self, jobs): self._jobs = jobs
-    def get(self, jid): return self._jobs.get(jid)
+    def __init__(self, jobs):
+        self._jobs = jobs
+
+    def get(self, jid):
+        return self._jobs.get(jid)
 
 
 def _adapter(agents=None, jobs=None):
-    return A2AAdapter(agents_provider=lambda: agents or {},
-                      job_mgr=_FakeJobMgr(jobs or {}))
+    return A2AAdapter(agents_provider=lambda: agents or {}, job_mgr=_FakeJobMgr(jobs or {}))
 
 
 def _send(skill, text):
-    return {"jsonrpc": "2.0", "id": 1, "method": "tasks/send",
-            "params": {"skill": skill, "message": {"parts": [{"type": "text", "text": text}]}}}
+    return {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tasks/send",
+        "params": {"skill": skill, "message": {"parts": [{"type": "text", "text": text}]}},
+    }
 
 
 def test_a2a_parts_to_acp_text_only():
-    msgs = _a2a_parts_to_acp({"parts": [{"type": "text", "text": "hi"},
-                                        {"type": "text", "text": " there"}]})
+    msgs = _a2a_parts_to_acp(
+        {"parts": [{"type": "text", "text": "hi"}, {"type": "text", "text": " there"}]}
+    )
     assert len(msgs) == 1
     assert [p.content for p in msgs[0].parts] == ["hi", " there"]
 
@@ -88,8 +99,9 @@ async def test_unknown_method():
 @pytest.mark.asyncio
 async def test_tasks_get_completed():
     a = _adapter(jobs={"j1": _FakeJob("completed", "the result")})
-    resp = await a.dispatch({"jsonrpc": "2.0", "id": 2, "method": "tasks/get",
-                             "params": {"id": "j1"}})
+    resp = await a.dispatch(
+        {"jsonrpc": "2.0", "id": 2, "method": "tasks/get", "params": {"id": "j1"}}
+    )
     assert resp["result"]["status"]["state"] == "completed"
     assert resp["result"]["artifacts"][0]["parts"][0]["text"] == "the result"
 
@@ -97,16 +109,21 @@ async def test_tasks_get_completed():
 @pytest.mark.asyncio
 async def test_tasks_get_not_found():
     a = _adapter(jobs={})
-    resp = await a.dispatch({"jsonrpc": "2.0", "id": 3, "method": "tasks/get",
-                             "params": {"id": "nope"}})
+    resp = await a.dispatch(
+        {"jsonrpc": "2.0", "id": 3, "method": "tasks/get", "params": {"id": "nope"}}
+    )
     assert resp["error"]["code"] == -32001
 
 
 # --- L3 workspace relay: SSRF guard on ws_in/ws_out -------------------------
 
+
 def _workspace_send(skill, ws_in, ws_out=""):
-    params = {"skill": skill, "message": {"parts": [{"type": "text", "text": "hi"}]},
-              "workspace_in_url": ws_in}
+    params = {
+        "skill": skill,
+        "message": {"parts": [{"type": "text", "text": "hi"}]},
+        "workspace_in_url": ws_in,
+    }
     if ws_out:
         params["workspace_out_url"] = ws_out
     return {"jsonrpc": "2.0", "id": 1, "method": "tasks/send", "params": params}
@@ -114,8 +131,9 @@ def _workspace_send(skill, ws_in, ws_out=""):
 
 @pytest.mark.asyncio
 async def test_workspace_relay_rejects_private_ws_in():
-    a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
-                   pool=object())  # any non-None pool; validation runs before it's used
+    a = A2AAdapter(
+        agents_provider=lambda: {"kiro": _FakeAgent("kiro")}, pool=object()
+    )  # any non-None pool; validation runs before it's used
     resp = await a.dispatch(_workspace_send("kiro", "http://127.0.0.1:9000/ws.tar"))
     assert resp["error"]["code"] == -32014
     assert "unsafe workspace url" in resp["error"]["message"]
@@ -123,10 +141,12 @@ async def test_workspace_relay_rejects_private_ws_in():
 
 @pytest.mark.asyncio
 async def test_workspace_relay_rejects_private_ws_out():
-    a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
-                   pool=object())
-    resp = await a.dispatch(_workspace_send(
-        "kiro", "https://example.com/ws.tar", "http://169.254.169.254/latest/meta-data/"))
+    a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")}, pool=object())
+    resp = await a.dispatch(
+        _workspace_send(
+            "kiro", "https://example.com/ws.tar", "http://169.254.169.254/latest/meta-data/"
+        )
+    )
     assert resp["error"]["code"] == -32014
 
 
@@ -138,6 +158,7 @@ async def test_workspace_relay_allowed_private_targets_lets_listed_host_through(
     guard let it through rather than blocking it with -32014."""
     import sys
     import types
+
     fake_agents = types.ModuleType("src.agents")
 
     async def _fake_call(*a, **kw):
@@ -149,8 +170,11 @@ async def test_workspace_relay_allowed_private_targets_lets_listed_host_through(
     fake_agents._call_acp_agent_internal = _fake_call
     monkeypatch.setitem(sys.modules, "src.agents", fake_agents)
 
-    a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
-                   pool=object(), allowed_private_targets=frozenset({"127.0.0.1"}))
+    a = A2AAdapter(
+        agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
+        pool=object(),
+        allowed_private_targets=frozenset({"127.0.0.1"}),
+    )
     resp = await a.dispatch(_workspace_send("kiro", "http://127.0.0.1:1/ws.tar"))
     assert resp["error"]["code"] != -32014
 
@@ -159,8 +183,11 @@ async def test_workspace_relay_allowed_private_targets_lets_listed_host_through(
 async def test_workspace_relay_allowed_private_targets_never_cover_metadata():
     """The most severe gap from the upstream review: an allowlisted CIDR
     broad enough to cover a metadata IP must still not let it through."""
-    a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
-                   pool=object(), allowed_private_targets=frozenset({"0.0.0.0/0"}))
+    a = A2AAdapter(
+        agents_provider=lambda: {"kiro": _FakeAgent("kiro")},
+        pool=object(),
+        allowed_private_targets=frozenset({"0.0.0.0/0"}),
+    )
     resp = await a.dispatch(_workspace_send("kiro", "http://169.254.169.254/latest/meta-data/"))
     assert resp["error"]["code"] == -32014
 
@@ -182,8 +209,11 @@ async def test_workspace_relay_download_actually_succeeds(monkeypatch):
 
     from src import url_safety
 
-    monkeypatch.setattr(url_safety.socket, "getaddrinfo",
-                        lambda host, port: [(None, None, None, "", ("93.184.216.34", 0))])
+    monkeypatch.setattr(
+        url_safety.socket,
+        "getaddrinfo",
+        lambda host, port: [(None, None, None, "", ("93.184.216.34", 0))],
+    )
 
     captured: list[httpx.Request] = []
 
@@ -206,6 +236,7 @@ async def test_workspace_relay_download_actually_succeeds(monkeypatch):
     # `from src import s3 as _s3` reads the attribute off the already-imported
     # package, so sys.modules alone isn't enough.
     import src as src_pkg
+
     monkeypatch.setattr(src_pkg, "s3", fake_s3, raising=False)
 
     fake_agents = types.ModuleType("src.agents")
@@ -217,8 +248,11 @@ async def test_workspace_relay_download_actually_succeeds(monkeypatch):
     monkeypatch.setitem(sys.modules, "src.agents", fake_agents)
 
     a = A2AAdapter(agents_provider=lambda: {"kiro": _FakeAgent("kiro")}, pool=object())
-    resp = await a.dispatch(_workspace_send(
-        "kiro", "https://ws.example.com:8443/in.tar", "https://ws.example.com:8443/out.tar"))
+    resp = await a.dispatch(
+        _workspace_send(
+            "kiro", "https://ws.example.com:8443/in.tar", "https://ws.example.com:8443/out.tar"
+        )
+    )
 
     assert "error" not in resp, resp
     assert resp["result"]["status"]["state"] == "completed"

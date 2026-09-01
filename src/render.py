@@ -31,6 +31,7 @@ def _render(obj, scope: dict, missing: list, path: str):
     verbatim in the output, so error messages can point at the exact field.
     """
     if isinstance(obj, str):
+
         def sub(m):
             name = m.group(1)
             if name in scope:
@@ -39,17 +40,16 @@ def _render(obj, scope: dict, missing: list, path: str):
                 return m.group(0)  # resolved later, per round, by the pipeline
             missing.append((name, path))
             return m.group(0)
+
         return _VAR_RE.sub(sub, obj)
     if isinstance(obj, list):
         return [_render(v, scope, missing, f"{path}[{i}]") for i, v in enumerate(obj)]
     if isinstance(obj, dict):
-        return {k: _render(v, scope, missing, f"{path}.{k}" if path else k)
-                for k, v in obj.items()}
+        return {k: _render(v, scope, missing, f"{path}.{k}" if path else k) for k, v in obj.items()}
     return obj
 
 
-def build_scope(input_text: str = "", variables: dict | None = None,
-                uid: str = "") -> dict:
+def build_scope(input_text: str = "", variables: dict | None = None, uid: str = "") -> dict:
     """Flat variable scope, lowest to highest precedence: auto → input → vars."""
     scope = {
         "uid": uid or secrets.token_hex(4),
@@ -60,8 +60,9 @@ def build_scope(input_text: str = "", variables: dict | None = None,
     return scope
 
 
-def render_payload(steps: list, context: dict, input_text: str = "",
-                   variables: dict | None = None, uid: str = "") -> tuple:
+def render_payload(
+    steps: list, context: dict, input_text: str = "", variables: dict | None = None, uid: str = ""
+) -> tuple:
     """Render a pipeline payload.
 
     Returns (steps, context, uid, missing). `missing` is a list of
@@ -141,9 +142,7 @@ def resolve_artifacts(artifacts: list, steps: list, shared_cwd: str = "") -> lis
             "pattern": art.get("pattern", ""),
         }
         if entry["type"] == "file" and shared_cwd and entry["pattern"]:
-            matches = sorted(
-                str(p) for p in Path(shared_cwd).glob(entry["pattern"]) if p.is_file()
-            )
+            matches = sorted(str(p) for p in Path(shared_cwd).glob(entry["pattern"]) if p.is_file())
             entry["exists"] = bool(matches)
             if matches:
                 entry["path"] = matches[0]
@@ -167,9 +166,11 @@ async def publish_artifacts(context: dict, steps: list) -> list:
         return []
     resolved = resolve_artifacts(declared, steps, context.get("shared_cwd", ""))
     from src import s3
+
     if not s3.is_available():
         return resolved
     import asyncio
+
     uid = context.get("_uid", "")
     for entry in resolved:
         if entry.get("type") != "file" or not entry.get("exists"):
