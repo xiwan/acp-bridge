@@ -1,14 +1,19 @@
 """P0 tests for src/capability_registry.py — capability discovery module."""
 
-import os, sys, tempfile, textwrap
+import os
+import sys
+import tempfile
+import textwrap
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import yaml
-from src.capability_registry import (
-    CapabilityRegistry, AgentCapabilities,
-    _score_agent, _version_match, _normalize_languages,
-)
 
+from src.capability_registry import (
+    CapabilityRegistry,
+    _normalize_languages,
+    _version_match,
+)
 
 # ---------------------------------------------------------------------------
 # fixtures
@@ -323,4 +328,4 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
             print(f"✅ {name}")
-    print(f"\n=== All capability_registry tests passed ✅ ===")
+    print("\n=== All capability_registry tests passed ✅ ===")

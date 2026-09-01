@@ -19,7 +19,6 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
 import boto3

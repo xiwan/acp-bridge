@@ -10,7 +10,6 @@ moto cannot execute Lambda code without Docker, so we:
   - Mock _lambda_invoke to simulate Lambda responses for pool-level tests
 """
 
-import asyncio
 import json
 import os
 import sys

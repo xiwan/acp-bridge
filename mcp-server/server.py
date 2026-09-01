@@ -15,17 +15,17 @@ Environment variables:
     ACP_TIMEOUT      — Sync call timeout in seconds (default: 300)
 """
 
+import asyncio
+import json
 import os
 import sys
-import json
 import uuid
-import asyncio
 from typing import Any
 
 import httpx
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 # --- Config ---
 BRIDGE_URL = os.environ.get("ACP_BRIDGE_URL", "").rstrip("/")

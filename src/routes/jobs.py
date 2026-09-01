@@ -2,7 +2,8 @@
 
 import uuid as _uuid
 
-from fastapi import Path as PathParam, Query
+from fastapi import Path as PathParam
+from fastapi import Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.responses import Response

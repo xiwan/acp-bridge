@@ -1,11 +1,8 @@
 """v0.41.0 — data retention + caching behaviors added by the perf pass."""
 
-import sqlite3
 import time
 
-import pytest
-
-from src.store import PipelineStore, ChatStore
+from src.store import ChatStore, PipelineStore
 
 
 class _FakeStep:

@@ -5,7 +5,10 @@ additionally get Content-Disposition: attachment so browsers download instead
 of rendering bytes inline (qa-evidence zips from harness-factory artifact pack).
 """
 
-import os, sys, tempfile
+import os
+import sys
+import tempfile
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from unittest.mock import MagicMock

@@ -29,7 +29,6 @@ from src.render import (
 )
 from src.routes import pipelines as pipelines_routes
 
-
 # ============================================================================
 # Pure functions
 # ============================================================================

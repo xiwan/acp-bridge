@@ -22,7 +22,6 @@ import sys
 from collections.abc import Mapping
 from typing import Any
 
-
 INVESTIGATION_MODES = {"disabled", "explicit", "auto"}
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}

@@ -6,26 +6,34 @@ import os
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Optional
 
 from acp_sdk.models import Message, MessagePart
 from acp_sdk.server import Context, RunYield, RunYieldResume
 
-from .agent_pool import get_pool, init_pool, ping_agent, ping_loop, shutdown_pool
 from .acp_client import AcpConnection, AcpError, AcpProcessPool, PoolExhaustedError
-from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerOpenError, CircuitState
+from .agent_pool import ping_loop
+from .circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerOpenError,
+)
 from .exceptions import AgentModelError, AgentRateLimitError, AgentTimeoutError
 from .fallback_policy import (
-    FALLBACK_CHAIN, _agent_healthy, _circuit_breakers, _state_lock,
-    get_best_fallback, get_next_fallback, is_agent_healthy,
-    load_fallback_chain, save_fallback_chain,
+    _circuit_breakers,
+    _state_lock,
+    get_best_fallback,
+    load_fallback_chain,
 )
 from .formatters import fmt
 from .heartbeat import EnvCollector
 from .sse import transform_notification
 from .stats import StatsCollector
-from .trace_impl import init_trace, get_trace, start_span, finish_span
+from .trace_impl import get_trace, init_trace, start_span
 from .utils import strip_ansi
+
+# Names imported here purely for re-export (used by main.py via `from src.agents import ...`).
+# Listed in __all__ so ruff does not treat them as unused imports.
+__all__ = ["ping_loop", "load_fallback_chain"]
 
 log = logging.getLogger("acp-bridge.agents")
 
@@ -453,7 +461,7 @@ def make_acp_agent_handler(agent_name: str, pool: AcpProcessPool, profile: dict 
                 session_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{next_agent}:{session_id[:8]}"))
                 current_agent = next_agent
 
-        except Exception as e:
+        except Exception:
             router_span.finish(success=False, error_type="unhandled_exception")
             raise
         finally:

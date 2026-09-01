@@ -1,12 +1,15 @@
 """Unit tests for src/mesh_client.py + L2 hop limit — A2A Mesh L2 routing."""
 
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from acp_sdk.models import Message, MessagePart
-from src.mesh_client import make_a2a_remote_handler, reconcile
+
 from src.mesh_a2a import A2AAdapter
+from src.mesh_client import make_a2a_remote_handler, reconcile
 
 
 class _Peer:

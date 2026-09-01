@@ -1,10 +1,13 @@
 """Unit tests for src/mesh_a2a.py — A2A Mesh L1 (POST /a2a adapter)."""
 
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from acp_sdk.models import Message, MessagePart
+
 from src.mesh_a2a import A2AAdapter, _a2a_parts_to_acp
 
 
@@ -133,7 +136,8 @@ async def test_workspace_relay_allowed_private_targets_lets_listed_host_through(
     is skipped for it — execution reaches past it into the download step
     (which then fails, since nothing is actually listening), proving the
     guard let it through rather than blocking it with -32014."""
-    import sys, types
+    import sys
+    import types
     fake_agents = types.ModuleType("src.agents")
 
     async def _fake_call(*a, **kw):

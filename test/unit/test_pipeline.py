@@ -6,13 +6,12 @@ Framework by Kiro, P0 tests lock down existing behavior before refactoring.
 
 import asyncio
 import time
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
 
-from src.acp_client import AcpConnection, AcpProcessPool, AcpError, PoolExhaustedError
-from src.pipeline import Pipeline, PipelineStep, PipelineManager, _VAR_RE
-
+from src.acp_client import AcpConnection, AcpError, AcpProcessPool, PoolExhaustedError
+from src.pipeline import Pipeline, PipelineManager, PipelineStep
 
 # ============================================================================
 # Fixtures
@@ -1267,7 +1266,6 @@ async def test_step_output_size_limit(tmp_path):
                     with patch.object(mgr, "_webhook_step", new_callable=AsyncMock):
                         await mgr._run(pl)
     assert pl.status == "completed"
-    from src.pipeline import MAX_OUTPUT_SIZE
     assert len(pl.steps[0].result) < len(big_text)
 
 

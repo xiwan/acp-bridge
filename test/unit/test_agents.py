@@ -6,13 +6,13 @@ Framework by Claude, implementation by Qwen.
 
 import asyncio
 import time
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch, call
-from src.acp_client import AcpConnection, AcpError, AcpProcessPool, PoolExhaustedError
-from src.circuit_breaker import CircuitBreaker, CircuitState
-from src.exceptions import AgentModelError, AgentTimeoutError
 
+from src.acp_client import AcpConnection, AcpProcessPool, PoolExhaustedError
+from src.circuit_breaker import CircuitState
+from src.exceptions import AgentModelError, AgentTimeoutError
 
 # ============================================================================
 # Mock helpers (from merged P0/P1 tests)
@@ -544,8 +544,8 @@ class TestConnectionLeakAndRetrySafety:
     @pytest.mark.asyncio
     async def test_execute_agent_call_cleans_up_on_enrich_crash(self):
         """P1-A: If enrichment code crashes before session_prompt, pool.remove is called."""
-        from src.agents import _execute_agent_call, _env
         import src.agents as _mod
+        from src.agents import _execute_agent_call
 
         pool = Mock()
         conn = AsyncMock()

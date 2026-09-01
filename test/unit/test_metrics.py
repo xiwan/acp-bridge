@@ -1,12 +1,14 @@
 """Tests for metrics.py — structured logging mode (no Prometheus dependency)."""
 
 import logging
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 # Force PROMETHEUS_AVAILABLE=False before importing
 with patch.dict("sys.modules", {"prometheus_client": None}):
     import importlib
+
     import src.metrics as _mod
     importlib.reload(_mod)
     from src.metrics import MetricsCollector

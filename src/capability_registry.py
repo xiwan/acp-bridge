@@ -2,10 +2,10 @@
 
 import logging
 import re
-import yaml
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+import yaml
 
 log = logging.getLogger("acp-bridge.capability_registry")
 

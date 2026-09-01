@@ -5,11 +5,9 @@ without requiring actual AWS infrastructure. It verifies the full request
 path: HTTP → route → LambdaPool → (mocked) Lambda → response.
 """
 
-import asyncio
 import json
 import os
 import sys
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -202,6 +200,7 @@ async def test_lambda_handler_disabled():
     """When lambda_pool is not enabled, routes return 503."""
     from acp_sdk.server import Server
     from acp_sdk.server.app import create_app
+
     from src.routes import lambda_pool as lambda_pool_routes
 
     server = Server()

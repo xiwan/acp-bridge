@@ -1,9 +1,11 @@
 """Unit tests for src/heartbeat.py — v0.23.1 diagnostic fidelity + fast-fail probe."""
 
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.heartbeat import EnvCollector, HEARTBEAT_IDLE_TIMEOUT
+from src.heartbeat import HEARTBEAT_IDLE_TIMEOUT, EnvCollector
 
 
 def _collector():

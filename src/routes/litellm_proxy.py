@@ -1,7 +1,6 @@
 """LiteLLM proxy — transparent pass-through with usage recording."""
 
 import asyncio
-import json
 import logging
 import sqlite3
 import time
@@ -86,13 +85,11 @@ def register(app, litellm_cfg: dict):
         """Transparent proxy to LiteLLM — records usage from chat/completions responses."""
         target = f"{url}/{path}"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        t0 = time.time()
         if request.method == "GET":
             resp = await client.get(target, headers=headers, params=dict(request.query_params))
         else:
             body = await request.body()
             resp = await client.post(target, headers=headers, content=body)
-        duration = time.time() - t0
         try:
             data = resp.json()
         except Exception:

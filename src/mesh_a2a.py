@@ -130,8 +130,11 @@ class A2AAdapter:
         except UnsafeUrlError as e:
             return _rpc_error(rpc_id, -32014, f"unsafe workspace url: {e}")
         import asyncio
-        import tempfile, uuid
+        import tempfile
+        import uuid
+
         import httpx
+
         from src import s3 as _s3
         from src.agents import _call_acp_agent_internal
         prompt = "".join(p.get("text", "") for p in (params.get("message") or {}).get("parts", []))

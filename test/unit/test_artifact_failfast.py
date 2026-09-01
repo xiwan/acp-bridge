@@ -10,7 +10,7 @@ from unittest.mock import Mock
 import pytest
 
 from src.acp_client import AcpProcessPool
-from src.pipeline import Pipeline, PipelineStep, PipelineManager
+from src.pipeline import Pipeline, PipelineManager, PipelineStep
 
 
 @pytest.fixture

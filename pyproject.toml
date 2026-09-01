@@ -21,3 +21,20 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
 ]
+
+[tool.ruff]
+# The project had no explicit ruff config, so a newer ruff picked up its full
+# default rule set and surfaced 450+ pre-existing findings at once. Pin an
+# explicit, objective baseline (pyflakes + import sorting) and leave subjective
+# / semantic-risk rules (blind-except, mutable defaults, one-line-statement
+# style, etc.) out for now so they can be adopted incrementally without
+# touching runtime behaviour.
+line-length = 100
+target-version = "py312"
+# infra/ is a self-contained Lambda sub-project with its own lifecycle.
+extend-exclude = ["infra"]
+
+[tool.ruff.lint]
+# F = pyflakes  (unused imports, undefined names, unused variables)
+# I = isort     (import ordering)
+select = ["F", "I"]

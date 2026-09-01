@@ -34,9 +34,19 @@ from src.acp_client import AcpProcessPool
 from src.agents import make_acp_agent_handler, make_pty_agent_handler, ping_loop
 from src.jobs import JobManager
 from src.prompt_log import PromptStore
+from src.routes import admin as admin_routes
+from src.routes import chat as chat_routes
+from src.routes import files as files_routes
+from src.routes import harness as harness_routes
+from src.routes import health as health_routes
+from src.routes import jobs as jobs_routes
+from src.routes import pipelines as pipelines_routes
+from src.routes import sessions as sessions_routes
+from src.routes import stats as stats_routes
+from src.routes import templates as templates_routes
+from src.routes import tools as tools_routes
 from src.security import SecurityMiddleware
 from src.stats import StatsCollector
-from src.routes import jobs as jobs_routes, tools as tools_routes, health as health_routes, chat as chat_routes, files as files_routes, pipelines as pipelines_routes, stats as stats_routes, templates as templates_routes, harness as harness_routes, admin as admin_routes, sessions as sessions_routes
 
 try:
     from acp_sdk.models.models import Metadata
@@ -111,13 +121,11 @@ def main():
 
     setup_logging(args.verbose)
 
-    auto_mode = False
     if os.path.exists(args.config):
         config = load_config(args.config)
     else:
         from src.auto_detect import build_config
         config = build_config()
-        auto_mode = True
         agents = config.get("agents", {})
         if not agents:
             log.error("No config.yaml found and no agent CLIs detected in PATH")
@@ -125,7 +133,7 @@ def main():
         token = config["security"]["auth_token"]
         print(f"\n⚡ Zero-config mode: detected {len(agents)} agent(s): {', '.join(agents)}")
         print(f"🔑 Auth token: {token}")
-        print(f"   (set ACP_BRIDGE_TOKEN env to use a fixed token)\n")
+        print("   (set ACP_BRIDGE_TOKEN env to use a fixed token)\n")
 
     # --- Agents ---
     agents_cfg = {k: v for k, v in config.get("agents", {}).items() if v.get("enabled")}
@@ -263,6 +271,7 @@ def main():
     # watcher), and cancellation-watcher reaping (zombie watchers accumulated
     # per finished run). Root cause of the 2026-08-11 100%-CPU incident.
     from datetime import timedelta
+
     from src.acp_patch import PerKeyEventMemoryStore, apply_executor_patch
     apply_executor_patch()
     app = create_app(*server.agents,
@@ -382,8 +391,8 @@ def main():
     harness_routes.register(app, pool, agents_cfg, litellm_cfg, harness_binary=harness_binary)
 
     # --- Lambda Pool (serverless burst) ---
-    from src.routes import lambda_pool as lambda_pool_routes
     from src.agents import make_lambda_agent_handler
+    from src.routes import lambda_pool as lambda_pool_routes
     lambda_pool_cfg = config.get("lambda_pool", {})
     lambda_pool_instance = None
     if lambda_pool_cfg.get("enabled", False):
@@ -553,9 +562,8 @@ def main():
 
     async def _heartbeat_ping_agent(agent_name: str):
         """Ping agent with LLM prompt for environment awareness."""
-        import uuid
-        from src.sse import transform_notification
         from src.heartbeat import HEARTBEAT_IDLE_TIMEOUT
+        from src.sse import transform_notification
         cfg = agents_cfg.get(agent_name, {})
         if not isinstance(cfg, dict) or cfg.get("mode") != "acp":
             return
@@ -679,7 +687,8 @@ def main():
     )
 
     # Safety net
-    import atexit, signal as _sig
+    import atexit
+    import signal as _sig
     def _kill_all():
         if pool:
             for (a, s), conn in list(pool._connections.items()):

@@ -1,9 +1,8 @@
 """Unit tests for src/rate_limiter.py"""
 
-import time
 import pytest
-from src.rate_limiter import AgentQuota, RateLimiter
 
+from src.rate_limiter import AgentQuota, RateLimiter
 
 # ---------------------------------------------------------------------------
 # Helpers

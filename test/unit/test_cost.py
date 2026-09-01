@@ -7,15 +7,19 @@ v0.23.0:
   - 新增 lookup_pricing 测试.
 """
 
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.cost import (
-    estimate_tokens, calc_cost, calc_cost_v2,
-    model_from_agent, lookup_pricing,
     BEDROCK_PRICING,
+    calc_cost,
+    calc_cost_v2,
+    estimate_tokens,
+    lookup_pricing,
+    model_from_agent,
 )
-
 
 # ============================================================================
 # Legacy estimate_tokens
@@ -276,4 +280,4 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
             print(f"✅ {name}")
-    print(f"\n=== All cost tests passed ✅ ===")
+    print("\n=== All cost tests passed ✅ ===")

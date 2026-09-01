@@ -11,7 +11,6 @@ Usage:
 """
 
 import argparse
-import json
 import sqlite3
 import sys
 import time
@@ -310,7 +309,6 @@ def main():
     RESET = "\033[0m"
     BOLD = "\033[1m"
     GREEN = "\033[92m"
-    YELLOW = "\033[93m"
     CYAN = "\033[96m"
     DIM = "\033[2m"
 

@@ -16,7 +16,6 @@ from src.circuit_breaker import (
     CircuitState,
 )
 
-
 _DEFAULTS = dict(
     failure_threshold=3,
     failure_rate_threshold=0.5,
@@ -320,4 +319,4 @@ if __name__ == "__main__":
             else:
                 fn()
             print(f"✅ {name}")
-    print(f"\n=== All circuit breaker tests passed ✅ ===")
+    print("\n=== All circuit breaker tests passed ✅ ===")

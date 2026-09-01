@@ -7,8 +7,7 @@ the handler logic in isolation.
 import json
 import os
 import sys
-import tempfile
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 

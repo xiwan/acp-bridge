@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
 from .fallback_policy import get_best_fallback
-from .formatters import PipelineFormatter, get_payload_builder, get_template, get_prompt_suffix
+from .formatters import PipelineFormatter, get_payload_builder, get_prompt_suffix, get_template
 from .prompt_log import PromptStore
 from .sse import transform_notification
 from .store import PipelineStore
@@ -1474,6 +1474,7 @@ class PipelineManager:
         S3 is a hard prerequisite — without it a cross-node step fails (never silent).
         """
         import httpx
+
         from src import s3
         peer_url, mesh_token = mesh_target
         if not s3.is_available():

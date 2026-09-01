@@ -2,16 +2,15 @@
 
 import asyncio
 import logging
-import os
 import time
 import uuid
 from dataclasses import dataclass, field
 
 from .acp_client import AcpError, AcpProcessPool, PoolExhaustedError
-from .fallback_policy import get_best_fallback
-from .complexity import TIMEOUT_MAP, Complexity, estimate_complexity, should_use_async
+from .complexity import TIMEOUT_MAP, estimate_complexity
 from .cost import calc_cost, estimate_tokens, model_from_agent
 from .exceptions import AgentModelError, AgentRateLimitError, AgentTimeoutError
+from .fallback_policy import get_best_fallback
 from .formatters import get_formatter, get_prompt_suffix
 from .prompt_log import PromptStore
 from .sse import transform_notification
@@ -471,7 +470,6 @@ class JobManager:
 
         secret = job.callback_meta.get("secret", self._sender._secret)
         account_id = job.callback_meta.get("account_id", "") if not is_discord_webhook else ""
-        channel_header = channel if account_id else ""
 
         job.retries += 1
         await asyncio.to_thread(self._store.save, job)

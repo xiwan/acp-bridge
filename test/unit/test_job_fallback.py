@@ -1,25 +1,22 @@
 """Unit tests for jobs.py fallback retry logic."""
 
 import asyncio
-import json
 import os
 import sys
 import tempfile
 import time
 import uuid
-from dataclasses import dataclass
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
 from src.acp_client import AcpError, PoolExhaustedError
+from src.fallback_policy import get_best_fallback, get_next_fallback
 from src.jobs import Job, JobManager
 from src.store import JobStore
-from src.fallback_policy import get_next_fallback, get_best_fallback
 from src.url_safety import UnsafeUrlError
-
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -430,7 +427,7 @@ async def test_submit_allows_safe_callback_url():
 
 # ── Smart retry tests ────────────────────────────────────
 
-from src.exceptions import AgentTimeoutError, AgentRateLimitError, AgentModelError
+from src.exceptions import AgentModelError, AgentRateLimitError, AgentTimeoutError
 
 
 def test_timeout_retries_same_agent():
@@ -691,8 +688,9 @@ def test_best_fallback_success_rate_can_overcome_idle():
 # ── Circuit breaker integration tests ────────────────────
 
 import pytest
-from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitState
+
 import src.fallback_policy as _agents_mod
+from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitState
 
 
 def _setup_breakers(states: dict[str, CircuitState]):
@@ -845,4 +843,4 @@ if __name__ == "__main__":
     test_half_open_gets_lower_score_than_closed()
     test_half_open_still_selectable_if_only_option()
     test_no_breaker_entry_treated_as_closed()
-    print(f"\n=== All 32 tests passed ✅ ===")
+    print("\n=== All 32 tests passed ✅ ===")

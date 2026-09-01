@@ -4,7 +4,6 @@ import asyncio
 import json
 import os
 import sys
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,7 +11,6 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from src.lambda_pool import LambdaPool, LambdaSlot
-
 
 # ──── Helpers ────
 
@@ -209,8 +207,6 @@ async def test_batch_partial_failure():
     """Batch handles partial failures gracefully."""
     pool = _make_pool(max_concurrent=10)
     call_count = {"n": 0}
-
-    original_invoke = pool._lambda_invoke
 
     def flaky_invoke(payload):
         call_count["n"] += 1

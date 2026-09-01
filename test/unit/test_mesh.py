@@ -1,11 +1,16 @@
 """Unit tests for src/mesh.py — A2A Mesh L0 (Agent Card + peer table)."""
 
-import os, sys, time, tempfile, textwrap
+import os
+import sys
+import tempfile
+import textwrap
+import time
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from src.mesh import MeshManager, PeerInfo, DEFAULT_PRICING, resolve_mesh_token
 
+from src.mesh import DEFAULT_PRICING, MeshManager, resolve_mesh_token
 
 _CONFIG = textwrap.dedent("""\
     agents:

@@ -3,7 +3,8 @@
 import asyncio
 import json
 
-from fastapi import Path as PathParam, Query
+from fastapi import Path as PathParam
+from fastapi import Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -312,6 +313,7 @@ def register(app, pipeline_mgr: PipelineManager | None,
     async def download_artifact(pipeline_id: str = PathParam(...), path: str = ""):
         """Download a specific file from pipeline's shared_cwd."""
         import os
+
         from starlette.responses import FileResponse
         if not pipeline_mgr:
             return JSONResponse({"error": "pipeline not available"}, status_code=503)

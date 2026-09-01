@@ -1,9 +1,11 @@
 """Unit tests for src/complexity.py."""
 
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.complexity import Complexity, TIMEOUT_MAP, estimate_complexity, should_use_async
+from src.complexity import TIMEOUT_MAP, Complexity, estimate_complexity, should_use_async
 
 
 def test_light_prompt():
@@ -52,4 +54,4 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
             print(f"✅ {name}")
-    print(f"\n=== All complexity tests passed ✅ ===")
+    print("\n=== All complexity tests passed ✅ ===")

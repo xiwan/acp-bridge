@@ -5,12 +5,14 @@ import asyncio
 from datetime import timedelta
 
 import pytest
-
 from acp_sdk.server.store.store import StoreModel
 
 from src.acp_patch import PerKeyEventMemoryStore, apply_executor_patch
 from src.circuit_breaker import (
-    CircuitBreaker, CircuitBreakerConfig, CircuitBreakerOpenError, CircuitState,
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerOpenError,
+    CircuitState,
 )
 
 

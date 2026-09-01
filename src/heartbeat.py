@@ -99,7 +99,7 @@ class EnvCollector:
 
     def is_active_time(self) -> bool:
         """Check if current time is within active hours (in configured timezone)."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone(timedelta(hours=self._tz_offset)))
         hour = now.hour
         start, end = self._active_hours

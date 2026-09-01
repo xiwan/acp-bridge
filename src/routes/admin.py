@@ -1,6 +1,7 @@
 """Admin endpoints for the prompt_log table — cross-link querying and direct lookup."""
 
-from fastapi import Path as PathParam, Query
+from fastapi import Path as PathParam
+from fastapi import Query
 from fastapi.responses import JSONResponse
 
 from ..prompt_log import PromptStore, row_to_summary

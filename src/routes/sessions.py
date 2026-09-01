@@ -1,7 +1,9 @@
 """Session list/resume endpoints for ACP agents that support session persistence."""
 
 import logging
+
 from fastapi import HTTPException, Query
+
 from ..acp_client import AcpProcessPool
 
 log = logging.getLogger("acp-bridge.sessions")

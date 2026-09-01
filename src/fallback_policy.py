@@ -55,8 +55,9 @@ def save_fallback_chain() -> None:
     """Persist current FALLBACK_CHAIN to YAML."""
     if not _fallback_chain_path:
         return
-    import yaml
     from pathlib import Path
+
+    import yaml
     Path(_fallback_chain_path).parent.mkdir(parents=True, exist_ok=True)
     with open(_fallback_chain_path, "w") as f:
         yaml.dump(dict(FALLBACK_CHAIN), f, default_flow_style=False, allow_unicode=True)

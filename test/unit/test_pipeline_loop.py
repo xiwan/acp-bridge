@@ -5,12 +5,12 @@ _eval_condition (AST-whitelist safety), _read_verdict, _maybe_loop outcomes
 """
 
 import json
-
-import pytest
 from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
+
 from src.acp_client import AcpProcessPool
-from src.pipeline import Pipeline, PipelineStep, PipelineManager
+from src.pipeline import Pipeline, PipelineManager, PipelineStep
 
 
 @pytest.fixture

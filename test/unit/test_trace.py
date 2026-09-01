@@ -9,17 +9,15 @@ Tests the ContextVar-based distributed tracing middleware:
 
 import asyncio
 import logging
-import uuid
+
 import httpx
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
-from starlette.requests import Request
 
-from src.trace import TraceIdMiddleware, TraceIdFilter, current_trace_id
-
+from src.trace import TraceIdFilter, TraceIdMiddleware, current_trace_id
 
 # ---------------------------------------------------------------------------
 # Helpers

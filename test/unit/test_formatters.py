@@ -12,7 +12,6 @@ from src.formatters import (
     get_payload_builder,
 )
 
-
 # ── get_payload_builder registry ─────────────────────────
 
 def test_registry_routes_by_format():

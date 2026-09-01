@@ -9,14 +9,12 @@ Unit tests for v0.19.0 composable pipeline features:
 import asyncio
 import json
 import os
-import time
-
-import pytest
 from unittest.mock import AsyncMock, Mock, patch
 
-from src.acp_client import AcpConnection, AcpProcessPool
-from src.pipeline import Pipeline, PipelineStep, PipelineManager
+import pytest
 
+from src.acp_client import AcpConnection, AcpProcessPool
+from src.pipeline import Pipeline, PipelineManager, PipelineStep
 
 # ============================================================================
 # Fixtures
