@@ -25,7 +25,10 @@ jobs:
         with:
           python-version: "3.14"
       - run: uv sync --frozen
-      - run: uv run pytest -q
+      # Use `python -m pytest` (not bare `pytest`) so the repo root is on
+      # sys.path — `src` is an implicit namespace package, not installed.
+      # This mirrors test/pytest.sh, the script used locally.
+      - run: uv run python -m pytest test/unit/ -q
 
   secrets-scan:
     runs-on: ubuntu-latest
