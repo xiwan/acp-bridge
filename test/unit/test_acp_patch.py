@@ -7,7 +7,11 @@ from datetime import timedelta
 import pytest
 from acp_sdk.server.store.store import StoreModel
 
-from src.acp_patch import PerKeyEventMemoryStore, apply_executor_patch
+from src.acp_patch import (
+    PerKeyEventMemoryStore,
+    _apply_uvicorn_loop_shim,
+    apply_executor_patch,
+)
 from src.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
@@ -159,6 +163,46 @@ def test_executor_patch_is_idempotent():
     first = Executor.execute
     apply_executor_patch()
     assert Executor.execute is first
+
+
+# ---------------------------------------------------------------------------
+# uvicorn.config.LoopSetupType compat shim (issue #21)
+# ---------------------------------------------------------------------------
+
+
+def test_uvicorn_loop_shim_makes_server_run_hints_resolvable():
+    """acp-sdk 1.0.3 annotates Server.run's `loop` as uvicorn.config.LoopSetupType,
+    renamed to LoopFactoryType in uvicorn 0.36. The shim (applied at acp_patch
+    import time) must let get_type_hints(Server.run) resolve without AttributeError."""
+    import typing
+
+    import acp_sdk.server as acp_server
+
+    # Importing src.acp_patch (done at module load) has already run the shim.
+    hints = typing.get_type_hints(acp_server.Server.run)
+    # `loop` resolves to the Literal that LoopFactoryType/LoopSetupType both name.
+    assert "loop" in hints
+
+
+def test_uvicorn_loop_shim_aliases_or_noops():
+    """On uvicorn >= 0.36 the shim aliases LoopSetupType -> LoopFactoryType;
+    on older uvicorn LoopSetupType already exists so it's a no-op. Either way
+    the name is present and equal to LoopFactoryType when that exists."""
+    import uvicorn.config as uc
+
+    _apply_uvicorn_loop_shim()  # idempotent
+    assert hasattr(uc, "LoopSetupType")
+    if hasattr(uc, "LoopFactoryType"):
+        assert uc.LoopSetupType is uc.LoopFactoryType
+
+
+def test_uvicorn_loop_shim_is_idempotent():
+    import uvicorn.config as uc
+
+    _apply_uvicorn_loop_shim()
+    first = uc.LoopSetupType
+    _apply_uvicorn_loop_shim()
+    assert uc.LoopSetupType is first
 
 
 # ---------------------------------------------------------------------------

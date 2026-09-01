@@ -23,6 +23,36 @@ import asyncio
 import weakref
 from collections.abc import AsyncIterator
 
+
+def _apply_uvicorn_loop_shim() -> None:
+    """Restore ``uvicorn.config.LoopSetupType`` on uvicorn >= 0.36 (issue #21).
+
+    acp-sdk 1.0.3 (the latest release, with no uvicorn version constraint)
+    annotates ``Server.run``'s ``loop`` parameter as
+    ``uvicorn.config.LoopSetupType``. uvicorn 0.36 renamed that name to
+    ``LoopFactoryType`` (same ``Literal['none','auto','asyncio','uvloop']``),
+    so under our pinned uvicorn 0.41.0 the name is gone. It doesn't break at
+    import time (PEP 649 lazy annotations on 3.14), but any path that forces
+    annotation evaluation — ``typing.get_type_hints`` /
+    ``inspect.signature(..., eval_str=True)`` — raises ``AttributeError``.
+
+    Alias the old name to the new one so those paths resolve. Guarded by
+    ``hasattr`` so it is a no-op on uvicorn < 0.36 (where the original name
+    still exists) and idempotent on repeat calls.
+
+    Must run before ``acp_sdk.server`` annotations are evaluated; this module
+    calls it at import time, ahead of the acp_sdk imports below.
+    """
+    try:
+        import uvicorn.config as _uc
+    except Exception:
+        return
+    if not hasattr(_uc, "LoopSetupType") and hasattr(_uc, "LoopFactoryType"):
+        _uc.LoopSetupType = _uc.LoopFactoryType
+
+
+_apply_uvicorn_loop_shim()
+
 from acp_sdk.server.executor import Executor
 from acp_sdk.server.store import MemoryStore
 from acp_sdk.server.store.utils import Stringable
