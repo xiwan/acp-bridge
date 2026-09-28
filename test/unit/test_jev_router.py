@@ -28,10 +28,19 @@ AGENTS = {
         "mode": "acp",
         "trust": "workspace",
         "description": "Kiro CLI agent",
-        "capabilities": {"domains": ["devops", "cloud"], "tags": ["cli-first"]},
+        "capabilities": {
+            "domains": ["devops", "cloud"],
+            "tags": ["cli-first"],
+            "tools": ["terraform", "bash", "kubectl", "bash"],
+        },
         "metadata": {"domains": ["coding"], "tags": ["aws"]},
     },
-    "claude": {"enabled": True, "mode": "acp", "description": "Claude Code agent"},
+    "claude": {
+        "enabled": True,
+        "mode": "acp",
+        "description": "Claude Code agent",
+        "capabilities": {"tools": "not-a-list", "languages": {"python": True}},
+    },
     "opengame": {"enabled": True, "mode": "acp", "description": "Game generator"},
     "disabled-one": {"enabled": False, "mode": "acp", "description": "off"},
     "burst": {"enabled": True, "mode": "acp", "pool": "lambda", "description": "lambda"},
@@ -77,7 +86,9 @@ def test_criteria_filters_and_describes_agents():
         "what": "Kiro CLI agent",
         "domains": ["cloud", "coding", "devops"],
         "tags": ["aws", "cli-first"],
+        "tools": ["bash", "kubectl", "terraform"],  # deduped + sorted
     }
+    # malformed tools (not a list) and non-domain capability keys are ignored
     assert crit["claude"] == {"what": "Claude Code agent"}
     assert isinstance(crit[OTHER], str)
 

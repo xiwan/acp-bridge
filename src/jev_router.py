@@ -152,6 +152,11 @@ class JevRouter:
         Eligible = enabled, local (not pool=lambda), not the router itself, not in
         `exclude`, and (if `candidates` given) in that allowlist. Agents with
         trust=unrestricted are skipped unless explicitly named in `candidates`.
+
+        Each option is described by `description` (what), `capabilities.domains` +
+        `metadata.domains`, `capabilities.tags` + `metadata.tags`, and (v0.47.1)
+        `capabilities.tools` — so a task mentioning terraform can match an agent that
+        lists it as a tool even if its prose description does not.
         """
         allow = set(candidates or [])
         deny = set(exclude or [])
@@ -169,11 +174,19 @@ class JevRouter:
             md = cfg.get("metadata") or {}
             domains = sorted({*(caps.get("domains") or []), *(md.get("domains") or [])})
             tags = sorted({*(caps.get("tags") or []), *(md.get("tags") or [])})
+            tools_raw = caps.get("tools") or []
+            tools = (
+                sorted({t for t in tools_raw if isinstance(t, str)})
+                if isinstance(tools_raw, list)
+                else []
+            )
             desc: dict[str, object] = {"what": cfg.get("description") or name}
             if domains:
                 desc["domains"] = domains
             if tags:
                 desc["tags"] = tags
+            if tools:
+                desc["tools"] = tools
             crit[name] = desc
         crit[OTHER] = "None of the listed agents is clearly suitable for this task"
         return crit
@@ -216,8 +229,8 @@ class JevRouter:
             answer = data["answers"]["agent"]
             choice = str(answer["choice"])
             probs_raw = answer.get("probabilities") or {}
-            probabilities = {str(k): float(v) for k, v in probs_raw.items()}
-            confidence = float(answer.get("confidence", 0.0))
+            probabilities = {str(k): round(float(v), 4) for k, v in probs_raw.items()}
+            confidence = round(float(answer.get("confidence", 0.0)), 4)
             model = str(data.get("model", ""))
             usage = data.get("usage") or {}
             input_tokens = int(usage.get("input_tokens", 0) or 0)

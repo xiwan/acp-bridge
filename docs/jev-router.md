@@ -2,7 +2,7 @@
 
 > **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Lambda Burst](lambda-burst.md) · [Jev Router](jev-router.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
-# Jev Router (v0.47.0)
+# Jev Router (v0.47.0, tools in criteria since v0.47.1)
 
 Let [TypeSafe AI's Jev](https://docs.typesafe.ai) decide which agent runs a task.
 
@@ -35,9 +35,16 @@ POST /runs  {agent_name: "auto", ...}          POST /jobs {agent_name: "auto", .
   `enabled`, local (`pool != lambda`), not the router itself, and not in
   `router.exclude`. If `router.candidates` is non-empty it is an allowlist.
   Agents with `trust: unrestricted` are never candidates unless explicitly listed.
-- **Option descriptions** come from each agent's `description`,
-  `capabilities.domains/tags` and `metadata.domains/tags`. Better descriptions →
-  better routing; you can tune routing purely by editing config.
+- **Option descriptions** come from each agent's `description` (`what`),
+  `capabilities.domains/tags` + `metadata.domains/tags`, and `capabilities.tools`
+  (v0.47.1). Agents that only set `description` give Jev one sentence to work with;
+  adding domains/tags/tools is the cheapest way to sharpen routing — no code change.
+  List *distinctive* tools (`terraform`, `kubectl`, `playwright`); generic ones
+  (`bash`, `read_file`) appear on every coding agent and only add noise. Measured
+  2026-09-28: with kiro declaring terraform/kubectl/helm, "Terraform S3 bucket on AWS"
+  moved from aws-devops 0.63 / kiro 0.35 to kiro 0.80 / aws-devops 0.20 — the agent
+  that describes itself best wins, so give `aws-devops` its own domains/tools if you
+  want it to take those tasks.
 - **Only a prefix of the prompt** (`max_state_chars`, default 6000) is sent to Jev.
 - **Fail-safe**: Jev timeout, 4xx/5xx, malformed response, low confidence or an
   `other` answer all route to `default_agent`. A Jev outage can never fail a task.
