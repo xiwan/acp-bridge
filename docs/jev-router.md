@@ -2,7 +2,7 @@
 
 > **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Lambda Burst](lambda-burst.md) · [Jev Router](jev-router.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
-# Jev Router (v0.47.0, tools in criteria since v0.47.1)
+# Jev Router (v0.47.0; tools in criteria since v0.47.1; tuned example metadata since v0.47.2)
 
 Let [TypeSafe AI's Jev](https://docs.typesafe.ai) decide which agent runs a task.
 
@@ -148,6 +148,39 @@ curl -s -X POST http://127.0.0.1:18010/jobs -H "Authorization: Bearer $ACP_BRIDG
   into plain Q&A in Jev's eyes and it answers `other` (observed 0.33 for `qa-agent`
   vs 1.00 for the same task without that suffix). Describe the *job*, not the
   output format, and let the agent's description do the matching.
+
+## Tuning the criteria
+
+Jev sees nothing but the option descriptions and the task text, so routing quality is a
+configuration problem: **the agent that describes itself best wins.** Three rules, measured
+against `jev-1.13.0` on 2026-09-28 with the 10 local candidates:
+
+1. **Give every agent one positioning sentence nobody else could claim.** "Kiro CLI agent"
+   vs "AWS DevOps Agent" told Jev nothing about *build IaC and deploy* vs *investigate an
+   incident on existing resources*; with those sentences the two never compete.
+2. **Split overlapping generalists by job, not by vendor.** Six agents all saying
+   `coding / terminal / open-source` produced 0.3–0.5 ties. After giving them distinct
+   domains — claude = large multi-file refactors, codex = PR review / CI, qwen = quick
+   cheap bug fixes / unit tests / boilerplate, opencode = repo chores (dependency
+   upgrades, build/lint fixes, git), hermes = assistant with memory / messaging,
+   light-agent = quick Q&A and small scripts — each task landed on its agent at ≥ 0.99.
+3. **List distinctive tools only.** `terraform`, `playwright`, `cloudwatch-logs`,
+   `cost-explorer` move decisions; `bash`, `read_file`, `write_file` appear on every
+   coding agent and only add noise.
+
+Effect on a 13-task probe with a clear owner (before → after): hits 12/13 → 13/13,
+confidence 0.45–1.00 → all ≥ 0.99. Examples: "convert this JSON to CSV and total it"
+qwen 0.45 (below threshold → default) → light-agent 1.00; "8am Telegram summary" hermes
+0.55 → 1.00; "AWS bill up 40 %, find out why" aws-devops 0.68 → 1.00; "fix the score bug in
+yesterday's game" qwen 0.42 → 1.00; "upgrade npm deps and fix the build" claude 0.49 →
+opencode 1.00. Deliberately vague prompts still answer `other` (0.7) and fall back to
+`default_agent`. Cost: the richer criteria raise input from ~1,090 to ~1,830 tokens per
+decision (≈ $0.00008).
+
+`config.yaml.example` ships this metadata for kiro, claude, codex, qwen, opencode, hermes
+and aws-devops (v0.47.2); copy the pattern for any agent you add. Check your own traffic
+with `POST /route/preview` after every metadata change — a restart is required for the
+Bridge to rebuild the criteria.
 
 ## Cost and limits
 

@@ -462,7 +462,7 @@ router:
   max_state_chars: 6000              # prompt prefix sent to Jev
 ```
 
-Candidates are described to Jev from each agent's `description`, `capabilities.domains/tags` and `metadata.domains/tags` — improve those to improve routing. `trust: unrestricted` agents are excluded unless listed in `candidates`.
+Candidates are described to Jev from each agent's `description`, `capabilities.domains/tags/tools` and `metadata.domains/tags` — improve those to improve routing (see [Tuning the criteria](jev-router.md#tuning-the-criteria); `config.yaml.example` ships tuned metadata since v0.47.2). `trust: unrestricted` agents are excluded unless listed in `candidates`.
 
 ## See Also
 
