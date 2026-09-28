@@ -43,6 +43,26 @@ retention:
 harness:
   binary: ""                                    # absolute path to harness-factory binary; empty = disabled
 
+# Jev router (v0.47.0) — a virtual agent (default name "auto") that asks TypeSafe AI's
+# Jev (System One decision model, https://docs.typesafe.ai) which local agent should
+# run a task, then hands the request to that agent unchanged. Disabled by default:
+# when enabled=false nothing is registered and every existing path is untouched.
+# Any Jev failure / low confidence / "other" answer falls back to default_agent —
+# a Jev outage can never fail a task. Only the first max_state_chars of the prompt
+# leave the host. The key stays in .env; never paste it here.
+# Endpoints: POST /route/preview {prompt} (dry-run), GET /route/status.
+router:
+  enabled: false
+  agent_name: "auto"                            # virtual agent name; must not collide with a real agent
+  api_key: "${TYPESAFE_API_KEY}"                # from .env (console.typesafe.ai/keys)
+  model: "jev-latest"                           # pin e.g. "jev-1.13.0" once thresholds are tuned
+  timeout: 10                                   # seconds per Jev call
+  confidence_threshold: 0.5                     # below this -> default_agent
+  default_agent: "kiro"                         # must be a configured agent
+  candidates: []                                # allowlist; empty = all enabled local agents
+  exclude: []                                   # denylist applied after candidates
+  max_state_chars: 6000                         # prompt prefix sent to Jev
+
 # Lambda Burst (v0.45.0) — serverless burst backend for harness-factory agents.
 # Deploy infra/lambda-burst/ via CDK first, then set function_name to the
 # CDK output. Disabled by default; when disabled, /lambda-pool/* returns 503

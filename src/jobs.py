@@ -262,8 +262,39 @@ class JobManager:
                 jobs.append(self._dict_to_job(d))
         return sorted(jobs, key=lambda j: j.created_at, reverse=True)[:limit]
 
+    def _can_dispatch(self, agent: str) -> bool:
+        """True if _run() has a concrete path for this agent name."""
+        if agent in self._pty_configs:
+            return True
+        if self._pool and agent in getattr(self._pool, "_config", {}):
+            return True
+        live = getattr(getattr(self._app, "state", None), "acp_agents", None) or {}
+        return agent in live
+
+    async def _resolve_router(self, job: Job) -> str:
+        """v0.47.0: if job.agent is the Jev virtual agent, ask Jev and rewrite job.agent.
+
+        Returns the route_info line to prepend to the result ("" when not routed). The
+        SDK handler for `auto` needs a real request Context, which jobs don't have, so
+        jobs resolve the route here and then dispatch to the concrete agent normally.
+        """
+        router = getattr(getattr(self._app, "state", None), "jev_router", None)
+        if router is None or job.agent != router.agent_name:
+            return ""
+        decision = await router.resolve(job.prompt, self._can_dispatch)
+        log.info(
+            "job_routed: job=%s %s -> %s reason=%s",
+            job.job_id,
+            job.agent,
+            decision.agent,
+            decision.reason,
+        )
+        job.agent = decision.agent
+        return router.route_info_line(decision) + "\n"
+
     async def _run(self, job: Job):
         job.status = "running"
+        route_info = await self._resolve_router(job)
         await asyncio.to_thread(self._store.save, job)
         if job.agent in self._pty_configs:
             await self._run_pty(job)
@@ -277,6 +308,8 @@ class JobManager:
             await self._run_via_sdk(job)
         else:
             await self._run_acp(job)
+        if route_info:
+            job.result = route_info + (job.result or "")
         job.completed_at = time.time()
         # Cost tracking
         job.model_name = model_from_agent(job.agent)

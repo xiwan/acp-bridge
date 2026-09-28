@@ -36,3 +36,6 @@ design/
 test/reports/
 mcp-server/.venv
 data/
+
+# CDK sub-project deps (176MB) — never commit
+infra/lambda-burst/cdk/node_modules/

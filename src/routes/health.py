@@ -23,6 +23,11 @@ def _human_uptime(seconds: int) -> str:
     return " ".join(parts)
 
 
+def _has_tag(agent_obj, tag: str) -> bool:
+    meta = getattr(agent_obj, "metadata", None)
+    return tag in (getattr(meta, "tags", None) or [])
+
+
 def _agent_state(name: str, mode: str, alive: int) -> tuple[str, bool]:
     """Classify an agent without treating lazy process creation as failure."""
     if mode == "pty":
@@ -96,7 +101,14 @@ def register(
         agents_summary = []
         acp_total = 0
         acp_down = 0
-        state_counts = {"ready": 0, "cold": 0, "down": 0, "on_demand": 0, "remote": 0}
+        state_counts = {
+            "ready": 0,
+            "cold": 0,
+            "down": 0,
+            "on_demand": 0,
+            "remote": 0,
+            "virtual": 0,
+        }
         for name, cfg in agents_cfg.items():
             if not isinstance(cfg, dict):
                 continue
@@ -177,19 +189,22 @@ def register(
         # Mesh remote agents
         local_names = {n for n in agents_cfg if isinstance(agents_cfg[n], dict)}
         acp_agents = getattr(app.state, "acp_agents", None) or {}
-        for name in acp_agents:
+        for name, agent_obj in acp_agents.items():
             if name not in local_names:
+                # Virtual agents (Jev router, v0.47.0) carry a "router" tag; everything
+                # else registered outside agents_cfg is a mesh remote.
+                is_virtual = _has_tag(agent_obj, "router")
                 agents_summary.append(
                     {
                         "name": name,
-                        "mode": "mesh",
+                        "mode": "router" if is_virtual else "mesh",
                         "enabled": True,
                         "alive": 0,
                         "healthy": True,
-                        "state": "remote",
+                        "state": "virtual" if is_virtual else "remote",
                     }
                 )
-                state_counts["remote"] += 1
+                state_counts["virtual" if is_virtual else "remote"] += 1
 
         body = {
             "status": status,
@@ -270,14 +285,15 @@ def register(
                     domains = meta.domains or []
             if hasattr(agent_obj, "description"):
                 description = agent_obj.description or ""
+            is_virtual = "router" in tags
             agent_list.append(
                 {
                     "name": name,
-                    "mode": "mesh",
+                    "mode": "router" if is_virtual else "mesh",
                     "alive_sessions": 0,
                     "responsive_sessions": 0,
                     "healthy": True,
-                    "state": "remote",
+                    "state": "virtual" if is_virtual else "remote",
                     "sessions": [],
                     "description": description,
                     "domains": domains,

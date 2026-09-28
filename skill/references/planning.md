@@ -10,6 +10,7 @@ Classify → pick agents → present plan → execute.
 | Multiple agents / "first X then Y" / "discuss" | Pipeline → Step 2 |
 | Ongoing development, needs context | `/chat ko` |
 | >60s / long task / "notify me" | Async `POST /jobs` |
+| Unsure which agent fits / "whichever agent" / "let jev decide" | `/cli auto "..."` (Jev router) — or dry-run `POST /route/preview {"prompt"}` first |
 
 Rule: estimated >60s → **must be async**. Multi-agent pipelines and conversations are always >60s.
 
@@ -18,6 +19,7 @@ Rule: estimated >60s → **must be async**. Multi-agent pipelines and conversati
 Two sources:
 - **Static agents**: kiro, claude, codex, qwen, opencode, hermes, harness, opengame
 - **Dynamic harness** (`POST /harness`): specialized roles with preset permissions
+- **Auto-route** (`auto`, Bridge ≥ v0.47.0, optional): virtual agent — Jev picks one of the static local agents per task, confidence-gated, falls back to the Bridge default agent. The first output part `route_info` says who actually ran. Valid for `/runs` and `/jobs` only, **not** inside pipeline steps (resolve with `POST /route/preview` first, then use the concrete agent).
 
 Key rule: steps that **write files or run shell** → use static agents (kiro/claude) or harness with write-capable preset (developer/operator/admin). Read-only tasks → harness (reviewer/analyst/reader).
 
@@ -98,6 +100,7 @@ Does B need A's output?
 | "compare answers" | parallel: kiro + claude |
 | "have X and Y discuss" | conversation, 2 participants |
 | "build an agent" | `POST /harness` |
+| "pick the best agent for this" / unsure | Single `/cli auto` (needs router enabled; 503 on `/route/status` → choose manually) |
 
 ## Step 7 — Clarification
 

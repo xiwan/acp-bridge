@@ -1,6 +1,6 @@
 ---
 name: acp-bridge-caller
-description: "v0.46.0 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/openclaw/opengame/aws-devops/agent Task/Orchestration or anything similar"
+description: "v0.47.0 — ALWAYS USE THIS SKILL when user mentions: kiro/claude/codex/acp/bridge/harness/hermes/openclaw/opengame/aws-devops/jev/auto-route/agent Task/Orchestration or anything similar"
 disable-model-invocation: true
 ---
 
@@ -46,6 +46,7 @@ Quick rules:
 - Single verb, one agent, ≤60s → `/cli xx "..."` directly, no plan needed
 - Multiple agents / "first X then Y" / "discuss" → Pipeline, show plan first
 - Estimated >60s → **must be async** (`POST /jobs`)
+- Unsure which agent fits → use virtual agent `auto` (Jev router picks; first output part `route_info` says who ran) or dry-run with `POST /route/preview {prompt}`; 503 means router disabled
 - Harness presets & model compatibility → [references/harness-presets.md](references/harness-presets.md)
 
 ## Output Rules — Faithful Relay
@@ -59,7 +60,7 @@ Commentary allowed *after* full output, separated with `---` and prefixed `💬 
 
 ## Commands (aliases)
 
-`./cli <prompt>` (default agent) · `./cli ko|cc|cx|qw|oc|hm|hf|og "..."` (kiro / claude / codex / qwen / opencode / hermes / harness / opengame) · `/chat ko|cc [--cwd <path>]` (enter) · `/chat end|status` · `/upload <file>` · `/hb [status|logs|ping|ctx]` (heartbeat)
+`./cli <prompt>` (default agent) · `./cli ko|cc|cx|qw|oc|hm|hf|og|auto "..."` (kiro / claude / codex / qwen / opencode / hermes / harness / opengame / Jev auto-route) · `/chat ko|cc [--cwd <path>]` (enter) · `/chat end|status` · `/upload <file>` · `/hb [status|logs|ping|ctx]` (heartbeat)
 
 ## References
 

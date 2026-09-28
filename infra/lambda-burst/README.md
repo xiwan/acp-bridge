@@ -3,6 +3,20 @@
 将 harness-factory agent 部署为 AWS Lambda，实现突增 100+ 并发 agent 实例。
 对调用方完全透明。
 
+> ⚠️ **状态：已实现，暂不建议生产使用。**
+>
+> Bridge 侧代码完整、单测充分（v0.45.0 发布前的自审计修掉了 5 个缺陷），但
+> **从未对真实 Lambda 做过端到端验证**——所有测试都是 mock/moto。功能默认
+> 关闭，参考 `config.yaml` 里没有 `lambda_pool` 段。
+>
+> 部署前置（default VPC **不满足**）：Lambda 需 **私有子网 + NAT 出网**
+> （全公有子网的 VPC 会被 CDK 拒绝——公有子网里的 Lambda 无法访问互联网）；
+> 目标 region 需已 CDK bootstrap；部署身份需要
+> CloudFormation/Lambda/IAM/EC2/SecretsManager 权限。
+>
+> 当作实验性后端对待：在合适的 VPC 里部署验证没问题，但在跑通至少一次真实
+> 调用之前，不要用于生产 fan-out。
+
 ## 架构
 
 ```

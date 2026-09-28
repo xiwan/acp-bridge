@@ -45,6 +45,7 @@ A multi-agent orchestration platform that exposes local CLI agents (Kiro, Claude
 | **Prompt-as-a-service** | Define reusable [prompt templates](docs/api-reference.md); non-technical users pick a template and fill in variables |
 | **Agent marketplace** | Same [`harness-factory`](https://github.com/xiwan/harness-factory) binary + different profiles = code reviewer, DevOps helper, translator — all behind one API |
 | **AWS operations** | Call AWS DevOps Agent through a fail-closed ACP launcher with fixed identity/AgentSpace and explicit investigation opt-in |
+| **Auto agent routing** | Send a task to the virtual agent `auto` and let [Jev](docs/jev-router.md) (TypeSafe System One) pick the best-fit agent with a calibrated confidence score; falls back safely |
 
 ## Quick Start
 
@@ -141,6 +142,7 @@ Clients → acp-bridge (:18010)
 | [Security](docs/security.md) | Auth model, filesystem sandbox (three-tier trust + fs audit), deployment shapes, prompt injection |
 | [Process Pool](docs/process-pool.md) | Connection lifecycle, LRU eviction, OOM protection |
 | [Lambda Burst](docs/lambda-burst.md) | Serverless burst backend: harness-factory agents on AWS Lambda for 100+ concurrency |
+| [Jev Router](docs/jev-router.md) | Virtual agent `auto`: TypeSafe Jev picks the agent per task, confidence-gated, fail-safe to a default |
 | [Testing](docs/testing.md) | Agent compliance tests, integration test suite |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and fixes |
 | [Agent Spec](AGENT_SPEC.md) | ACP JSON-RPC protocol for writing new agents |
@@ -157,7 +159,7 @@ Clients → acp-bridge (:18010)
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.46.0
+See [CHANGELOG.md](CHANGELOG.md) for full version history. Current: v0.47.0
 
 ## Contributing
 

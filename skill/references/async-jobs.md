@@ -17,6 +17,8 @@ curl -X POST "$ACP_BRIDGE_URL/jobs" \
 
 Returns: `{"job_id": "xxx", "status": "pending"}`
 
+`agent_name` may be `auto` (Bridge ≥ v0.47.0 with router enabled): Jev picks the agent; the job result starts with a `route_info` line naming who ran.
+
 Reply to user: "✅ Submitted. Results will be pushed automatically when done."
 
 ### Feishu

@@ -1,6 +1,6 @@
 [← Pipelines](pipelines.md) | [Webhooks →](webhooks.md)
 
-> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Lambda Burst](lambda-burst.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Lambda Burst](lambda-burst.md) · [Jev Router](jev-router.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
 # Async Jobs + IM Push
 
@@ -96,3 +96,10 @@ POST /jobs → Bridge executes in background → On completion POST to webhook t
 - `GET /jobs` — List all jobs + status stats
 - Patrol every 60s: jobs stuck >10min are auto-marked as failed + notified
 - Failed webhook sends are retried automatically until success or job expiry
+
+## Routing a job with `auto`
+
+With the [Jev Router](jev-router.md) enabled, `agent_name: "auto"` is accepted. The
+router is resolved before dispatch: the job's `agent` field becomes the concrete agent
+Jev picked (or the default), and the result starts with a `route_info` line naming it.
+

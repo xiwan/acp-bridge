@@ -1,6 +1,6 @@
 [← Agents](agents.md) | [Pipelines →](pipelines.md)
 
-> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Lambda Burst](lambda-burst.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Lambda Burst](lambda-burst.md) · [Jev Router](jev-router.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
 # API Reference
 
@@ -261,6 +261,29 @@ Pre-warm containers with lightweight `__warmup__` pings. Body: `{"count": N}` (c
 ### `POST /lambda-pool/drain`
 
 Wait for in-flight invocations to finish. Returns `{drained, remaining}`.
+
+## Router (Jev)
+
+Optional — see [Jev Router](jev-router.md). Both endpoints return `503 {"enabled": false}` when `router.enabled` is false. The virtual agent itself (default name `auto`) is used through the normal `POST /runs` / `POST /jobs` with `agent_name: "auto"`; its first output part is a `route_info` message naming the agent that actually ran.
+
+### `POST /route/preview`
+
+Dry-run: ask Jev which agent would run this prompt, without executing anything.
+
+```bash
+curl -s -X POST http://127.0.0.1:18010/route/preview \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"prompt": "Make a small HTML5 endless-runner game"}'
+# {"agent":"opengame","reason":"jev","fallback":false,"jev_choice":"opengame",
+#  "confidence":0.96,"probabilities":{"opengame":0.96,"qwen":0.04,"trae":0.0},
+#  "model":"jev-1.13.0","latency_ms":64,"input_tokens":1057,"error":"","router":"auto"}
+```
+
+`reason`: `jev` | `low_confidence` | `other` | `invalid_choice` | `jev_error:<timeout|connection|rate_limit|http_NNN|bad_response>`. Errors: `400` missing/empty prompt or invalid JSON, `413` prompt over 20,000 chars.
+
+### `GET /route/status`
+
+Router config (never the API key) and counters: `decisions`, `routed`, `fallback`, `jev_errors`, `by_agent`, `by_reason`, `input_tokens`.
 
 ## Files
 

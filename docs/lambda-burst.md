@@ -1,12 +1,34 @@
 [← Process Pool](process-pool.md) | [Testing →](testing.md)
 
-> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Lambda Burst](lambda-burst.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Lambda Burst](lambda-burst.md) · [Jev Router](jev-router.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
 # Lambda Burst (v0.45.0)
 
 Run harness-factory agents as AWS Lambda invocations instead of local subprocesses, so a burst of work can fan out to 100+ concurrent agent instances that the host could never hold.
 
 Disabled by default. When `lambda_pool.enabled` is false the Bridge behaves exactly as before: `/lambda-pool/*` returns 503 and any agent declaring `pool: "lambda"` is skipped with a warning.
+
+> ⚠️ **Status: built, not yet recommended for production use.**
+>
+> The Bridge-side code is complete and unit-tested (`test_lambda_pool.py`,
+> `test_lambda_integration.py`, `test_lambda_wrapper.py`, `test_lambda_e2e.py`),
+> and the v0.45.0 audit fixed five defects before release. **But the feature has
+> never been exercised end-to-end against a real Lambda** — every test is
+> mock/moto-backed. It ships disabled by default, and the reference
+> `config.yaml` carries no `lambda_pool` block and no `pool: "lambda"` agent.
+>
+> Before enabling it you must satisfy real prerequisites that a default VPC does
+> **not** meet: Lambda needs **private** subnets with NAT egress (a
+> public-subnet-only VPC is rejected by CDK — Lambda in a public subnet cannot
+> reach the internet), CDK must be bootstrapped in the target region, and the
+> deploying identity needs CloudFormation/Lambda/IAM/EC2/SecretsManager
+> permissions. See [Deploy](#deploy) for the full list.
+>
+> Treat this as an experimental backend: fine to deploy and validate in a
+> suitable VPC, but do not rely on it for production fan-out until you have run
+> at least one real invocation through it. Known limits below still apply
+> (lambda steps do not join a pipeline's shared workspace; no wait-for-slot —
+> over-capacity fails fast).
 
 ## When to use it
 

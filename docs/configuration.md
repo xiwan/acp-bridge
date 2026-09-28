@@ -1,6 +1,6 @@
 [← Tutorial](tutorial.md) | [Agents →](agents.md)
 
-> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Lambda Burst](lambda-burst.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
+> **Docs:** [Getting Started](getting-started.md) · [Tutorial](tutorial.md) · [Configuration](configuration.md) · [Agents](agents.md) · [API Reference](api-reference.md) · [Pipelines](pipelines.md) · [Async Jobs](async-jobs.md) · [Webhooks](webhooks.md) · [Client Usage](client-usage.md) · [Tools Proxy](tools-proxy.md) · [Security](security.md) · [Process Pool](process-pool.md) · [Lambda Burst](lambda-burst.md) · [Jev Router](jev-router.md) · [Testing](testing.md) · [Troubleshooting](troubleshooting.md)
 
 # Configuration
 
@@ -443,6 +443,26 @@ agents:
 ```
 
 When an agent exceeds its RPM or TPM limit, the request is redirected to the configured fallback agent. If no fallback is configured or the fallback is also limited, the request is rejected with a rate-limit error.
+
+## Jev Router (Optional)
+
+Lets [TypeSafe AI's Jev](https://docs.typesafe.ai) pick the agent for a task via a virtual agent (`auto` by default). Disabled by default; zero effect when off. Full guide: [Jev Router](jev-router.md).
+
+```yaml
+router:
+  enabled: true
+  agent_name: "auto"                 # must not collide with a real agent
+  api_key: "${TYPESAFE_API_KEY}"     # .env only
+  model: "jev-latest"
+  timeout: 10                        # seconds per Jev call
+  confidence_threshold: 0.5          # below this -> default_agent
+  default_agent: "kiro"              # must be a configured agent
+  candidates: []                     # allowlist; empty = all enabled local agents
+  exclude: []                        # denylist
+  max_state_chars: 6000              # prompt prefix sent to Jev
+```
+
+Candidates are described to Jev from each agent's `description`, `capabilities.domains/tags` and `metadata.domains/tags` — improve those to improve routing. `trust: unrestricted` agents are excluded unless listed in `candidates`.
 
 ## See Also
 

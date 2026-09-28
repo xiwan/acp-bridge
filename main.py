@@ -41,6 +41,7 @@ from src.routes import harness as harness_routes
 from src.routes import health as health_routes
 from src.routes import jobs as jobs_routes
 from src.routes import pipelines as pipelines_routes
+from src.routes import router as router_routes
 from src.routes import sessions as sessions_routes
 from src.routes import stats as stats_routes
 from src.routes import templates as templates_routes
@@ -225,7 +226,11 @@ def main():
             "sandbox: enabled roots=%d blacklist=%d agents=%s",
             len(sandbox.roots),
             len(_blacklist),
-            {a: LEVEL_NAMES[normalize_level(c.get("trust"))] for a, c in agents_cfg.items() if isinstance(c, dict)},
+            {
+                a: LEVEL_NAMES[normalize_level(c.get("trust"))]
+                for a, c in agents_cfg.items()
+                if isinstance(c, dict)
+            },
         )
     else:
         log.warning("sandbox: DISABLED — agents have unrestricted fs access")
@@ -537,6 +542,60 @@ def main():
 
     lambda_pool_routes.register(app, lambda_pool_instance)
 
+    # --- Jev router (v0.47.0): virtual agent that lets TypeSafe Jev pick the agent ---
+    # Registered into the live SDK registry exactly like lambda agents above. Any
+    # config error disables the router and logs; the bridge itself keeps starting.
+    router_cfg = config.get("router", {}) or {}
+    jev_router = None
+    if router_cfg.get("enabled"):
+        from src.jev_router import JevRouter, make_router_agent_handler
+
+        _live_agents = getattr(app.state, "acp_agents", None)
+        router_name = router_cfg.get("agent_name", "auto")
+        try:
+            if _live_agents is None:
+                raise RuntimeError("SDK agents dict unavailable")
+            if router_name in agents_cfg or router_name in _live_agents:
+                raise ValueError(f"agent_name {router_name!r} collides with an existing agent")
+            jev_router = JevRouter(
+                router_cfg.get("api_key", ""),
+                agents_cfg,
+                agent_name=router_name,
+                default_agent=router_cfg.get("default_agent", ""),
+                model=router_cfg.get("model", "jev-latest"),
+                timeout=router_cfg.get("timeout", 10),
+                confidence_threshold=router_cfg.get("confidence_threshold", 0.5),
+                candidates=router_cfg.get("candidates") or None,
+                exclude=router_cfg.get("exclude") or None,
+                max_state_chars=router_cfg.get("max_state_chars", 6000),
+                base_url=router_cfg.get("base_url", "https://api.typesafe.ai"),
+            )
+        except Exception as e:
+            log.error("router: disabled due to config error: %s", e)
+            jev_router = None
+        if jev_router:
+            _srv = Server()
+            _md = Metadata(tags=["local", "router"]) if Metadata else None
+            _srv.agent(
+                name=router_name,
+                description=(
+                    "Auto-route via TypeSafe Jev to the best-fit agent "
+                    f"({', '.join(jev_router.candidate_agents)})"
+                ),
+                metadata=_md,
+            )(make_router_agent_handler(jev_router, lambda: app.state.acp_agents))
+            _live_agents[_srv.agents[0].name] = _srv.agents[0]
+            log.info(
+                "registered: agent=%s mode=router model=%s threshold=%.2f default=%s candidates=%s",
+                router_name,
+                jev_router.model,
+                jev_router.confidence_threshold,
+                jev_router.default_agent,
+                jev_router.candidate_agents,
+            )
+    app.state.jev_router = jev_router  # read by JobManager._resolve_router (None = off)
+    router_routes.register(app, jev_router)
+
     # --- Pipeline manager ---
     from src.pipeline import PipelineManager
 
@@ -792,6 +851,8 @@ def main():
             if pool:
                 log.info("shutting down, killing all subprocesses...")
                 await pool.shutdown()
+            if jev_router:
+                await jev_router.aclose()
 
     app.router.lifespan_context = lifespan
 

@@ -272,6 +272,8 @@ Cleanup stale listeners on remote: `fuser -k 18010/tcp`
 | POST | `/jobs` | Yes | Async job submit |
 | GET | `/jobs` | Yes | List all jobs + stats |
 | GET | `/jobs/{id}` | Yes | Job status |
+| POST | `/route/preview` | Yes | Dry-run Jev routing decision (503 if router disabled) |
+| GET | `/route/status` | Yes | Jev router config + counters (no secrets) |
 | GET | `/tools` | Yes | List available OpenClaw tools |
 | POST | `/tools/invoke` | Yes | OpenClaw tool proxy |
 | POST | `/chat/messages` | Yes | Save chat message (Web UI) |
@@ -295,7 +297,8 @@ Auth: `Authorization: Bearer <token>` + IP in `security.allowed_ips`.
 | `src/sse.py` | Notification → SSE event transform |
 | `src/formatters.py` | IM channel formatters (Discord/Feishu) |
 | `src/store.py` | SQLite job persistence |
-| `src/routes/*.py` | Route registration (jobs, tools, health, chat) |
+| `src/routes/*.py` | Route registration (jobs, tools, health, chat, router) |
+| `src/jev_router.py` | Virtual agent `auto`: TypeSafe Jev picks the agent per task (v0.47.0) |
 | `examples/echo-agent.py` | Minimal ACP agent (~100 lines) |
 | `skill/scripts/acp-client.sh` | Client usage examples |
 | `test/test.sh` | Full test suite |

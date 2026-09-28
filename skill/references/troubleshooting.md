@@ -18,3 +18,6 @@ Quick diagnosis table. For pipeline-specific prompt issues, see [pipeline.md](pi
 | Discord push fails | Wrong `account_id` | Use `default` for Discord, `main` for Feishu |
 | Discord 500 | Bad target format | DM: `user:<id>`, channel: `channel:<id>` |
 | Long timeout on single call | CLI processing or session conflict | Ensure different agents use different session_ids |
+| `agent_name: auto` → unknown agent / `/route/status` 503 | Jev router disabled or Bridge < v0.47.0 | Name a concrete agent; ask admin to enable `router:` in config |
+| `route_info` says `reason=low_confidence` / `other` / `jev_error:*` | Jev unsure or unreachable → task ran on the default agent | Nothing failed; if persistent, check `GET /route/status` stats or name the agent explicitly |
+| Pipeline step with `agent: auto` rejected | Router not supported inside pipelines | Dry-run `POST /route/preview`, then put the returned agent in the step |
